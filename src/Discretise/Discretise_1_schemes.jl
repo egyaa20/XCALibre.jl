@@ -1,4 +1,7 @@
+include("../Calculate/Calculate_6_distance_schemes.jl")
+
 export scheme!, scheme_source!
+
 
 #= NOTE:
 In source scheme the following indices are used and should be used with care:
@@ -77,7 +80,8 @@ end
     xN = cellN.centre
     
     # Calculate weights using normal functions
-    weight = norm(xf - xC)/norm(xN - xC)
+    weight = calculate_distance(xf, xC, "euclidean")/calculate_distance(xN, xC, "euclidean")
+    # weight = norm(xf - xC)/norm(xN - xC)
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate required increment
@@ -118,7 +122,8 @@ end
     xN = cellN.centre
     
     # Calculate weights using normal functions
-    weight = norm(xf - xC)/norm(xN - xC)
+    weight = calculate_distance(xf, xC, "euclidean")/calculate_distance(xN, xC, "euclidean")
+    # weight = norm(xf - xC)/norm(xN - xC)
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate coefficients
