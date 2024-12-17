@@ -1,9 +1,9 @@
 # Added different ways to interpolate distance
 
-Euclidean distance: default
-Manhattan distance: optional
-chebyshev distance: optional
-Euclidean squared distance: optional (doesn not involve square root for the sake of optimisation)
+- Euclidean distance: default
+- Manhattan distance: optional
+- chebyshev distance: optional
+- Euclidean squared distance: optional (doesn not involve square root for the sake of optimisation)
 
 Benchmark tests on different cases: to be included
 <!-- # Benchmarks
