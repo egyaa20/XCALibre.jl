@@ -63,6 +63,8 @@ function calculate_face_properties!(mesh)
         fc_n1 = node1.coords - face.centre
         fc_n2 = node2.coords - face.centre 
         cc1_cc2 = face.centre - cell1.centre
+        # redefine cc1_cc2
+        
 
         normal_vec = fc_n1 × fc_n2
         normal = normal_vec/norm(normal_vec)
@@ -105,11 +107,16 @@ function calculate_face_properties!(mesh)
         @reset face.normal = normal
 
         # delta
-        c1_c2 = cell2.centre - cell1.centre
+        # c1_c2 = cell2.centre - cell1.centre # no need for this new variable, it is the same as cc1_cc2
+
         fc_c1 = face.centre - cell1.centre
         c2_fc = cell2.centre - face.centre
-        delta = norm(c1_c2)
-        e = c1_c2/delta
+
+        sum = fc_c1 + c2_fc
+        delta = norm(fc_c1) + norm(c2_fc)
+
+        # delta = sum_of_magnitudes
+        e = sum/delta 
         weight = abs((fc_c1 ⋅ normal)/((fc_c1 ⋅ normal)+(c2_fc ⋅ normal)))
         @reset face.delta = delta
         @reset face.e = e

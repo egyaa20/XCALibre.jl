@@ -18,11 +18,11 @@ mesh_file = joinpath(grids_dir, grid)
 # mesh_file = "bfs_unv_tet_5mm.unv"
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
-workgroup = cld(length(mesh.cells), Threads.nthreads())
+# workgroup = cld(length(mesh.cells), Threads.nthreads())
 # backend = CPU(); activate_multithread(backend)
 backend = CPU()
-activate_multithread1()
-# workgroup = 32
+# activate_multithread1()
+workgroup = 8
 # backend = CUDABackend()
 
 mesh_dev = adapt(backend, mesh)

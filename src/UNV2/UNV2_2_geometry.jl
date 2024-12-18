@@ -65,9 +65,23 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
             normal = -1.0*normal
         end
 
+
+
+
+        sum = d_1f + d_f2
+        sum_of_magnitudes = norm(d_1f) + norm(d_f2)
+
+        # println("Test")
+        delta = norm(sum_of_magnitudes) #why you do this....
+        e = sum/sum_of_magnitudes
+        # e = sum_of_magnitudes/sum # test this
+
+
         # Calculate delta and interpolation weight
-        delta = norm(d_12) 
-        e = d_12/delta
+        # delta = norm(d_12) 
+        # e = d_12/delta
+
+
         weight = abs((d_1f⋅normal)/(d_1f⋅normal + d_f2⋅normal)) 
 
         # Assign values to face

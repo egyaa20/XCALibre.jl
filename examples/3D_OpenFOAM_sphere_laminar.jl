@@ -1,13 +1,13 @@
 using Plots
 using XCALibre
-using CUDA
+# using CUDA
 
 
 mesh_file = "unv_sample_meshes/OF_sphere_snappyHexMesh/polyMesh/"
-@time mesh = FOAM3D_mesh(mesh_file, scale=0.001, integer_type=Int64, float_type=Float64)
+mesh = FOAM3D_mesh(mesh_file, scale=0.001, integer_type=Int64, float_type=Float64)
 
 mesh_dev = adapt(CPU(), mesh)
-mesh_dev = adapt(CUDABackend(), mesh)
+# mesh_dev = adapt(CUDABackend(), mesh)
 
 # # check volume calculation
 # volumes = ScalarField(mesh)
@@ -134,7 +134,7 @@ solvers = (
 
 runtime = set_runtime(iterations=100, write_interval=100, time_step=1)
 
-hardware = set_hardware(backend=CUDABackend(), workgroup=32)
+# hardware = set_hardware(backend=CUDABackend(), workgroup=32)
 hardware = set_hardware(backend=CPU(), workgroup=8)
 
 config = Configuration(
