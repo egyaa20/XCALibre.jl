@@ -131,6 +131,8 @@ end
     anUpwind = -max(-ap, 0.0)
     ac = 0.75*acLinear + 0.25*acUpwind
     an = 0.75*anLinear + 0.25*anUpwind
+
+    # maybe define custom coefficients?
     return ac, an
 end
 @inline scheme_source!(
