@@ -58,6 +58,9 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
         d_f2 = c2 - cf # distance vector from face centre to cell2
         d_12 = c2 - c1 # distance vector from cell1 to cell2
 
+        volume1 = cells[ownerCells[1]].area #area(=volume) of cell 1
+        volume2 = cells[ownerCells[2]].area #area(=volume) of cell 2
+
         # Calculate normal and check direction (from owner1 to owner2)
         unit_tangent = tangent/area
         normal = unit_tangent × UnitVectors().k
@@ -69,9 +72,11 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
         delta = norm(d_12) 
         e = d_12/delta
         # weight = abs((d_1f⋅normal)/(d_1f⋅normal + d_f2⋅normal)) 
-        weight = norm(d_f2)/norm(d_12)
 
-        test = 1
+        weight = norm(d_f2)/norm(d_12) #v1
+        # weight = abs((d_f2⋅normal)/(d_12⋅normal)) #v2
+        # weight = abs((d_f2⋅normal)/(d_1f⋅normal+d_f2⋅normal)) #v3
+        # weight = volume2/(volume1+volume2) #v4
 
         # Assign values to face
         face = @set face.area = area
