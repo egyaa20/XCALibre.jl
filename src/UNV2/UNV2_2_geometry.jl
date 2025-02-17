@@ -71,6 +71,8 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
         # weight = abs((d_1f⋅normal)/(d_1f⋅normal + d_f2⋅normal)) 
         weight = norm(d_f2)/norm(d_12)
 
+        test = 1
+
         # Assign values to face
         face = @set face.area = area
         face = @set face.normal = normal
