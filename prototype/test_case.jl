@@ -77,8 +77,8 @@ schemes = (
 )
 
 
-runtime = set_runtime(iterations=1000, write_interval=50, time_step=0.005) 
-runtime = set_runtime(iterations=1, write_interval=-1, time_step=0.005) # hide
+runtime = set_runtime(iterations=1000, write_interval=50, time_step=1) 
+# runtime = set_runtime(iterations=1, write_interval=-1, time_step=0.005) # hide
 
 
 hardware = set_hardware(backend=CPU(), workgroup=1024)

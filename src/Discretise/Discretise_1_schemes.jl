@@ -83,7 +83,8 @@ end
     
     # Calculate weights using normal functions
     # weight = norm(xf - xC)/norm(xN - xC)
-    weight = norm(xN - xf)/norm(xN - xC)
+    # weight = norm(xN - xf)/norm(xN - xC)
+    weight = face.weight
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate required increment
@@ -124,7 +125,8 @@ end
     xN = cellN.centre
     
     # Calculate weights using normal functions
-    weight = norm(xN - xf)/norm(xN - xC)
+    # weight = norm(xN - xf)/norm(xN - xC)
+    weight = face.weight
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate coefficients
