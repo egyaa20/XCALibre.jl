@@ -58,8 +58,8 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
         d_f2 = c2 - cf # distance vector from face centre to cell2
         d_12 = c2 - c1 # distance vector from cell1 to cell2
 
-        volume1 = cells[ownerCells[1]].area #area(=volume) of cell 1
-        volume2 = cells[ownerCells[2]].area #area(=volume) of cell 2
+        volume1 = cells[ownerCells[1]].volume #area(=volume) of cell 1
+        volume2 = cells[ownerCells[2]].volume #area(=volume) of cell 2
 
         # Calculate normal and check direction (from owner1 to owner2)
         unit_tangent = tangent/area

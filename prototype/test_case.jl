@@ -2,10 +2,11 @@
 using XCALibre
 # using CUDA # uncomment to run on GPU
 
-# grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grids_dir = pkgdir(XCALibre, "examples/testing_grids")
-grid = "test1.unv" 
+# grids_dir = pkgdir(XCALibre, "examples/testing_grids")
+# grid = "test1.unv" 
 
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "cylinder_d10mm_5mm.unv"
 
 #Define 2 grids:
 # 2D Unstructured
