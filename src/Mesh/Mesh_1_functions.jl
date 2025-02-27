@@ -3,7 +3,7 @@ export bounding_box
 export boundary_info, boundary_map
 export total_boundary_faces, boundary_index
 export norm_static
-# export calculate_weight
+export calculate_weight
 # export x, y, z # access cell centres
 # export xf, yf, zf # access face centres
 
@@ -94,7 +94,35 @@ end
 
 # Add functions here!
 
- # calculate_weight()
+# c1 = cells[ownerCells[1]].centre
+# c2 = cells[ownerCells[2]].centre
+# cf = face.centre
+
+# d_1f = cf - c1 # distance vector from cell1 to face centre
+# d_f2 = c2 - cf # distance vector from face centre to cell2
+# d_12 = c2 - c1 # distance vector from cell1 to cell2
+
+function calculate_weight(d_12, d_f2, ::Val{:scheme_1}) #default scheme [1]
+    return norm(d_f2)/norm(d_12)
+end
+
+function calculate_weight(d_12, d_f2, normal, ::Val{:scheme_2}) #normals scheme [2]
+    return abs((d_f2⋅normal)/(d_12⋅normal))
+end
+
+function calculate_weight(d_f2, d_1f, normal, ::Val{:scheme_3}) #sum of normals scheme [3]
+    return abs((d_f2⋅normal)/(d_1f⋅normal+d_f2⋅normal))
+end
+
+function calculate_weight(c1, c2, ::Val{:scheme_4}) #volumes scheme [4]
+    return c2.volume/(c1.volume+c2.volume)
+end
+
+function calculate_weight(d_12, d_1f, c1, c2, k=0.6, ::Val{:scheme_5}) #mix of volumes and normals scheme [5]
+    # k is an abstract weight to be defined by user (0 to 1, let's say it is 0.6 by default)
+
+    return (norm(d_1f)/norm(d_12))*k + (c2.volume/(c1.volume+c2.volume))*(1-k)
+end
 
 # function x(mesh::Mesh2{I,F}) where {I,F}
 #     cells = mesh.cells

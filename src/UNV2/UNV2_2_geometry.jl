@@ -54,6 +54,7 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
         c1 = cells[ownerCells[1]].centre
         c2 = cells[ownerCells[2]].centre
         cf = face.centre
+        
         d_1f = cf - c1 # distance vector from cell1 to face centre
         d_f2 = c2 - cf # distance vector from face centre to cell2
         d_12 = c2 - c1 # distance vector from cell1 to cell2
@@ -71,7 +72,6 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
         # Calculate delta and interpolation weight
         delta = norm(d_12) 
         e = d_12/delta
-        # weight = abs((d_1f⋅normal)/(d_1f⋅normal + d_f2⋅normal)) 
 
         weight = norm(d_f2)/norm(d_12) #v1
         # weight = abs((d_f2⋅normal)/(d_12⋅normal)) #v2

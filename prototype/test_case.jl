@@ -2,11 +2,15 @@
 using XCALibre
 # using CUDA # uncomment to run on GPU
 
-# grids_dir = pkgdir(XCALibre, "examples/testing_grids")
-# grid = "test1.unv" 
+# grids_dir = pkgdir(XCALibre, "examples\\testing_grids\\3D")
+# grid = "3D" 
 
-grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "cylinder_d10mm_5mm.unv"
+grids_dir = pkgdir(XCALibre, "examples/testing_grids")
+# grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "messy_3d.unv"
+# grid = "cylinder_d10mm_5mm.unv"
+# grid = "unstructured_2d.unv"
+
 
 #Define 2 grids:
 # 2D Unstructured
@@ -15,22 +19,23 @@ grid = "cylinder_d10mm_5mm.unv"
 
 mesh_file = joinpath(grids_dir, grid)
 
-mesh = UNV2D_mesh(mesh_file, scale=0.001)
+mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 mesh_dev = mesh
 # mesh_dev = adapt(CUDABackend(), mesh) # uncomment to run on GPU
 
 # Inlet conditions
-velocity = [0.5, 0.0, 0.0]
+velocity = [50, 0.0, 0.0]
 noSlip = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = (0.2*velocity[1])/nu
+display(Re)
 
 model = Physics(
     time = Steady(),
     fluid = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
-    energy = Energy{Isothermal}(),
+    energy = Energy{Isothermal}(), 
     domain = mesh_dev
     )
 
@@ -39,7 +44,9 @@ model = Physics(
     Neumann(:outlet, 0.0),
     Wall(:cylinder, noSlip),
     Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    Neumann(:top, 0.0),
+    Neumann(:front, 0.0),
+    Neumann(:back, 0.0)
 )
 
 @assign! model momentum p (
@@ -47,7 +54,10 @@ model = Physics(
     Dirichlet(:outlet, 0.0),
     Neumann(:cylinder, 0.0),
     Neumann(:bottom, 0.0),
-    Neumann(:top, 0.0)
+    Neumann(:top, 0.0),
+    Neumann(:front, 0.0),
+    Neumann(:back, 0.0)
+    
 )
 
 solvers = (
@@ -72,17 +82,16 @@ solvers = (
 )
 
 schemes = (
-    U = set_schemes(divergence=LUST, gradient=Midpoint), #Linear / Upwind / LUST
+    U = set_schemes(divergence=LUST, gradient=Midpoint),
     p = set_schemes(gradient=Midpoint)
+    
 )
 
 
-runtime = set_runtime(iterations=1000, write_interval=50, time_step=1) 
-# runtime = set_runtime(iterations=1, write_interval=-1, time_step=0.005) # hide
+runtime = set_runtime(iterations=200, write_interval=20, time_step=1) 
 
 
 hardware = set_hardware(backend=CPU(), workgroup=1024)
-# hardware = set_hardware(backend=CUDABackend(), workgroup=32) # uncomment to run on GPU
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
