@@ -54,13 +54,13 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
         c1 = cells[ownerCells[1]].centre
         c2 = cells[ownerCells[2]].centre
         cf = face.centre
-        
+
         d_1f = cf - c1 # distance vector from cell1 to face centre
         d_f2 = c2 - cf # distance vector from face centre to cell2
         d_12 = c2 - c1 # distance vector from cell1 to cell2
 
-        volume1 = cells[ownerCells[1]].volume #area(=volume) of cell 1
-        volume2 = cells[ownerCells[2]].volume #area(=volume) of cell 2
+        # volume1 = cells[ownerCells[1]].volume #area(=volume) of cell 1
+        # volume2 = cells[ownerCells[2]].volume #area(=volume) of cell 2
 
         # Calculate normal and check direction (from owner1 to owner2)
         unit_tangent = tangent/area
@@ -73,7 +73,13 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
         delta = norm(d_12) 
         e = d_12/delta
 
-        weight = norm(d_f2)/norm(d_12) #v1
+        weight = calculate_weight(d_12, d_f2, Val(:scheme_1)) #v1
+        # weight = calculate_weight(d_12, d_f2, Val(:scheme_2)) #v2
+        # weight = calculate_weight(d_f2, d_1f, normal, Val(:scheme_3)) #v3
+        # weight = calculate_weight(cells[ownerCells[1]], cells[ownerCells[2]], Val(:scheme_4)) #v4
+        # weight = calculate_weight(d_12, d_1f, cells[ownerCells[1]], cells[ownerCells[2]], Val(:scheme_5)) #v5, k=? is optional
+
+        # weight = norm(d_f2)/norm(d_12) #v1
         # weight = abs((d_f2⋅normal)/(d_12⋅normal)) #v2
         # weight = abs((d_f2⋅normal)/(d_1f⋅normal+d_f2⋅normal)) #v3
         # weight = volume2/(volume1+volume2) #v4
