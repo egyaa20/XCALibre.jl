@@ -3,6 +3,7 @@ export bounding_box
 export boundary_info, boundary_map
 export total_boundary_faces, boundary_index
 export norm_static
+# export calculate_weight
 # export x, y, z # access cell centres
 # export xf, yf, zf # access face centres
 
@@ -90,6 +91,10 @@ function boundary_index(boundaries::Vector{Boundary{S, UR}}, name::S) where {S<:
         end
     end
 end
+
+# Add functions here!
+
+ # calculate_weight()
 
 # function x(mesh::Mesh2{I,F}) where {I,F}
 #     cells = mesh.cells
