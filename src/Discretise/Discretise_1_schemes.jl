@@ -80,11 +80,24 @@ end
     xf = face.centre
     xC = cell.centre
     xN = cellN.centre
+
+    d_1f = xf - xC # distance vector from cell1 to face centre
+    d_f2 = xN - xf # distance vector from face centre to cell2
+    d_12 = xN - xC # distance vector from cell1 to cell2
     
     # Calculate weights using normal functions
     # weight = norm(xf - xC)/norm(xN - xC)
     # weight = norm(xN - xf)/norm(xN - xC)
-    weight = face.weight
+
+    (; area, normal, delta, e) = face
+    n = ns*normal
+
+    # weight = calculate_weight(d_12, d_f2, Val(:scheme_1)) #v1
+    # weight = calculate_weight(d_12, d_f2, n, Val(:scheme_2)) #v2
+    # weight = calculate_weight(d_f2, d_1f, n, Val(:scheme_3)) #v3
+    # weight = calculate_weight(cell, cellN, Val(:scheme_4)) #v4
+    weight = calculate_weight(d_12, d_1f, cell, cellN, Val(:scheme_5)) #v5, k=? is optional
+
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate required increment
@@ -123,10 +136,21 @@ end
     xf = face.centre
     xC = cell.centre
     xN = cellN.centre
+
+    d_1f = xf - xC # distance vector from cell1 to face centre
+    d_f2 = xN - xf # distance vector from face centre to cell2
+    d_12 = xN - xC # distance vector from cell1 to cell2
+
+    (; area, normal, delta, e) = face
+    n = ns*normal
     
-    # Calculate weights using normal functions
-    # weight = norm(xN - xf)/norm(xN - xC)
-    weight = face.weight
+
+    weight = calculate_weight(d_12, d_f2, Val(:scheme_1)) #v1
+    # weight = calculate_weight(d_12, d_f2, n, Val(:scheme_2)) #v2
+    # weight = calculate_weight(d_f2, d_1f, n, Val(:scheme_3)) #v3
+    # weight = calculate_weight(cell, cellN, Val(:scheme_4)) #v4
+    # weight = calculate_weight(d_12, d_1f, cell, cellN, Val(:scheme_5)) #v5, k=? is optional
+    
     one_minus_weight = one(eltype(weight)) - weight
 
     # Calculate coefficients

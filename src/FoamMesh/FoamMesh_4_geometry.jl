@@ -71,6 +71,12 @@ function calculate_face_properties!(mesh)
         end
         @reset face.normal = normal
 
+        # weight = calculate_weight(d_12, d_f2, Val(:scheme_1)) #v1
+        # weight = calculate_weight(d_12, d_f2, normal, Val(:scheme_2)) #v2
+        # weight = calculate_weight(d_f2, d_1f, normal, Val(:scheme_3)) #v3
+        # weight = calculate_weight(cells[ownerCells[1]], cells[ownerCells[2]], Val(:scheme_4)) #v4
+        # weight = calculate_weight(d_12, d_1f, cells[ownerCells[1]], cells[ownerCells[2]], Val(:scheme_5)) #v5
+
         # delta
         cc_fc = face.centre - cell1.centre
         delta = norm(cc_fc)
@@ -114,6 +120,12 @@ function calculate_face_properties!(mesh)
         delta = norm(c1_c2)
         e = c1_c2/delta
 
+
+        # weight = calculate_weight(d_12, d_f2, Val(:scheme_1)) #v1
+        # weight = calculate_weight(d_12, d_f2, normal, Val(:scheme_2)) #v2
+        # weight = calculate_weight(d_f2, d_1f, normal, Val(:scheme_3)) #v3
+        # weight = calculate_weight(cells[ownerCells[1]], cells[ownerCells[2]], Val(:scheme_4)) #v4
+        # weight = calculate_weight(d_12, d_1f, cells[ownerCells[1]], cells[ownerCells[2]], Val(:scheme_5)) #v5
 
         weight = norm(fc_c2)/norm(c1_c2) #v1
         # weight = abs((fc_c2⋅normal)/(c1_c2⋅normal)) #v2

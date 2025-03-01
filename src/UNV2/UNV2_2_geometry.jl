@@ -74,7 +74,7 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
         e = d_12/delta
 
         weight = calculate_weight(d_12, d_f2, Val(:scheme_1)) #v1
-        # weight = calculate_weight(d_12, d_f2, Val(:scheme_2)) #v2
+        # weight = calculate_weight(d_12, d_f2, normal, Val(:scheme_2)) #v2
         # weight = calculate_weight(d_f2, d_1f, normal, Val(:scheme_3)) #v3
         # weight = calculate_weight(cells[ownerCells[1]], cells[ownerCells[2]], Val(:scheme_4)) #v4
         # weight = calculate_weight(d_12, d_1f, cells[ownerCells[1]], cells[ownerCells[2]], Val(:scheme_5)) #v5, k=? is optional
