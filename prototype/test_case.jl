@@ -8,7 +8,7 @@ using XCALibre
 grids_dir = pkgdir(XCALibre, "examples/testing_grids")
 # grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 # grid = "messy_3d.unv"
-grid = "cylinder_2d_netgen.unv"
+grid = "4by4by4.unv"
 # grid = "unstructured_2d.unv"
 
 
@@ -19,7 +19,40 @@ grid = "cylinder_2d_netgen.unv"
 
 mesh_file = joinpath(grids_dir, grid)
 
-mesh = UNV2D_mesh(mesh_file, scale=0.001)
+mesh = UNV3D_mesh(mesh_file, scale=0.001)
+
+sum_volumes = 0.0
+
+for cell ∈ mesh.cells
+    sum_volumes += cell.volume
+
+    faces_pointer = cell.faces_range
+    nodes_pointer = cell.nodes_range
+
+    normal_signs_array = mesh.cell_nsign[faces_pointer]  #indices to access nsigns of the cell
+    faces_array = mesh.cell_faces[faces_pointer] #indices to access faces of the cell
+    nodes_array = mesh.cell_nodes[faces_pointer] #indices to access nodes of the cell
+
+
+    # cell.volume: sum up and check against real solution
+    # cell.centre: 
+    # face.area
+    # face.centre
+    # face.weight
+    # face.delta
+    # face.ownerCells
+    # face.normal
+end
+
+sum_volumes
+analytical_volume = 0.1*0.1*0.1
+error_volume = 100*(analytical_volume-sum_volumes)/analytical_volume
+
+for face ∈ mesh.faces
+    sum_volumes
+end
+
+
 
 mesh_dev = mesh
 # mesh_dev = adapt(CUDABackend(), mesh) # uncomment to run on GPU
