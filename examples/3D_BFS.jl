@@ -11,7 +11,7 @@ grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "bfs_unv_tet_10mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 
-# mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv"
+mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv"
 # mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_4mm.unv"
 # mesh_file = "bfs_unv_tet_5mm.unv"
 
@@ -53,7 +53,7 @@ model = Physics(
 @assign! model momentum p (
     Neumann(:inlet, 0.0),
     Dirichlet(:outlet, 0.0),
-    Neumann(:wall, 0.0),
+    Wall(:wall, 0.0),
     Neumann(:sides, 0.0),
     Neumann(:top, 0.0)
 )
@@ -62,7 +62,7 @@ solvers = (
     U = set_solver(
         model.momentum.U;
         solver      = BicgstabSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(),
+        preconditioner = Jacobi(), # Jacobi # ILU0GPU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
         convergence = 1e-7,
         relax       = 0.8,
@@ -71,7 +71,7 @@ solvers = (
     p = set_solver(
         model.momentum.p;
         solver      = CgSolver, # BicgstabSolver, GmresSolver
-        preconditioner = Jacobi(), #NormDiagonal(),
+        preconditioner = Jacobi(), #NormDiagonal(), IC0GPU, Jacobi
         # smoother=JacobiSmoother(domain=mesh_dev, loops=10, omega=2/3),
         convergence = 1e-7,
         relax       = 0.2,
@@ -101,7 +101,7 @@ residuals = run!(model, config)
 
 # Now get timing information
 
-runtime = set_runtime(iterations=500, write_interval=500, time_step=1)
+runtime = set_runtime(iterations=500, write_interval=100, time_step=1)
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware)
 
 GC.gc(true)
@@ -109,7 +109,7 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-@time residuals = run!(model, config)
+@time residuals = run!(model, config, output=OpenFOAM())
 
 # iterations = runtime.iterations
 # plot(yscale=:log10, ylims=(1e-7,1e-1))

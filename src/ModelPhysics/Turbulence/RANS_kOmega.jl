@@ -10,13 +10,13 @@ export KOmega
 kOmega model containing all kOmega field parameters.
 
 ### Fields
-- 'k' -- Turbulent kinetic energy ScalarField.
-- 'omega' -- Specific dissipation rate ScalarField.
-- 'nut' -- Eddy viscosity ScalarField.
-- 'kf' -- Turbulent kinetic energy FaceScalarField.
-- 'omegaf' -- Specific dissipation rate FaceScalarField.
-- 'nutf' -- Eddy viscosity FaceScalarField.
-- 'coeffs' -- Model coefficients.
+- `k` -- Turbulent kinetic energy ScalarField.
+- `omega` -- Specific dissipation rate ScalarField.
+- `nut` -- Eddy viscosity ScalarField.
+- `kf` -- Turbulent kinetic energy FaceScalarField.
+- `omegaf` -- Specific dissipation rate FaceScalarField.
+- `nutf` -- Eddy viscosity FaceScalarField.
+- `coeffs` -- Model coefficients.
 
 """
 struct KOmega{S1,S2,S3,F1,F2,F3,C} <: AbstractRANSModel
@@ -30,7 +30,8 @@ struct KOmega{S1,S2,S3,F1,F2,F3,C} <: AbstractRANSModel
 end
 Adapt.@adapt_structure KOmega
 
-struct KOmegaModel{E1,E2,S1}
+struct KOmegaModel{T,E1,E2,S1} 
+    turbulence::T
     k_eqn::E1 
     ω_eqn::E2
     state::S1
@@ -72,7 +73,12 @@ Initialisation of turbulent transport equations.
           hardware structures set.
 
 ### Output
-- `KOmegaModel(k_eqn, ω_eqn)`  -- Turbulence model structure.
+- `KOmegaModel(
+        turbulence,
+        k_eqn, 
+        ω_eqn,
+        state
+        )`  -- Turbulence model structure.
 
 """
 function initialise(
@@ -125,18 +131,18 @@ function initialise(
     @reset ω_eqn.solver = solvers.omega.solver(_A(ω_eqn), _b(ω_eqn))
 
     initial_residual = ((:k, 1.0),(:omega, 1.0))
-    return KOmegaModel(k_eqn, ω_eqn, ModelState(initial_residual, false))
+    return KOmegaModel(turbulence, k_eqn, ω_eqn, ModelState(initial_residual, false))
 end
 
 # Model solver call (implementation)
 """
-    turbulence!(rans::KOmegaModel{E1,E2,S1}, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Tu<:KOmega,E,D,BI,E1,E2,S1}
+    turbulence!(rans::KOmegaModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
+    ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
 Run turbulence model transport equations.
 
 ### Input
-- `rans::KOmegaModel{E1,E2,S1}` -- KOmega turbulence model.
+- `rans::KOmegaModel` -- KOmega turbulence model.
 - `model`  -- Physics model defined by user.
 - `S`   -- Strain rate tensor.
 - `prev`  -- Previous field.
@@ -146,13 +152,13 @@ Run turbulence model transport equations.
 
 """
 function turbulence!(
-    rans::KOmegaModel{E1,E2,S1}, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Tu<:KOmega,E,D,BI,E1,E2,S1}
+    rans::KOmegaModel, model::Physics{T,F,M,Tu,E,D,BI}, S, prev, time, config
+    ) where {T,F,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
     mesh = model.domain
     
     (; rho, rhof, nu, nuf) = model.fluid
-    (;k, omega, nut, kf, omegaf, nutf, coeffs) = model.turbulence
+    (;k, omega, nut, kf, omegaf, nutf, coeffs) = rans.turbulence
     (; U, Uf, gradU) = S
     (;k_eqn, ω_eqn, state) = rans
     (; solvers, runtime) = config
@@ -219,7 +225,7 @@ function turbulence!(
 end
 
 # Specialise VTK writer
-function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
+function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration
     ) where {T,F,M,Tu<:KOmega,E,D,BI}
     if typeof(model.fluid)<:AbstractCompressible
         args = (
@@ -239,5 +245,5 @@ function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
             ("nut", model.turbulence.nut)
         )
     end
-    write_vtk(name, model.domain, VTKWriter, args...)
+    write_results(iteration, model.domain, outputWriter, args...)
 end

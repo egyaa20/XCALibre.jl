@@ -7,17 +7,17 @@ export KOmegaLKE
 kOmega model containing all kOmega field parameters.
 
 ### Fields
-- 'k' -- Turbulent kinetic energy ScalarField.
-- 'omega' -- Specific dissipation rate ScalarField.
-- 'kl' -- ScalarField.
-- 'nut' -- Eddy viscosity ScalarField.
-- 'kf' -- Turbulent kinetic energy FaceScalarField.
-- 'omegaf' -- Specific dissipation rate FaceScalarField.
-- 'klf' -- FaceScalarField.
-- 'nutf' -- Eddy viscosity FaceScalarField.
-- 'coeffs' -- Model coefficients.
-- 'Tu' -- Freestream turbulence intensity for model.
-- 'y' -- Near-wall distance for model.
+- `k` -- Turbulent kinetic energy ScalarField.
+- `omega` -- Specific dissipation rate ScalarField.
+- `kl` -- ScalarField.
+- `nut` -- Eddy viscosity ScalarField.
+- `kf` -- Turbulent kinetic energy FaceScalarField.
+- `omegaf` -- Specific dissipation rate FaceScalarField.
+- `klf` -- FaceScalarField.
+- `nutf` -- Eddy viscosity FaceScalarField.
+- `coeffs` -- Model coefficients.
+- `Tu` -- Freestream turbulence intensity for model.
+- `y` -- Near-wall distance for model.
 
 """
 struct KOmegaLKE{S1,S2,S3,S4,F1,F2,F3,F4,C1,C2,Y} <: AbstractRANSModel 
@@ -37,7 +37,8 @@ Adapt.@adapt_structure KOmegaLKE
 
 # Model type definition (hold equation definitions and internal data)
 struct KOmegaLKEModel{
-    E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,V1,V2,State}
+    T,E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,V1,V2,State}
+    turbulence::T
     k_eqn::E1
     ω_eqn::E2
     kl_eqn::E3
@@ -101,7 +102,8 @@ end
             if boundary.name == namedwall
                 push!(BCs, Dirichlet(boundary.name, 0.0))
             else
-                push!(BCs, Neumann(boundary.name, 0.0))
+                # push!(BCs, Neumann(boundary.name, 0.0))
+                push!(BCs, Wall(boundary.name, 0.0))
             end
         end
     end
@@ -127,6 +129,7 @@ Initialisation of turbulent transport equations.
 
 ### Output
 - `KOmegaLKEModel(
+        turbulence,
         k_eqn,
         ω_eqn,
         kl_eqn,
@@ -244,6 +247,7 @@ function initialise(
     state = ModelState(init_residuals, init_convergence)
 
     return KOmegaLKEModel(
+        turbulence,
         k_eqn,
         ω_eqn,
         kl_eqn,
@@ -266,7 +270,7 @@ end
 # Model solver call (implementation)
 """
    turbulence!(rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Turb<:KOmegaLKE,E,D,BI}
+    ) where {T,F,M,Turb<:AbstractTurbulenceModel,E,D,BI}
 
 Run turbulence model transport equations.
 
@@ -282,11 +286,11 @@ Run turbulence model transport equations.
 """
 function turbulence!(
     rans::KOmegaLKEModel, model::Physics{T,F,M,Turb,E,D,BI}, S, prev, time, config
-    ) where {T,F,M,Turb<:KOmegaLKE,E,D,BI}
+    ) where {T,F,M,Turb<:AbstractTurbulenceModel,E,D,BI}
     mesh = model.domain
-    (; momentum, turbulence) = model
+    (; momentum) = model
     U = momentum.U
-    (; k, omega, kl, nut, y, kf, omegaf, klf, nutf, coeffs, Tu) = turbulence
+    (; k, omega, kl, nut, y, kf, omegaf, klf, nutf, coeffs, Tu) = rans.turbulence
     (; nu) = model.fluid
     (; U, Uf, gradU) = S
     
@@ -417,7 +421,7 @@ function turbulence!(
 end
 
 # Specialise VTK writer
-function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
+function save_output(model::Physics{T,F,M,Tu,E,D,BI}, outputWriter, iteration
     ) where {T,F,M,Tu<:KOmegaLKE,E,D,BI}
     args = (
         ("U", model.momentum.U), 
@@ -428,5 +432,5 @@ function model2vtk(model::Physics{T,F,M,Tu,E,D,BI}, VTKWriter, name
         ("nut", model.turbulence.nut),
         ("y", model.turbulence.y)
     )
-    write_vtk(name, model.domain, VTKWriter, args...)
+    write_results(iteration, model.domain, outputWriter, args...)
 end
