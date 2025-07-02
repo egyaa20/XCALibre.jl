@@ -1,4 +1,3 @@
-
 function read_UNV3(unv_mesh; scale, integer, float)
     #Defining Variables
     pointindx=0
@@ -47,7 +46,10 @@ function read_UNV3(unv_mesh; scale, integer, float)
     
     #Splits UNV file into sections
     for (indx,line) in enumerate(eachline(unv_mesh))
-        sline=split(line)
+        # sline=split(line) PREVIOUS 1337
+        line = strip(line)            # remove leading/trailing white‑space
+        isempty(line) && continue     # <‑‑ SKIP completely blank lines
+        sline = split(line)           # safe: sline has at least one entry now
     
         #Points = 2411
         if sline[1]=="2411" && length(sline)==1
@@ -73,7 +75,13 @@ function read_UNV3(unv_mesh; scale, integer, float)
 
     for (indx,line) in enumerate(eachline(unv_mesh))
         
-        sline=split(line)
+        # sline=split(line) #PREVIOUS 1337
+
+        line = strip(line)            # remove leading/trailing white‑space
+        isempty(line) && continue     # <‑‑ SKIP completely blank lines
+        sline = split(line)           # safe: sline has at least one entry now
+
+
         #Points
         if indx>pointindx && indx<elementindx && length(sline)==4 && parse(Float64,sline[4])==11
             pointindex=parse(Int64,sline[1])
@@ -137,6 +145,9 @@ function read_UNV3(unv_mesh; scale, integer, float)
         if length(sline)==4 && indx>elementindx && indx==faceindx+1
             face=[parse(Int,sline[i]) for i=1:length(sline)]
             push!(faces,Face(faceindex,faceCount,face))
+            if face_counter == 1 # Only print for the very first quad face found
+                 println("DEBUG: First UNV Quad Face (Index $faceindex) Node Order: ", face)
+            end
             continue
         end
 
@@ -152,12 +163,21 @@ function read_UNV3(unv_mesh; scale, integer, float)
             end
             continue
         end
-    
-        if length(sline)==4 && indx<boundaryindx && indx>elementindx
-            cell=[parse(Int64,sline[i]) for i=1:length(sline)]
-            push!(cells,Cell_UNV(cellindex,cellCount,cell))
+        # Tetra node list line (after the 111 header)
+        if cellCount==4 && length(sline)==4 && indx<boundaryindx && indx>elementindx
+            cell = [parse(Int64,sline[i]) for i in 1:4]
+            # DEBUG: print every raw tet ordering
+             @info "DEBUG-UNV raw tet #$(cellindex) nodes: $(cell)"
+            # @info "DEBUG-UNV raw tet #$(cellindex) nodes:" cell
+            push!(cells, Cell_UNV(cellindex, cellCount, cell))
             continue
         end
+    
+        # if length(sline)==4 && indx<boundaryindx && indx>elementindx
+        #     cell=[parse(Int64,sline[i]) for i=1:length(sline)]
+        #     push!(cells,Cell_UNV(cellindex,cellCount,cell))
+        #     continue
+        # end
 
         #Hexahedral
         if length(sline)==6 && parse(Int,sline[2])==115
@@ -174,6 +194,9 @@ function read_UNV3(unv_mesh; scale, integer, float)
         if length(sline)==8 && indx<boundaryindx && indx>elementindx
             cell=[parse(Int,sline[i]) for i=1:length(sline)]
             push!(cells,Cell_UNV(cellindex,cellCount,cell))
+            if cell_counter == 1 # Only print for the very first hex cell found
+                println("DEBUG: First UNV Hexa Cell (Index $cellindex) Node Order: ", cell)
+            end
             continue
         end
 
@@ -232,6 +255,9 @@ function read_UNV3(unv_mesh; scale, integer, float)
         end
     
     end
-    return points,faces,cells,boundaryElements
 
+    println("<<<<>>>>>")
+    println(points)
+    println(faces)
+    return points,faces,cells,boundaryElements
 end
