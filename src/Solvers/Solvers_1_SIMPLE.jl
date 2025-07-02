@@ -2,7 +2,7 @@ export simple!
 
 """
     simple!(model_in, config; 
-        pref=nothing, ncorrectors=0, inner_loops=0)
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0)
 
 Incompressible variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations.
 
@@ -10,6 +10,7 @@ Incompressible variant of the SIMPLE algorithm to solving coupled momentum and m
 
 - `model` reference to a `Physics` model defined by the user.
 - `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
+- `output` select the format used for simulation results from `VTK()` or `OpenFOAM` (default = `VTK()`)
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
@@ -26,11 +27,12 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 function simple!(
     model, config; 
-    pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
 
     residuals = setup_incompressible_solvers(
         SIMPLE, model, config; 
+        output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops
@@ -42,14 +44,14 @@ end
 # Setup for all incompressible algorithms
 function setup_incompressible_solvers(
     solver_variant, model, config; 
-    pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
     (; solvers, schemes, runtime, hardware) = config
 
     @info "Extracting configuration and input fields..."
 
-    (; U, p) = model.momentum
+    (; U, p, Uf, pf) = model.momentum
     mesh = model.domain
 
     @info "Pre-allocating fields..."
@@ -63,17 +65,21 @@ function setup_incompressible_solvers(
 
     @info "Defining models..."
 
+    # periodic = construct_periodic(mesh, hardware.backend, :top, :bottom)
+    # periodic_connect = Discretise.periodic_matrix_connectivity(mesh, periodic...)
+    # periodic_connect = Discretise.PeriodicConnectivity([],[])
+
     U_eqn = (
         Time{schemes.U.time}(U)
         + Divergence{schemes.U.divergence}(mdotf, U) 
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         == 
         - Source(∇p.result)
-    ) → VectorEquation(mesh)
+    ) → VectorEquation(U)
 
     p_eqn = (
         - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
-    ) → ScalarEquation(mesh)
+    ) → ScalarEquation(p)
 
     @info "Initialising preconditioners..."
 
@@ -93,6 +99,7 @@ function setup_incompressible_solvers(
 
     residuals  = solver_variant(
         model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
+        output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops)
@@ -102,11 +109,11 @@ end # end function
 
 function SIMPLE(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
     
     # Extract model variables and configuration
-    (; U, p) = model.momentum
+    (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
     mesh = model.domain
     # p_model = p_eqn.model
@@ -119,23 +126,35 @@ function SIMPLE(
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
-    @info "Initialise VTKWriter (Store mesh in host memory)"
+    @info "Initialise writer (Store mesh in host memory)"
 
-    VTKMeshData = initialise_writer(model.domain)
+    outputWriter = initialise_writer(output, model.domain)
     
     @info "Allocating working memory..."
 
     # Define aux fields 
     gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
-    Uf = FaceVectorField(mesh)
+    # Uf = FaceVectorField(mesh)
     S = StrainRate(gradU, gradUT, U, Uf)
 
     n_cells = length(mesh.cells)
-    pf = FaceScalarField(mesh)
+    # pf = FaceScalarField(mesh)
     # gradpf = FaceVectorField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
+
+    # Try to assign boundary conditions to rD for use with rDf
+    # periodic = construct_periodic(mesh, backend, :top, :bottom)
+    # rD = ScalarField(mesh)
+    # rD = assign(rD, 
+    #     Neumann(:inlet, 0.0),
+    #     Neumann(:outlet, 0.0),
+    #     Neumann(:bottom, 0.0),
+    #     Neumann(:top, 0.0),
+    #     Neumann(:plate, 0.0),
+    #     periodic...
+    # )
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
@@ -173,6 +192,7 @@ function SIMPLE(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
+        # correct_boundaries!(rDf, rD, rD.BCs, time, config) # ADDED FOR PERIODIC BCS
         remove_pressure_source!(U_eqn, ∇p, config)
         H!(Hv, U, U_eqn, config)
         
@@ -226,7 +246,6 @@ function SIMPLE(
         correct_boundaries!(Uf, U, U.BCs, time, config)
         flux!(mdotf, Uf, config)
         correct_mass_flux(mdotf, p, rDf, config)
-        # correct_mass_flux2(mdotf, p_eqn, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
         turbulence!(turbulenceModel, model, S, prev, time, config) 
@@ -252,7 +271,7 @@ function SIMPLE(
             finish!(progress)
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
-                model2vtk(model, VTKMeshData, @sprintf "iteration_%.6d" iteration)
+                save_output(model, outputWriter, time)
             end
             break
         end
@@ -269,7 +288,7 @@ function SIMPLE(
             )
 
         if iteration%write_interval + signbit(write_interval) == 0      
-            model2vtk(model, VTKMeshData, @sprintf "iteration_%.6d" iteration)
+            save_output(model, outputWriter, time)
         end
 
     end # end for loop
