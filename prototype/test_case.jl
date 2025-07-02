@@ -2,6 +2,23 @@
 using XCALibre
 using LinearAlgebra
 
+folder = "C:\\Users\04art\\Desktop\\XCAlibre\\XCALibre.jl\\XCALibre.jl\\examples\\testing_grids"
+isdir(folder)  # returns false
+
+f1 = isdir("C:/Users/04art/Desktop/XCAlibre/XCALibre.jl")
+isdir(f1)
+# examples/testing_grids
+# C:\Users\04art\Desktop\XCAlibre\XCALibre.jl\XCALibre.jl\examples\testing_grids
+
+
+function element_type_detector()
+    # Find number of edges using Euler's formula
+    # Match against known combination to identify element type
+
+end
+
+
+
 function tetra_checker()
     cell = mesh.cells[1]
 
@@ -267,15 +284,13 @@ function general_mesh_check(expected_volume)
     end
 end
 
+# grids_dir = pkgdir(XCALibre, "examples\\testing_grids")
 
-
-
-
-grids_dir = pkgdir(XCALibre, "examples/testing_grids")
-
-grid = "mesh_test.unv"
+# grid = "messy_3d.unv"
 
 mesh_file = joinpath(grids_dir, grid)
+println(mesh_file)
+# @info "Checking file existence" isfile("C:\\Users\\04art\\Desktop\\XCAlibre\\XCALibre.jl\\examples\\testing_grids\\messy_3d.unv")
 
 mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
