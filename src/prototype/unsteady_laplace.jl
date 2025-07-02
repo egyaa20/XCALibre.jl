@@ -6,12 +6,12 @@ using CUDA
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 # grid = "backwardFacingStep_10mm.unv"
-grid = "summer_2d_5x10.unv"
-# grid = "summer_3d_extruded_pipe.unv"
+# grid = "summer_2d_5x10.unv"
+grid = "summer_3d_extruded_pipe.unv"
 mesh_file = joinpath(grids_dir, grid)
 
-mesh = UNV2D_mesh(mesh_file, scale=0.001)
-# mesh = UNV3D_mesh(mesh_file, scale=0.001)
+# mesh = UNV2D_mesh(mesh_file, scale=0.001)
+mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
@@ -23,7 +23,7 @@ mesh_dev = adapt(backend, mesh)
 model = Physics(
     time = Transient(),
     medium = Solid{Uniform}(k = 16.2, rho = 7850.0, cp = 490.0), #add this
-    energy = Energy{LaplaceEnergy}(),
+    energy = Energy{PureDiffusion}(),
     domain = mesh_dev
     )
 

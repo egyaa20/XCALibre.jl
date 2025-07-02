@@ -125,7 +125,12 @@ function LAPLACE(
     # Define aux fields  
 
     n_cells = length(mesh.cells)
-    rDf = FaceScalarField(mesh)
+
+
+    rDf = FaceScalarField(mesh) #diffusivity on faces
+    ∇T = FaceScalarField(mesh) #face gradient for non-ortho correction
+
+
     TF = _get_float(mesh)
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
     R_T = ones(TF, iterations)
@@ -150,15 +155,14 @@ function LAPLACE(
         # non-orthogonal correction
         # for i ∈ 1:ncorrectors
         #     # @. prev = p.values
-        #     discretise!(p_eqn, p, config)       
-        #     apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
-        #     # setReference!(p_eqn, pref, 1, config)
-        #     nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-        #     # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-        #     rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
-        #     explicit_relaxation!(p, prev, solvers.p.relax, config)
-        #     grad!(∇p, pf, p, boundaries.p, time, config) 
-        #     limit_gradient!(schemes.p.limiter, ∇p, p, config)
+        #     discretise!(T_eqn, T, config)       
+        #     apply_boundary_conditions!(T_eqn, boundaries.T, nothing, time, config)
+        #     #set reference
+        #     nonorthogonal_face_correction(T_eqn, ∇T, rDf, config) #NEED TO DEFINE RDF!!!
+        #     rt = solve_system!(T_eqn, solvers, T, nothing, config)
+        #     explicit_relaxation!(T, prev, solvers.relax, config) #what is prev????
+        #     grad!(∇T, Tf, T, boundaries.T, time, config) 
+        #     limit_gradient!(schemes.limiter, ∇T, T, config) #what is this limiter thingy?
         # end
 
         R_T[iteration] = rt
