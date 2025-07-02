@@ -91,6 +91,33 @@ end
 
 
 
+#TRANSIENT VERSION OF LAPLACE SOLVER (LAPLACET)
+
+run!(
+    model::Physics{T,ME,M,Tu,E,D,BI}, config; 
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    ) where{T<:Transient,ME<:Uniform,M,Tu,E,D,BI} = 
+begin
+    residuals = laplacet!(
+        model, config, 
+        output=output,
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        inner_loops=inner_loops
+        )
+    return residuals
+end
+
+
+
+
+
+
+
+
+
+
+
 
 
 # Incompressible solver (steady)
