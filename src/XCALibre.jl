@@ -11,6 +11,9 @@ include("Multithread/Multithread.jl")
 include("Mesh/Mesh.jl")
 include("UNV2/UNV2.jl")
 include("UNV3/UNV3.jl")
+
+# include("MED/MED.jl")
+
 include("FoamMesh/FoamMesh.jl")
 include("Fields/Fields.jl")
 include("ModelFramework/ModelFramework.jl")
@@ -39,6 +42,7 @@ using Reexport
 @reexport using XCALibre.VTK
 @reexport using XCALibre.UNV3
 @reexport using XCALibre.UNV2
+# @reexport using XCALibre.MED
 
 using StaticArrays, LinearAlgebra, SparseMatricesCSR, SparseArrays, LinearOperators
 using ProgressMeter, Printf, Adapt

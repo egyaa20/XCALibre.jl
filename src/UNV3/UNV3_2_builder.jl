@@ -29,6 +29,17 @@ function UNV3D_mesh(unv_mesh; scale=1, integer_type=Int64, float_type=Float64)
             unv_mesh; scale=scale, integer=integer_type, float=float_type)
         println("File Read Successfully")
         println("Generating Mesh...")
+        println("11111 Mesh...")
+
+        @show typeof(points), length(points)
+        @show typeof(efaces), length(efaces)
+        @show typeof(cells_UNV), length(cells_UNV)
+        @show typeof(boundaryElements), length(boundaryElements)
+
+        println("── first 5 points ──")
+        for p in Iterators.take(points,5)
+            println(p)
+        end
 
         cell_nodes, cell_nodes_range = generate_cell_nodes(cells_UNV) # Should be Hybrid compatible, tested for hexa. Using push instead of allocating vector.
         node_cells, node_cells_range = generate_node_cells(points, cells_UNV)  # Should be Hybrid compatible, tested for hexa.
