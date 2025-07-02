@@ -112,7 +112,7 @@ function LAPLACET(
     mesh = model.domain
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
-    (; iterations, write_interval) = runtime
+    (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
 
     outputWriter = initialise_writer(output, model.domain)
@@ -134,10 +134,10 @@ function LAPLACET(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
-    for iteration ∈ 1:iterations
-        time = iteration
+    @time for iteration ∈ 1:iterations
+        time = iteration *dt
 
-        rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config)
+        rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
       
 
         # non-orthogonal correction
@@ -157,20 +157,20 @@ function LAPLACET(
         R_T[iteration] = rt
 
 
-        if R_T[iteration] <= solvers.convergence
-            progress.n = iteration
-            finish!(progress)
-            @info "Simulation converged in $iteration iterations!"
-            if !signbit(write_interval)
-                save_output(model, outputWriter, time, config)
-            end
+        # if R_T[iteration] <= solvers.convergence
+        #     progress.n = iteration
+        #     finish!(progress)
+        #     @info "Simulation converged in $iteration iterations!"
+        #     if !signbit(write_interval)
+        #         save_output(model, outputWriter, time, config)
+        #     end
             
-            break
-        end
+        #     break
+        # end
 
         ProgressMeter.next!(
             progress, showvalues = [
-                (:iter,iteration),
+                (:time, iteration*runtime.dt),
                 (:T_residual, R_T[iteration])
                 ]
             )

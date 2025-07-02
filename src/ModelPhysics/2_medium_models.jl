@@ -69,24 +69,39 @@ Uniform (constant k value) solid medium.
 ### Examples
 - `Solid{Uniform}(k=1.0)` - Constructor with default values.
 """
-@kwdef struct Uniform{S1, F1} <: AbstractSolid
-    k::S1
-    kf::F1
+@kwdef struct Uniform{S1,F1,S2,F2,S3,F3} <: AbstractSolid
+  k   :: S1 
+  kf  :: F1
+  rho :: S2
+  rhof:: F2
+  cp  :: S3
+  cpf :: F3
 end
 Adapt.@adapt_structure Uniform
 
-Solid{Uniform}(; k=16.2) = begin #W/(m*K) <> NEED TO VARY AS FUNCTION OF TEMPERATURE LATER IN THE SOLVER
-    coeffs = (k=k, )
+
+#k::Float64, rho::Float64=1000.0, cp::Float64=4184.0 returns error
+#Solid{Uniform}(; k, rho=1000.0, cp=4184.0) = begin
+Solid{Uniform}(; k::Float64, rho::Float64=1000.0, cp::Float64=4184.0) = begin
+    coeffs = (k=k, rho=rho, cp=cp)
     ARG = typeof(coeffs)
     Solid{Uniform,ARG}(coeffs)
 end
 
 (solid::Solid{Uniform, ARG})(mesh) where ARG = begin
     coeffs = solid.args
-    (; k) = coeffs
+    (; k, rho, cp) = coeffs
+
     k = ConstantScalar(k)
     kf = k
-    Uniform(k, kf)
+
+    rho = ConstantScalar(rho)
+    rhof = rho
+    
+    cp = ConstantScalar(cp)
+    cpf = cp
+
+    Uniform(k, kf, rho, rhof, cp, cpf)
 end
 
 
