@@ -8,7 +8,7 @@ Adapt.@adapt_structure LaplaceEnergy
 
 # Energy API constructor: allow `Energy{LaplaceEnergy}()`
 
-Energy{LaplaceEnergy}() = Energy{LaplaceEnergy,Nothing}(nothing)
+# Energy{LaplaceEnergy}() = Energy{LaplaceEnergy,Nothing}(nothing)
 
 
 Energy{LaplaceEnergy}() = begin

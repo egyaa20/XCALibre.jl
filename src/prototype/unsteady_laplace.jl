@@ -6,8 +6,8 @@ using CUDA
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 # grid = "backwardFacingStep_10mm.unv"
-# grid = "summer_2d_5x10.unv"
-grid = "summer_3d_extruded_pipe.unv"
+grid = "summer_2d_5x10.unv"
+# grid = "summer_3d_extruded_pipe.unv"
 mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file, scale=0.001)
@@ -33,7 +33,7 @@ BCs = assign(
         T = [     
             Dirichlet(:inlet, 500),
             Zerogradient(:outlet),    
-            Zerogradient(:walls)      
+            Dirichlet(:walls, 50)      
         ],
     )
 )
@@ -56,7 +56,7 @@ schemes = (
 
 
 runtime = Runtime(
-    iterations=100, write_interval=1, time_step=0.1) #0.1 * 100 = 10 sec
+    iterations=10, write_interval=1, time_step=0.1) #0.1 * 100 = 10 sec
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
