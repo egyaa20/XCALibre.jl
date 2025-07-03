@@ -6,12 +6,12 @@ using CUDA
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 # grid = "backwardFacingStep_10mm.unv"
-# grid = "summer_2d_5x10.unv"
-grid = "summer_3d_extruded_pipe.unv"
+grid = "summer_2d_5x10.unv"
+# grid = "summer_3d_extruded_pipe.unv"
 mesh_file = joinpath(grids_dir, grid)
 
-# mesh = UNV2D_mesh(mesh_file, scale=0.001)
-mesh = UNV3D_mesh(mesh_file, scale=0.001)
+mesh = UNV2D_mesh(mesh_file, scale=0.001)
+# mesh = UNV3D_mesh(mesh_file, scale=0.001)
 
 backend = CPU(); workgroup = 1024; activate_multithread(backend)
 
@@ -33,7 +33,8 @@ BCs = assign(
         T = [     
             Dirichlet(:inlet, 250),
             Zerogradient(:outlet),    
-            Dirichlet(:walls, 50)      
+            Zerogradient(:walls)
+            # Dirichlet(:walls, 50)      
         ],
     )
 )
@@ -63,6 +64,6 @@ config = Configuration(
 
 GC.gc(true)
 
-initialise!(model.energy.T, 10.0)
+initialise!(model.energy.T, 100.0)
 
 residuals = run!(model, config)

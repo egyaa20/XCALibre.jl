@@ -35,7 +35,7 @@ function laplace!( #HOW ABOUT PASSING k value?
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
 
-    residuals = setup_laplace_solvers(
+    residuals = setup_laplace_solver(
         LAPLACE, model, config;
         output=output,
         pref=pref, 
@@ -47,31 +47,33 @@ function laplace!( #HOW ABOUT PASSING k value?
 end
 
 # Setup for all incompressible algorithms
-function setup_laplace_solvers(
+function setup_laplace_solver(
     solver_variant, model, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
 
+    (; T, Tf, rDf) = model.energy
+
     # (; T, Tf) = model.energy
     mesh = model.domain
 
-    rDf = FaceScalarField(mesh) #model.medium.k.values returns 16.2
+    # rDf = FaceScalarField(mesh) #model.medium.k.values returns 16.2
     k_val = model.medium.k.values
     initialise!(rDf, 1.0/k_val)
     
     zero_field = ScalarField(mesh) #0.0 field
-    T_field = model.energy.T #initialised temp field
+    # T_field = model.energy.T #initialised temp field
 
     @info "Defining models..."
 
 
     T_eqn = (
-        - Laplacian{schemes.laplacian}(rDf, T_field) #k field faces, T field centres
+        - Laplacian{schemes.laplacian}(rDf, T) #k field faces, T field centres
         ==
         - Source(zero_field) # do I need the -ve ??
-    ) → ScalarEquation(T_field, boundaries.T)
+    ) → ScalarEquation(T, boundaries.T)
 
     @info "Initialising preconditioners..."
 
@@ -109,7 +111,7 @@ function LAPLACE(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
     
-    (; T, Tf) = model.energy
+    (; T, Tf, rDf) = model.energy
     interpolate!(Tf, T, config)   
     
     mesh = model.domain
@@ -127,7 +129,7 @@ function LAPLACE(
     n_cells = length(mesh.cells)
 
 
-    rDf = FaceScalarField(mesh) #diffusivity on faces
+    # rDf = FaceScalarField(mesh) #diffusivity on faces
     ∇T = FaceScalarField(mesh) #face gradient for non-ortho correction
 
 
@@ -149,6 +151,7 @@ function LAPLACE(
         time = iteration
         # println(time)
 
+        println(rDf.values)
         rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config)
       
 

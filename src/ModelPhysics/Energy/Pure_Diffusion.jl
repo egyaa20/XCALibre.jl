@@ -1,8 +1,9 @@
 export PureDiffusion
 
-struct PureDiffusion{S1,F1} <: AbstractEnergyModel
+struct PureDiffusion{S1,F1,F2} <: AbstractEnergyModel
     T::S1
     Tf::F1
+    rDf::F2            
 end
 Adapt.@adapt_structure PureDiffusion
 
@@ -20,7 +21,8 @@ end
 (energy::Energy{EnergyModel, ARG})(mesh, medium) where {EnergyModel<:PureDiffusion,ARG} = begin
     T  = ScalarField(mesh)
     Tf = FaceScalarField(mesh)
-    PureDiffusion(T, Tf)
+    rDf = FaceScalarField(mesh)
+    PureDiffusion(T, Tf, rDf)
 end
 
 

@@ -35,7 +35,7 @@ function laplacet!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
 
-    residuals = setup_laplace_solvers(
+    residuals = setup_transient_laplace_solver(
         LAPLACET, model, config;
         output=output,
         pref=pref, 
@@ -47,14 +47,14 @@ function laplacet!(
 end
 
 # Setup for all incompressible algorithms
-function setup_laplace_solvers(
+function setup_transient_laplace_solver(
     solver_variant, model, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
 
-    (; T, Tf, rDf, rhocp, rho, material) = model.energy
+    (; T, Tf, rDf, rhocp, k, kf, cp, rho, material) = model.energy
 
     mesh = model.domain
 
@@ -81,7 +81,7 @@ function setup_laplace_solvers(
         Time{schemes.time}(rhocp, T)
         - Laplacian{schemes.laplacian}(rDf, T) #keep in mind those are not initialised
         ==
-        Source(zero_field)
+        - Source(zero_field)
     ) → ScalarEquation(T, boundaries.T)
 
     @info "Initialising preconditioners..."
@@ -93,7 +93,7 @@ function setup_laplace_solvers(
     @reset T_eqn.solver = _workspace(solvers.solver, _b(T_eqn))
 
     @info "Initialising energy model..."
-    energyModel = initialise(model.energy, model, T, rDf, rhocp, rho, material, config) # think about compatability logic
+    energyModel = initialise(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config) # think about compatability logic
 
     residuals  = solver_variant(
         model, energyModel, T_eqn, config; 
@@ -110,7 +110,7 @@ function LAPLACET(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
     
-    (; T, Tf, rDf, rhocp, rho, material) = model.energy
+    (; T, Tf, rDf, rhocp, k, kf, cp, rho, material) = model.energy
 
     interpolate!(Tf, T, config)   
 
@@ -145,9 +145,14 @@ function LAPLACET(
     @time for iteration ∈ 1:iterations
         time = iteration *dt
 
+        # println(rDf.values)
+
         rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
 
-        energy!(model.energy, model, T, rDf, rhocp, rho, material, config) # does nothing for diffusion energy model
+        # println(rDf.values)
+        # println(rhocp.values)
+
+        energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config) # does nothing for diffusion energy model
 
         # non-orthogonal correction
         # for i ∈ 1:ncorrectors
