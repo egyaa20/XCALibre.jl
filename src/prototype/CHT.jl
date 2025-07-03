@@ -52,6 +52,17 @@ BCs = assign(
     )
 )
 
+
+
+
+
+# TBD: interfacing BC
+# TBD: allow LAPLACET and SIMPLE/PISO for coupling
+# TBD: scalable multiphysics solver (calls LAPLACET, PISO, exchanges data over the interface)
+
+
+
+
 interface12 = 1
 
 mp = MultiPhysics(
