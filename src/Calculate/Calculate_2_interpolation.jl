@@ -1,5 +1,7 @@
 # export correct_boundaries!
 export interpolate!
+export interpolate_harmonic!          # ← the only export here
+
 
 # Temporary functions to extract boundary array
 function to_cpu(boundaries::AbstractArray)

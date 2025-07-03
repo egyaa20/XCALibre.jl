@@ -54,17 +54,18 @@ function setup_laplace_solvers(
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
 
+    (; T, Tf, rDf, rhocp, rho, material) = model.energy
+
     mesh = model.domain
 
-    rDf = FaceScalarField(mesh)
+    # rDf = FaceScalarField(mesh)
     
     # k_field = ScalarField(mesh) # do I need this? e.g. inverse of rD
     # cp_field = ScalarField(mesh) # do I need this?
 
-    rhocp_field = ScalarField(mesh)
-
-    rho_val = model.medium.rho.values
-    material = model.energy.material
+    # rhocp_field = ScalarField(mesh)
+    # rho_val = model.energy.rho
+    # material = model.energy.material
 
     # rhocp = rho_val * cp_val
 
@@ -72,16 +73,16 @@ function setup_laplace_solvers(
     # initialise!(rhocp_field, rhocp)
     
     zero_field = ScalarField(mesh)
-    T_field = model.energy.T
+    # T_field = model.energy.T
 
     @info "Defining models..."
 
     T_eqn = (
-        Time{schemes.time}(rhocp_field, T_field)
-        - Laplacian{schemes.laplacian}(rDf, T_field) #keep in mind those are not initialised
+        Time{schemes.time}(rhocp, T)
+        - Laplacian{schemes.laplacian}(rDf, T) #keep in mind those are not initialised
         ==
         Source(zero_field)
-    ) → ScalarEquation(T_field, boundaries.T)
+    ) → ScalarEquation(T, boundaries.T)
 
     @info "Initialising preconditioners..."
 
@@ -92,7 +93,7 @@ function setup_laplace_solvers(
     @reset T_eqn.solver = _workspace(solvers.solver, _b(T_eqn))
 
     @info "Initialising energy model..."
-    energyModel = initialise(model.energy, model, T_field, rDf, rhocp_field, rho_val, material, config) # think about compatability logic
+    energyModel = initialise(model.energy, model, T, rDf, rhocp, rho, material, config) # think about compatability logic
 
     residuals  = solver_variant(
         model, energyModel, T_eqn, config; 
@@ -109,8 +110,12 @@ function LAPLACET(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
     
-    (; T, Tf) = model.energy
+    (; T, Tf, rDf, rhocp, rho, material) = model.energy
+
     interpolate!(Tf, T, config)   
+
+    # rho = model.energy.rho.values
+    # material = model.energy.material
     
     mesh = model.domain
 
@@ -125,7 +130,7 @@ function LAPLACET(
     # Define aux fields  
 
     n_cells = length(mesh.cells)
-    rDf = FaceScalarField(mesh)
+    # rDf = FaceScalarField(mesh)
     TF = _get_float(mesh)
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
     R_T = ones(TF, iterations)
@@ -141,7 +146,8 @@ function LAPLACET(
         time = iteration *dt
 
         rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
-        energy!(energyModel, model, prev, mdotf, rho, mueff, time, config) # does nothing for diffusion energy model
+
+        energy!(model.energy, model, T, rDf, rhocp, rho, material, config) # does nothing for diffusion energy model
 
         # non-orthogonal correction
         # for i ∈ 1:ncorrectors

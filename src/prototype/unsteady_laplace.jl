@@ -22,7 +22,7 @@ mesh_dev = adapt(backend, mesh)
 
 model = Physics(
     time = Transient(),
-    medium = Solid{Uniform}(k = 16.2, rho = 7850.0, cp = 490.0), #add this
+    medium = Solid{Uniform}(k = 16.2), #add this
     energy = Energy{CryogenicConduction}(material = :Aluminium, rho = 8000.0),
     domain = mesh_dev
     )
@@ -31,7 +31,7 @@ BCs = assign(
     region = mesh_dev,
     (
         T = [     
-            Dirichlet(:inlet, 500),
+            Dirichlet(:inlet, 250),
             Zerogradient(:outlet),    
             Dirichlet(:walls, 50)      
         ],

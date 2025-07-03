@@ -39,25 +39,24 @@ const CP_COEFFS = Dict{Symbol,NTuple{9,Float64}}(
 )
 
 
-function get_coefficients(material::Symbol, T::Float64)
+function get_coefficients(material::Symbol, T_field::ScalarField)
     @assert haskey(K_COEFFS, material) "Unknown material: $material"
     @assert haskey(CP_COEFFS, material) "Unknown material: $material"
 
-    logT      = log10(T)
+    logT = log10.(T_field.values)
     k_coeffs  = K_COEFFS[material]
     cp_coeffs = CP_COEFFS[material]
 
-    
-    k_log10 = k_coeffs[1] + k_coeffs[2]*logT + k_coeffs[3]*logT^2 +
-              k_coeffs[4]*logT^3 + k_coeffs[5]*logT^4 + k_coeffs[6]*logT^5 +
-              k_coeffs[7]*logT^6 + k_coeffs[8]*logT^7 + k_coeffs[9]*logT^8
+    k_log10 = k_coeffs[1] .+ k_coeffs[2] .* logT .+ k_coeffs[3] .* logT.^2 .+
+              k_coeffs[4] .* logT.^3 .+ k_coeffs[5] .* logT.^4 .+ k_coeffs[6] .* logT.^5 .+
+              k_coeffs[7] .* logT.^6 .+ k_coeffs[8] .* logT.^7 .+ k_coeffs[9] .* logT.^8
 
-    cp_log10 = cp_coeffs[1] + cp_coeffs[2]*logT + cp_coeffs[3]*logT^2 +
-               cp_coeffs[4]*logT^3 + cp_coeffs[5]*logT^4 + cp_coeffs[6]*logT^5 +
-               cp_coeffs[7]*logT^6 + cp_coeffs[8]*logT^7 + cp_coeffs[9]*logT^8
+    cp_log10 = cp_coeffs[1] .+ cp_coeffs[2] .* logT .+ cp_coeffs[3] .* logT.^2 .+
+               cp_coeffs[4] .* logT.^3 .+ cp_coeffs[5] .* logT.^4 .+ cp_coeffs[6] .* logT.^5 .+
+               cp_coeffs[7] .* logT.^6 .+ cp_coeffs[8] .* logT.^7 .+ cp_coeffs[9] .* logT.^8
 
-    k  = 10.0 ^ k_log10
-    cp = 10.0 ^ cp_log10
+    k = 10.0 .^ k_log10
+    cp = 10.0 .^ cp_log10
 
     return k, cp
 end
