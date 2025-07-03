@@ -93,7 +93,7 @@ function setup_transient_laplace_solver(
     @reset T_eqn.solver = _workspace(solvers.solver, _b(T_eqn))
 
     @info "Initialising energy model..."
-    energyModel = initialise(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config) # think about compatability logic
+    energyModel = initialise(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config) # maybe just pass energy.model???
 
     residuals  = solver_variant(
         model, energyModel, T_eqn, config; 

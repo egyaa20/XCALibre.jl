@@ -63,11 +63,11 @@ BCs = assign(
 
 
 
-interface12 = 1
+interface12 = 1 #Dummy interface 
 
 mp = MultiPhysics(
-  Coupling1 = Coupling(model1, model2, interface12)
-#   Coupling2 = Coupling(model3, model4, interface34),
+    Coupling1 = Coupling(solid_model, fluid_model, interface12)
+#   Coupling2 = Coupling(fluid_model, solid_model_2, interface23),
 )
 
 
