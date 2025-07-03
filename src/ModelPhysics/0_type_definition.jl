@@ -4,6 +4,25 @@ export Momentum
 export AbstractTimeModel
 export Transient, Steady
 
+export MultiPhysics, Coupling
+
+
+
+struct Coupling{P1<:Physics,P2<:Physics,B}
+  physics1::P1
+  physics2::P2
+  interface::B
+end
+Adapt.@adapt_structure Coupling
+
+
+struct MultiPhysics{C<:NamedTuple}
+  couplings::C
+end
+Adapt.@adapt_structure MultiPhysics
+
+
+
 """
     struct Physics{T,F,M,Tu,E,D,BI}
         time::T
