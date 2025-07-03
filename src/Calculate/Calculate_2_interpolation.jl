@@ -35,6 +35,69 @@ end
 #     end
 # end
 
+
+
+
+
+
+
+## HARMONIC INTERPOLATION
+
+function interpolate_harmonic!(phif::FaceScalarField, phi::ScalarField, config)
+    # Extract values arrays from scalar fields 
+    vals = phi.values
+    fvals = phif.values
+
+    # Extract faces from mesh
+    mesh = phif.mesh
+    (; cells, faces) = mesh
+
+    # Launch interpolate kernel
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    ndrange = length(faces)
+    kernel! = interpolate_harmonic_Scalar!(_setup(backend, workgroup, ndrange)...)
+    kernel!(fvals, vals, cells, faces)
+    # # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function interpolate_harmonic_Scalar!(fvals, vals, cells, faces)
+    # Define index for thread
+    i = @index(Global)
+
+    @inbounds begin
+        # Deconstruct faces to use weight and ownerCells in calculations
+        face = faces[i]
+        (; weight, ownerCells, normal) = face
+        F = face.centre
+
+        # Calculate initial values based on index queried from ownerCells
+        owner1 = ownerCells[1]
+        owner2 = ownerCells[2]
+        phi1 = vals[owner1]
+        phi2 = vals[owner2]
+
+        # one_minus_weight = 1.0 - weight
+        
+        fvals[i] = 2*((phi1*phi2)/(phi1+phi2))
+    end
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## SCALAR INTERPOLATION
 
 function interpolate!(phif::FaceScalarField, phi::ScalarField, config)

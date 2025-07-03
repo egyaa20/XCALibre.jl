@@ -1,3 +1,5 @@
+export get_coefficients
+
 # Only Aluminium, Steel, and Copper are supported (copper is dodgy)
 
 

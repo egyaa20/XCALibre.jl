@@ -23,7 +23,7 @@ mesh_dev = adapt(backend, mesh)
 model = Physics(
     time = Transient(),
     medium = Solid{Uniform}(k = 16.2, rho = 7850.0, cp = 490.0), #add this
-    energy = Energy{PureDiffusion}(),
+    energy = Energy{CryogenicConduction}(material = :Aluminium, rho = 8000.0),
     domain = mesh_dev
     )
 

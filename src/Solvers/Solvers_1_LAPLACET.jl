@@ -57,26 +57,28 @@ function setup_laplace_solvers(
     mesh = model.domain
 
     rDf = FaceScalarField(mesh)
+    
+    # k_field = ScalarField(mesh) # do I need this? e.g. inverse of rD
+    # cp_field = ScalarField(mesh) # do I need this?
+
     rhocp_field = ScalarField(mesh)
 
-    k_val = model.medium.k.values
     rho_val = model.medium.rho.values
-    cp_val = model.medium.cp.values
+    material = model.energy.material
 
-    rhocp = rho_val * cp_val
+    # rhocp = rho_val * cp_val
 
-    initialise!(rDf, 1.0/k_val)
-    initialise!(rhocp_field, rhocp)
+    # initialise!(rDf, 1.0/k_val)
+    # initialise!(rhocp_field, rhocp)
     
     zero_field = ScalarField(mesh)
     T_field = model.energy.T
 
     @info "Defining models..."
 
-
     T_eqn = (
         Time{schemes.time}(rhocp_field, T_field)
-        - Laplacian{schemes.laplacian}(rDf, T_field)
+        - Laplacian{schemes.laplacian}(rDf, T_field) #keep in mind those are not initialised
         ==
         Source(zero_field)
     ) → ScalarEquation(T_field, boundaries.T)
@@ -89,10 +91,11 @@ function setup_laplace_solvers(
 
     @reset T_eqn.solver = _workspace(solvers.solver, _b(T_eqn))
 
-    @info "Initialising turbulence model... [NO NEED]"
+    @info "Initialising energy model..."
+    energyModel = initialise(model.energy, model, T_field, rDf, rhocp_field, rho_val, material, config) # think about compatability logic
 
     residuals  = solver_variant(
-        model, T_eqn, config; 
+        model, energyModel, T_eqn, config; 
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
@@ -102,7 +105,7 @@ function setup_laplace_solvers(
 end
 
 function LAPLACET(
-    model, T_eqn, config; 
+    model, energyModel, T_eqn, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
     
@@ -138,7 +141,7 @@ function LAPLACET(
         time = iteration *dt
 
         rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
-      
+        energy!(energyModel, model, prev, mdotf, rho, mueff, time, config) # does nothing for diffusion energy model
 
         # non-orthogonal correction
         # for i ∈ 1:ncorrectors

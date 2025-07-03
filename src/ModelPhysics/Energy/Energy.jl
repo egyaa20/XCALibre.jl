@@ -22,6 +22,11 @@ include("Sensible_Enthalpy.jl")
 include("Pure_Diffusion.jl")
 include("Cryogenic_Conduction.jl")
 
+
+# Property Models
+include("PropertyModels/Cryogenic_metals_properties.jl")
+
+
 export initialise, energy!
 
 # end # end module
