@@ -19,8 +19,8 @@ nu = 1e-3
 Re = velocity[1]*0.1/nu
 
 model = Physics(
-    time = Steady(),
-    fluid = Fluid{Incompressible}(nu = nu),
+    time = Transient(),
+    medium = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
@@ -70,7 +70,7 @@ solvers = (
         preconditioner = Jacobi(), # ILU0GPU, Jacobi, DILU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 0.2,
         rtol = 1e-2
     ),
     p = SolverSetup(
@@ -78,7 +78,7 @@ solvers = (
         preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
         convergence = 1e-7,
-        relax       = 0.2,
+        relax       = 0.1,
         rtol = 1e-3
     )
 )

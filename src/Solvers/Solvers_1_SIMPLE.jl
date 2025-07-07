@@ -112,7 +112,7 @@ function SIMPLE(
     
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum # cell center and face values
-    (; nu) = model.fluid
+    (; nu) = model.medium
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval) = runtime
