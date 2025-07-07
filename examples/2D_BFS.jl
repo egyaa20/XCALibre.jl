@@ -20,7 +20,7 @@ Re = velocity[1]*0.1/nu
 
 model = Physics(
     time = Steady(),
-    fluid = Fluid{Incompressible}(nu = nu),
+    medium = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev

@@ -47,7 +47,16 @@ function setup_incompressible_solvers(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
+
     (; solvers, schemes, runtime, hardware, boundaries) = config
+
+
+    (; nu) = model.medium
+    (; iterations, write_interval) = runtime
+    (; backend) = hardware
+
+
+
 
     @info "Extracting configuration and input fields..."
 
@@ -95,28 +104,11 @@ function setup_incompressible_solvers(
     @info "Initialising turbulence model..."
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
-    residuals  = solver_variant(
-        model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-        output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops)
 
-    return residuals
-end # end function
+    # NEW INITIALISATION LOGIC
 
-function SIMPLE(
-    model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-    )
-    
-    # Extract model variables and configuration
-    (; U, p, Uf, pf) = model.momentum # cell center and face values
-    (; nu) = model.fluid
-    mesh = model.domain
-    (; solvers, schemes, runtime, hardware, boundaries) = config
-    (; iterations, write_interval) = runtime
-    (; backend) = hardware
+
+
     
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
@@ -159,11 +151,89 @@ function SIMPLE(
 
     update_nueff!(nueff, nu, model.turbulence, config)
 
+
+
+
+    xdir, ydir, zdir = XDir(), YDir(), ZDir()
+
+    # .
+
+
+    residuals  = solver_variant(
+        model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
+        output=output,
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        inner_loops=inner_loops,
+        mdotf, nueff, rDf, divHv, S, Hv, rD, prev, time,
+        R_p, R_ux, R_uy, R_uz,
+        xdir, ydir, zdir, outputWriter)
+
+    return residuals
+end # end function
+
+function SIMPLE(
+    model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
+    mdotf, nueff, rDf, divHv, S, Hv, rD, prev, time,
+    R_p, R_ux, R_uy, R_uz,
+    xdir, ydir, zdir, outputWriter
+    )
+    
+    # Extract model variables and configuration
+    (; U, p, Uf, pf) = model.momentum # cell center and face values
+    (; nu) = model.medium
+    mesh = model.domain
+    (; solvers, schemes, runtime, hardware, boundaries) = config
+    (; iterations, write_interval) = runtime
+    (; backend) = hardware
+    
+    # mdotf = get_flux(U_eqn, 2)
+    # nueff = get_flux(U_eqn, 3)
+    # rDf = get_flux(p_eqn, 1)
+    # divHv = get_source(p_eqn, 1)
+
+    # outputWriter = initialise_writer(output, model.domain)
+    
+    # @info "Allocating working memory..."
+
+    # # Define aux fields 
+    # gradU = Grad{schemes.U.gradient}(U)
+    # gradUT = T(gradU)
+    # S = StrainRate(gradU, gradUT, U, Uf)
+
+    # n_cells = length(mesh.cells)
+    # Hv = VectorField(mesh)
+    # rD = ScalarField(mesh)
+
+    # # Pre-allocate auxiliary variables
+    # TF = _get_float(mesh)
+    # # prev = zeros(TF, n_cells)
+    # # prev = _convert_array!(prev, backend) 
+    # prev = KernelAbstractions.zeros(backend, TF, n_cells) 
+
+    # # Pre-allocate vectors to hold residuals 
+    # R_ux = ones(TF, iterations)
+    # R_uy = ones(TF, iterations)
+    # R_uz = ones(TF, iterations)
+    # R_p = ones(TF, iterations)
+    
+    # # Initial calculations
+    # time = zero(TF) # assuming time=0
+    # interpolate!(Uf, U, config)   
+    # correct_boundaries!(Uf, U, boundaries.U, time, config)
+    # flux!(mdotf, Uf, config)
+    # grad!(∇p, pf, p, boundaries.p, time, config)
+    # limit_gradient!(schemes.p.limiter, ∇p, p, config)
+
+
+    # update_nueff!(nueff, nu, model.turbulence, config)
+
     @info "Starting SIMPLE loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
-    xdir, ydir, zdir = XDir(), YDir(), ZDir()
+    # xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
     for iteration ∈ 1:iterations
         time = iteration
