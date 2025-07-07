@@ -80,7 +80,7 @@ end
 Adapt.@adapt_structure Uniform
 
 
-Solid{Uniform}(; k::Float64, rho::Float64=1000.0, cp::Float64=4184.0) = begin
+Solid{Uniform}(; k::Float64=10.0, rho::Float64=1000.0, cp::Float64=4184.0) = begin
     coeffs = (k=k, rho=rho, cp=cp)
     ARG = typeof(coeffs)
     Solid{Uniform,ARG}(coeffs)
