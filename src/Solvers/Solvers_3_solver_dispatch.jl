@@ -79,7 +79,7 @@ run!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) where{T<:Steady,ME<:Uniform,M,Tu,E,D,BI} = 
 begin
-    residuals = laplace!(
+    residuals = laplacet!(
         model, config, 
         output=output,
         pref=pref, 

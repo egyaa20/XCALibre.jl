@@ -30,6 +30,9 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 
+
+
+
 model = Physics(
     time = Steady(),
     medium = Solid{Uniform}(k = 16.2),
@@ -92,5 +95,8 @@ GC.gc(true)
 
 # T_field = ScalarField(mesh_dev)
 initialise!(model.energy.T, 100.0)
+
+# XCALibre.Solvers.laplacet!(model, config)
+
 
 residuals = run!(model, config)

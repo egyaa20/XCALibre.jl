@@ -54,9 +54,69 @@ function setup_transient_laplace_solver(
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
 
-    (; T, Tf, rDf, rhocp, k, kf, cp, rho, material) = model.energy
 
-    mesh = model.domain
+
+
+    # (; T, Tf, rDf, rhocp, k, kf, cp, rho, material) = model.energy
+
+    
+
+    if typeof(model.energy) <: CryogenicConduction
+        (; T, Tf, rDf, rhocp, k, kf, cp, rho, material) = model.energy
+    
+        zero_field = ScalarField(mesh)
+        # T_field = model.energy.T
+
+        @info "Defining models..."
+        @info "THIS IS UNSTEADY VERSION"
+
+        T_eqn = (
+            Time{schemes.time}(rhocp, T)
+            - Laplacian{schemes.laplacian}(rDf, T) #keep in mind those are not initialised
+            ==
+            - Source(zero_field)
+        ) → ScalarEquation(T, boundaries.T)
+    elseif typeof(model.energy) <: PureDiffusion
+        (; T, Tf, rDf) = model.energy
+
+        rDf = FaceScalarField(mesh) #model.medium.k.values returns 16.2
+        k_val = model.medium.k.values
+        initialise!(rDf, 1.0/k_val)
+        
+        zero_field = ScalarField(mesh) #0.0 field
+        T_field = model.energy.T #initialised temp field
+
+        @info "Defining models..."
+        @info "THIS IS STEADY VERSION"
+
+        T_eqn = (
+            - Laplacian{schemes.laplacian}(rDf, T_field) #k field faces, T field centres
+            ==
+            - Source(zero_field) # do I need the -ve ??
+        ) → ScalarEquation(T_field, boundaries.T)
+    end
+    
+
+
+    # mesh = model.domain
+
+    # rDf = FaceScalarField(mesh) #model.medium.k.values returns 16.2
+    # k_val = model.medium.k.values
+    # initialise!(rDf, 1.0/k_val)
+    
+    # zero_field = ScalarField(mesh) #0.0 field
+    # T_field = model.energy.T #initialised temp field
+
+    # @info "Defining models..."
+
+
+    # T_eqn = (
+    #     - Laplacian{schemes.laplacian}(rDf, T_field) #k field faces, T field centres
+    #     ==
+    #     - Source(zero_field) # do I need the -ve ??
+    # ) → ScalarEquation(T_field, boundaries.T)
+
+
 
     # rDf = FaceScalarField(mesh)
     
