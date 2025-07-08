@@ -48,7 +48,7 @@ function setup_unsteady_compressible_solvers(
     @info "Extracting configuration and input fields..."
 
     (; U, p, Uf, pf) = model.momentum
-    (; rho) = model.fluid
+    (; rho) = model.medium
     mesh = model.domain
 
     @info "Pre-allocating fields..."
@@ -84,7 +84,7 @@ function setup_unsteady_compressible_solvers(
         + Source(mueffgradUt)
     ) → VectorEquation(U, boundaries.U)
 
-    if typeof(model.fluid) <: WeaklyCompressible
+    if typeof(model.medium) <: WeaklyCompressible
         
         p_eqn = (
             Time{schemes.p.time}(psi, p)  # correction(fvm::ddt(p)) means d(p)/d(t) - d(pold)/d(t)
@@ -93,7 +93,7 @@ function setup_unsteady_compressible_solvers(
             - Source(divHv)
         ) → ScalarEquation(p, boundaries.p)
 
-    elseif typeof(model.fluid) <: Compressible
+    elseif typeof(model.medium) <: Compressible
 
         pconv = FaceScalarField(mesh)
 
@@ -139,7 +139,7 @@ function CPISO(
     
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
-    (; rho, rhof, nu) = model.fluid
+    (; rho, rhof, nu) = model.medium
     (; dpdt) = model.energy
     mesh = model.domain
     p_model = p_eqn.model
@@ -260,7 +260,7 @@ function CPISO(
             interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
             correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
-            if typeof(model.fluid) <: Compressible
+            if typeof(model.medium) <: Compressible
 
                 flux!(pconv, Uf, config)
                 @. pconv.values *= Psif.values
@@ -273,7 +273,7 @@ function CPISO(
                 @. mdotf.values -= mdotf.values*Psif.values*pf.values/rhof.values
                 div!(divHv, mdotf, config)
 
-            elseif typeof(model.fluid) <: WeaklyCompressible
+            elseif typeof(model.medium) <: WeaklyCompressible
 
                 @. corr = mdotf.values
                 flux!(mdotf, Uf, config)
@@ -313,11 +313,11 @@ function CPISO(
 
             # pgrad = face_normal_gradient(p, pf)
         
-            if typeof(model.fluid) <: Compressible
+            if typeof(model.medium) <: Compressible
                 # @. mdotf.values += (pconv.values*(pf.values) - pgrad.values*rhorDf.values)  
                 correct_mass_flux(mdotf, p, rhorDf, config)
                 @. mdotf.values += pconv.values*(pf.values)
-            elseif typeof(model.fluid) <: WeaklyCompressible
+            elseif typeof(model.medium) <: WeaklyCompressible
                 # @. mdotf.values -= pgrad.values*rhorDf.values
                 correct_mass_flux(mdotf, p, rhorDf, config)
             end

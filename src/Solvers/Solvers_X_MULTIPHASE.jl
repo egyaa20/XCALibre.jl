@@ -1,35 +1,15 @@
-export csimple!
+export multiphase!
 
-"""
-    csimple!(
-        model_in, config; 
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-    )
 
-Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport equation for the energy. 
 
-# Input arguments
+# Note: THIS IS A VERY ROUGH DRAFT!
 
-- `model` reference to a `Physics` model defined by the user.
-- `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
-- `output` select the format used for simulation results from `VTK()` or `OpenFOAM` (default = `VTK()`)
-- `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
-- `ncorrectors` number of non-orthogonality correction loops (default = `0`)
-- `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
 
-# Output
 
-- `Ux` Vector of x-velocity residuals for each iteration.
-- `Uy` Vector of y-velocity residuals for each iteration.
-- `Uz` Vector of y-velocity residuals for each iteration.
-- `p` Vector of pressure residuals for each iteration.
-- `e` Vector of energy residuals for each iteration.
+function multiphase!(model, config; output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0) 
 
-"""
-function csimple!(model, config; output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0) 
-
-    residuals = setup_compressible_solvers(
-        CSIMPLE, model, config; 
+    residuals = setup_multiphase_solver(
+        MULTIPHASE, model, config; 
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
@@ -39,7 +19,7 @@ function csimple!(model, config; output=VTK(), pref=nothing, ncorrectors=0, inne
 end
 
 # Setup for all compressible algorithms
-function setup_compressible_solvers(
+function setup_multiphase_solver(
     solver_variant, model, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) 
@@ -111,15 +91,34 @@ function setup_compressible_solvers(
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops, coupling=false)
+        inner_loops=inner_loops)
 
     return residuals    
 end # end function
 
-function CSIMPLE(
+function MULTIPHASE(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config ; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, coupling=false
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
+
+
+
+    # Draft Momentum Eqn
+    # Draft Energy Eqn
+    # Draft Volume Fraction Transport Eqn
+
+    # Where to put auxiliary computations like bubble departure etc???
+    
+
+
+
+
+
+
+
+
+
+
     
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
@@ -418,80 +417,3 @@ end
     mugradUTy[fID] = mueffi*(gradUi_projection[2] - trace)*area
     mugradUTz[fID] = mueffi*(gradUi_projection[3] - trace)*area
 end
-
-######
-# CHRIS: Can you please review to make sure it is a faithful reimplementation? Ta!
-######
-
-# function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScalarField, mugradUTz::FaceScalarField, mueff, gradU)
-#     mesh = mugradUTx.mesh
-#     (; faces, cells) = mesh
-#     nbfaces = length(mesh.boundary_cellsID) #boundary_faces(mesh)
-#     start_faceID = nbfaces + 1
-#     last_faceID = length(faces)
-#     for fID ∈ start_faceID:last_faceID
-#         face = faces[fID]
-#         (; area, normal, ownerCells, delta) = face 
-#         cID1 = ownerCells[1]
-#         cID2 = ownerCells[2]
-
-#         ## PREVIOUS IMPLEMENTATION
-        
-#         # gradUxxf = 0.5*(gradU.result.xx[cID1]+gradU.result.xx[cID2])
-#         # gradUxyf = 0.5*(gradU.result.xy[cID1]+gradU.result.xy[cID2])
-#         # gradUxzf = 0.5*(gradU.result.xz[cID1]+gradU.result.xz[cID2])
-#         # gradUyxf = 0.5*(gradU.result.yx[cID1]+gradU.result.yx[cID2])
-#         # gradUyyf = 0.5*(gradU.result.yy[cID1]+gradU.result.yy[cID2])
-#         # gradUyzf = 0.5*(gradU.result.yz[cID1]+gradU.result.yz[cID2])
-#         # gradUzxf = 0.5*(gradU.result.zx[cID1]+gradU.result.zx[cID2])
-#         # gradUzyf = 0.5*(gradU.result.zy[cID1]+gradU.result.zy[cID2])
-#         # gradUzzf = 0.5*(gradU.result.zz[cID1]+gradU.result.zz[cID2])
-        
-#         # mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-#         # mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-#         # mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-        
-#         ## NEW IMPLEMENTATION
-
-#         # gradUf = 0.5*(gradU[cID1] + gradU[cID2]) # should this be the transpose of gradU?
-#         # gradUf_projection = gradUf*normal
-#         # trace = 2/3*sum(diag(gradUf))
-#         # mueffi = mueff[fID]
-#         # mugradUTx[fID] = mueffi*(gradUf_projection[1] - trace)*area
-#         # mugradUTy[fID] = mueffi*(gradUf_projection[2] - trace)*area
-#         # mugradUTz[fID] = mueffi*(gradUf_projection[3] - trace)*area
-#     end
-    
-#     # Now deal with boundary faces
-#     for fID ∈ 1:nbfaces
-#         face = faces[fID]
-#         (; area, normal, ownerCells, delta) = face 
-#         cID1 = ownerCells[1]
-#         cID2 = ownerCells[2]
-        
-#         ## PREVIOUS IMPLEMENTATION
-
-#         # gradUxxf = (gradU.result.xx[cID1])
-#         # gradUxyf = (gradU.result.xy[cID1])
-#         # gradUxzf = (gradU.result.xz[cID1])
-#         # gradUyxf = (gradU.result.yx[cID1])
-#         # gradUyyf = (gradU.result.yy[cID1])
-#         # gradUyzf = (gradU.result.yz[cID1])
-#         # gradUzxf = (gradU.result.zx[cID1])
-#         # gradUzyf = (gradU.result.zy[cID1])
-#         # gradUzzf = (gradU.result.zz[cID1])
-#         # mugradUTx[fID] = mueff[fID] * (normal[1]*gradUxxf + normal[2]*gradUyxf + normal[3]*gradUzxf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-#         # mugradUTy[fID] = mueff[fID] * (normal[1]*gradUxyf + normal[2]*gradUyyf + normal[3]*gradUzyf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-#         # mugradUTz[fID] = mueff[fID] * (normal[1]*gradUxzf + normal[2]*gradUyzf + normal[3]*gradUzzf - 0.667 *(gradUxxf + gradUyyf + gradUzzf)) * area
-
-#         ## NEW IMPLEMENTATION
-
-#         # gradUi = gradU[cID1]
-#         # trace = 2/3*sum(diag(gradUi))
-#         # gradUi_projection = gradUi*normal
-#         # mueffi = mueff[fID]
-#         # mugradUTx[fID] = mueffi*(gradUi_projection[1] - trace)*area
-#         # mugradUTy[fID] = mueffi*(gradUi_projection[2] - trace)*area
-#         # mugradUTz[fID] = mueffi*(gradUi_projection[3] - trace)*area
-#     end
-# end 

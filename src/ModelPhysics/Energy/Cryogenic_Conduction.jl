@@ -78,10 +78,10 @@ function energy!(
     interpolate_harmonic!(kf, k, config)
 
     initialise!(rhocp_field, rho)
-    initialise!(rDf, 1.0) #
+    initialise!(rDf, 1.0)
 
-    @. rhocp_field.values *= cp.values #...
-    @. rDf.values *= (1.0/kf.values) #needs double checking later...
+    @. rhocp_field.values *= cp.values
+    @. rDf.values *= (1.0/kf.values)
 
     return nothing
 end

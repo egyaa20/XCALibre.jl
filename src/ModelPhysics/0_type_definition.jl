@@ -4,6 +4,9 @@ export Momentum
 export AbstractTimeModel
 export Transient, Steady
 
+export MultiPhysics, Coupling
+
+
 """
     struct Physics{T,F,M,Tu,E,D,BI}
         time::T
@@ -37,6 +40,24 @@ struct Physics{T,ME,M,Tu,E,D,BI}
     boundary_info::BI
 end 
 Adapt.@adapt_structure Physics
+
+
+
+struct Coupling{P1<:Physics,P2<:Physics,B1,B2} #this needs to be changed - very dodgy implementation...
+  physics1::P1
+  physics2::P2
+  interface1::B1
+  interface2::B2
+end
+Adapt.@adapt_structure Coupling
+
+
+struct MultiPhysics{C<:NamedTuple}
+  couplings::C
+end
+Adapt.@adapt_structure MultiPhysics
+
+
 
 abstract type AbstractTimeModel end
 

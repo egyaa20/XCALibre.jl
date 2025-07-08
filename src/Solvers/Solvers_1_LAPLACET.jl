@@ -1,4 +1,6 @@
 export laplacet!
+export LAPLACE
+export setup_transient_laplace_solver
 
 """
     simple!(model_in, config; 
@@ -40,7 +42,8 @@ function laplacet!(
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        inner_loops=inner_loops,
+        coupling=false
         )
 
     return residuals
@@ -49,7 +52,7 @@ end
 # Setup for all incompressible algorithms
 function setup_transient_laplace_solver(
     solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, coupling=false
     ) 
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -57,8 +60,6 @@ function setup_transient_laplace_solver(
     (; backend) = hardware
 
     mesh = model.domain
-
-
 
     # (; T, Tf, rDf, rhocp, k, kf, cp, rho, material) = model.energy
 
@@ -157,7 +158,7 @@ function setup_transient_laplace_solver(
 
     if typeof(model.energy) <: CryogenicConduction
         @info "Initialising energy model..."
-        energyModel = initialise(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config) # think about compatability logic
+        energyModel = initialise(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config)
     end
 
     # The part that was previously inside the solver
@@ -177,25 +178,35 @@ function setup_transient_laplace_solver(
 
     # ...
 
-    residuals  = solver_variant(
-        model, energyModel, T_eqn, config; 
-        output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops,
-        outputWriter, R_T, time)
+    if coupling==false #do this only if we don't couple
 
-    return residuals
+        residuals  = solver_variant(
+            model, energyModel, T_eqn, config; 
+            output=output,
+            pref=pref, 
+            ncorrectors=ncorrectors, 
+            inner_loops=inner_loops,
+            outputWriter, R_T, time, isCoupled=true)
+
+        return residuals
+    else
+        return T_eqn, outputWriter, R_T, time
+    end
 end
 
 function LAPLACET(
     model, energyModel, T_eqn, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
-    outputWriter, R_T, time
+    outputWriter, R_T, time, isCoupled
     )
     
+    println("Let's check if it's coupled.......")
+    println(isCoupled)
+
     (; T, Tf, rDf, rhocp, k, kf, cp, rho, material) = model.energy
 
+    println(Tf[1])
+    println(Tf.values)
     # interpolate!(Tf, T, config)   
 
     # rho = model.energy.rho.values
@@ -224,60 +235,51 @@ function LAPLACET(
 
     @info "Starting LAPLACE loops..."
 
-    progress = Progress(iterations; dt=1.0, showspeed=true)
-
-    @time for iteration ∈ 1:iterations
-        time = iteration *dt
-
-        # println(rDf.values)
+    if (isCoupled)
 
         rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
 
-        # println(rDf.values)
-        # println(rhocp.values)
-
         energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config) # does nothing for diffusion energy model
 
-        # non-orthogonal correction
-        # for i ∈ 1:ncorrectors
-        #     # @. prev = p.values
-        #     discretise!(p_eqn, p, config)       
-        #     apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
-        #     # setReference!(p_eqn, pref, 1, config)
-        #     nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-        #     # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-        #     rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
-        #     explicit_relaxation!(p, prev, solvers.p.relax, config)
-        #     grad!(∇p, pf, p, boundaries.p, time, config) 
-        #     limit_gradient!(schemes.p.limiter, ∇p, p, config)
-        # end
+        # R_T[iteration] = rt 
+        
+    else
+        progress = Progress(iterations; dt=1.0, showspeed=true)
 
-        R_T[iteration] = rt
+        @time for iteration ∈ 1:iterations
+            time = iteration *dt
+
+            rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
+
+            energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config) # does nothing for diffusion energy model
+
+            R_T[iteration] = rt
 
 
-        # if R_T[iteration] <= solvers.convergence
-        #     progress.n = iteration
-        #     finish!(progress)
-        #     @info "Simulation converged in $iteration iterations!"
-        #     if !signbit(write_interval)
-        #         save_output(model, outputWriter, time, config)
-        #     end
-            
-        #     break
-        # end
+            # if R_T[iteration] <= solvers.convergence
+            #     progress.n = iteration
+            #     finish!(progress)
+            #     @info "Simulation converged in $iteration iterations!"
+            #     if !signbit(write_interval)
+            #         save_output(model, outputWriter, time, config)
+            #     end
+                
+            #     break
+            # end
 
-        ProgressMeter.next!(
-            progress, showvalues = [
-                (:time, iteration*runtime.dt),
-                (:T_residual, R_T[iteration])
-                ]
-            )
+            ProgressMeter.next!(
+                progress, showvalues = [
+                    (:time, iteration*runtime.dt),
+                    (:T_residual, R_T[iteration])
+                    ]
+                )
 
-        if iteration%write_interval + signbit(write_interval) == 0      
-            save_output(model, outputWriter, time, config)
-        end
+            if iteration%write_interval + signbit(write_interval) == 0      
+                save_output(model, outputWriter, time, config)
+            end
 
-    end # end for loop
+        end # end for loop
+    end
     
     return (T=R_T)
 end

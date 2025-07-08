@@ -1,5 +1,22 @@
 export simple!
 
+mutable struct SolverAux{E}
+    mdotf::Any
+    nueff::Any
+    rDf::Any
+    divHv::Any
+    S::Any
+    Hv::Any
+    rD::Any
+    prev::Any
+    R_ux::Any
+    R_uy::Any
+    R_uz::Any
+    R_p::Any
+    time::Any
+    extras::E # A container for any number of extra, optional variables
+end
+
 """
     simple!(model_in, config; 
         output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0)
@@ -35,7 +52,8 @@ function simple!(
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        inner_loops=inner_loops,
+        coupling=false
         )
 
     return residuals
@@ -44,7 +62,7 @@ end
 # Setup for all incompressible algorithms
 function setup_incompressible_solvers(
     solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, coupling=false
     ) 
 
 
@@ -154,7 +172,46 @@ function setup_incompressible_solvers(
 
 
 
+
+
+
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
+
+    extra_vars = NamedTuple()
+
+    
+
+    # IF PISO
+    if typeof(model.time) <: Transient
+        Uf = FaceVectorField(mesh)
+        pf = FaceScalarField(mesh)
+        cellsCourant =adapt(backend, zeros(TF, length(mesh.cells)))
+
+        extra_vars = (
+            cellsCourant = cellsCourant,
+        )
+    end
+
+
+
+    # Instantiate the SolverAux struct with all the required variables.
+    aux = SolverAux(
+        mdotf,
+        nueff,
+        rDf,
+        divHv,
+        S,
+        Hv,
+        rD,
+        prev,
+        R_ux,
+        R_uy,
+        R_uz,
+        R_p,
+        time,
+        extra_vars
+    )
+
 
     # .
 
@@ -165,9 +222,8 @@ function setup_incompressible_solvers(
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops,
-        mdotf, nueff, rDf, divHv, S, Hv, rD, prev, time,
-        R_p, R_ux, R_uy, R_uz,
-        xdir, ydir, zdir, outputWriter)
+        aux=aux,
+        xdir, ydir, zdir, outputWriter, isCoupled=false)
 
     return residuals
 end # end function
@@ -175,11 +231,10 @@ end # end function
 function SIMPLE(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
-    mdotf, nueff, rDf, divHv, S, Hv, rD, prev, time,
-    R_p, R_ux, R_uy, R_uz,
-    xdir, ydir, zdir, outputWriter
+    aux,
+    xdir, ydir, zdir, outputWriter, isCoupled
     )
-    
+
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum # cell center and face values
     (; nu) = model.medium
@@ -229,122 +284,143 @@ function SIMPLE(
 
     # update_nueff!(nueff, nu, model.turbulence, config)
 
+
+    # @info "Starting LAPLACE loops..."
+
+    # if (isCoupled)
+    #     println("COUPLED!!!!")
+
+    #     rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
+
+    #     energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config) # does nothing for diffusion energy model
+
+    #     # R_T[iteration] = rt 
+        
+    # else
+    #     progress = Progress(iterations; dt=1.0, showspeed=true)
+
+
+
     @info "Starting SIMPLE loops..."
-
-    progress = Progress(iterations; dt=1.0, showspeed=true)
-
-    # xdir, ydir, zdir = XDir(), YDir(), ZDir()
-
-    for iteration ∈ 1:iterations
-        time = iteration
-
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
-        
-        # Pressure correction
-        inverse_diagonal!(rD, U_eqn, config)
-        interpolate!(rDf, rD, config)
-        # correct_boundaries!(rDf, rD, rD.BCs, time, config) # ADDED FOR PERIODIC BCS
-        remove_pressure_source!(U_eqn, ∇p, config)
-        H!(Hv, U, U_eqn, config)
-        
-        # Interpolate faces
-        interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
-        correct_boundaries!(Uf, Hv, boundaries.U, time, config)
-
-        # old approach
-        # div!(divHv, Uf, config) 
-
-        # new approach
-        flux!(mdotf, Uf, config)
-        div!(divHv, mdotf, config)
-        
-        # Pressure calculations
-        @. prev = p.values
-        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
-        explicit_relaxation!(p, prev, solvers.p.relax, config)
-        
-        grad!(∇p, pf, p, boundaries.p, time, config) 
-        limit_gradient!(schemes.p.limiter, ∇p, p, config)
-
-        # non-orthogonal correction
-        for i ∈ 1:ncorrectors
-            # @. prev = p.values
-            discretise!(p_eqn, p, config)       
-            apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
-            # setReference!(p_eqn, pref, 1, config)
-            nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-            # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-            rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
-            explicit_relaxation!(p, prev, solvers.p.relax, config)
-            grad!(∇p, pf, p, boundaries.p, time, config) 
-            limit_gradient!(schemes.p.limiter, ∇p, p, config)
-        end
-
-        # explicit_relaxation!(p, prev, solvers.p.relax, config)
-
-        # Velocity and boundaries correction
-
-        # old approach
-        # correct_velocity!(U, Hv, ∇p, rD, config)
-        # interpolate!(Uf, U, config)
-        # correct_boundaries!(Uf, U, boundaries.U, time, config)
-        # flux!(mdotf, Uf, config) 
-
-        # new approach
-
-        # 1. using velocity from momentum equation
-        # interpolate!(Uf, U, config)
-        # correct_boundaries!(Uf, U, boundaries.U, time, config)
-        # flux!(mdotf, Uf, config)
-        correct_mass_flux(mdotf, p, rDf, config)
-        correct_velocity!(U, Hv, ∇p, rD, config)
-
-        turbulence!(turbulenceModel, model, S, prev, time, config) 
-        update_nueff!(nueff, nu, model.turbulence, config)
-
-        R_ux[iteration] = rx
-        R_uy[iteration] = ry
-        R_uz[iteration] = rz
-        R_p[iteration] = rp
-
-        Uz_convergence = true
-        if typeof(mesh) <: Mesh3
-            Uz_convergence = rz <= solvers.U.convergence
-        end
-
-        if (R_ux[iteration] <= solvers.U.convergence && 
-            R_uy[iteration] <= solvers.U.convergence && 
-            Uz_convergence &&
-            R_p[iteration] <= solvers.p.convergence &&
-            turbulenceModel.state.converged)
-
-            progress.n = iteration
-            finish!(progress)
-            @info "Simulation converged in $iteration iterations!"
-            if !signbit(write_interval)
-                save_output(model, outputWriter, time, config)
-            end
-            break
-        end
-
-        ProgressMeter.next!(
-            progress, showvalues = [
-                (:iter,iteration),
-                (:Ux, R_ux[iteration]),
-                (:Uy, R_uy[iteration]),
-                (:Uz, R_uz[iteration]),
-                (:p, R_p[iteration]),
-                turbulenceModel.state.residuals...
-                ]
-            )
-
-        if iteration%write_interval + signbit(write_interval) == 0      
-            save_output(model, outputWriter, time, config)
-        end
-
-    end # end for loop
     
-    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
+    if (isCoupled)
+        println("COUPLED!!!!")
+    else
+        progress = Progress(iterations; dt=1.0, showspeed=true)
+
+        # xdir, ydir, zdir = XDir(), YDir(), ZDir()
+
+        for iteration ∈ 1:iterations
+            aux.time = iteration
+
+            rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
+            
+            # Pressure correction
+            inverse_diagonal!(aux.rD, U_eqn, config)
+            interpolate!(aux.rDf, aux.rD, config)
+            # correct_boundaries!(rDf, rD, rD.BCs, time, config) # ADDED FOR PERIODIC BCS
+            remove_pressure_source!(U_eqn, ∇p, config)
+            H!(aux.Hv, U, U_eqn, config)
+            
+            # Interpolate faces
+            interpolate!(Uf, aux.Hv, config) # Careful: reusing Uf for interpolation
+            correct_boundaries!(Uf, aux.Hv, boundaries.U, aux.time, config)
+
+            # old approach
+            # div!(divHv, Uf, config) 
+
+            # new approach
+            flux!(aux.mdotf, Uf, config)
+            div!(aux.divHv, aux.mdotf, config)
+            
+            # Pressure calculations
+            @. aux.prev = p.values
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
+            explicit_relaxation!(p, aux.prev, solvers.p.relax, config)
+            
+            grad!(∇p, pf, p, boundaries.p, aux.time, config)  #Leave time for test
+            limit_gradient!(schemes.p.limiter, ∇p, p, config)
+
+            # non-orthogonal correction
+            for i ∈ 1:ncorrectors
+                # @. prev = p.values
+                discretise!(p_eqn, p, config)       
+                apply_boundary_conditions!(p_eqn, boundaries.p, nothing, aux.time, config)
+                # setReference!(p_eqn, pref, 1, config)
+                nonorthogonal_face_correction(p_eqn, ∇p, aux.rDf, config)
+                # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+                rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
+                explicit_relaxation!(p, aux.prev, solvers.p.relax, config)
+                grad!(∇p, pf, p, boundaries.p, aux.time, config) 
+                limit_gradient!(schemes.p.limiter, ∇p, p, config)
+            end
+
+            # explicit_relaxation!(p, prev, solvers.p.relax, config)
+
+            # Velocity and boundaries correction
+
+            # old approach
+            # correct_velocity!(U, Hv, ∇p, rD, config)
+            # interpolate!(Uf, U, config)
+            # correct_boundaries!(Uf, U, boundaries.U, time, config)
+            # flux!(mdotf, Uf, config) 
+
+            # new approach
+
+            # 1. using velocity from momentum equation
+            # interpolate!(Uf, U, config)
+            # correct_boundaries!(Uf, U, boundaries.U, time, config)
+            # flux!(mdotf, Uf, config)
+            correct_mass_flux(aux.mdotf, p, aux.rDf, config)
+            correct_velocity!(U, aux.Hv, ∇p, aux.rD, config)
+
+            turbulence!(turbulenceModel, model, aux.S, aux.prev, aux.time, config) 
+            update_nueff!(aux.nueff, nu, model.turbulence, config)
+
+            aux.R_ux[iteration] = rx
+            aux.R_uy[iteration] = ry
+            aux.R_uz[iteration] = rz
+            aux.R_p[iteration] = rp
+
+            Uz_convergence = true
+            if typeof(mesh) <: Mesh3
+                Uz_convergence = rz <= solvers.U.convergence
+            end
+
+            if (aux.R_ux[iteration] <= solvers.U.convergence && 
+                aux.R_uy[iteration] <= solvers.U.convergence && 
+                Uz_convergence &&
+                aux.R_p[iteration] <= solvers.p.convergence &&
+                turbulenceModel.state.converged)
+
+                progress.n = iteration
+                finish!(progress)
+                @info "Simulation converged in $iteration iterations!"
+                if !signbit(write_interval)
+                    save_output(model, outputWriter, aux.time, config)
+                end
+                break
+            end
+
+            ProgressMeter.next!(
+                progress, showvalues = [
+                    (:iter,iteration),
+                    (:Ux, aux.R_ux[iteration]),
+                    (:Uy, aux.R_uy[iteration]),
+                    (:Uz, aux.R_uz[iteration]),
+                    (:p, aux.R_p[iteration]),
+                    turbulenceModel.state.residuals...
+                    ]
+                )
+
+            if iteration%write_interval + signbit(write_interval) == 0      
+                save_output(model, outputWriter, aux.time, config)
+            end
+
+        end # end for loop
+    end
+    
+    return (Ux=aux.R_ux, Uy=aux.R_uy, Uz=aux.R_uz, p=aux.R_p)
 end
 
 ### TEMP LOCATION FOR PROTOTYPING - NONORTHOGONAL CORRECTION 

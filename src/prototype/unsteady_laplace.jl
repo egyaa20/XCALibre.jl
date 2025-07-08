@@ -6,7 +6,8 @@ using CUDA
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 # grid = "backwardFacingStep_10mm.unv"
-grid = "summer_2d_5x10.unv"
+# grid = "summer_2d_5x10.unv"
+grid = "solid_mesh.unv"
 # grid = "summer_3d_extruded_pipe.unv"
 mesh_file = joinpath(grids_dir, grid)
 
@@ -31,8 +32,8 @@ BCs = assign(
     region = mesh_dev,
     (
         T = [     
-            Dirichlet(:inlet, 250),
-            Zerogradient(:outlet),    
+            Dirichlet(:interface, 250),
+            # Zerogradient(:outlet),    
             Zerogradient(:walls)
             # Dirichlet(:walls, 50)      
         ],

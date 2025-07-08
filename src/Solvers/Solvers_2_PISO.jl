@@ -31,7 +31,8 @@ function piso!(
         output=output,
         pref=pref,
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        inner_loops=inner_loops,
+        coupling=false
         )
         
     return residuals
@@ -39,118 +40,127 @@ end
 
 function PISO(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2,
+    aux,
+    xdir, ydir, zdir, outputWriter, isCoupled
     )
     
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
-    (; nu) = model.fluid
+    (; nu) = model.medium
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
-    
-    mdotf = get_flux(U_eqn, 2)
-    nueff = get_flux(U_eqn, 3)
-    rDf = get_flux(p_eqn, 1)
-    divHv = get_source(p_eqn, 1)
 
-    outputWriter = initialise_writer(output, model.domain)
+    # println(aux.extra_vars)
+    println(aux.extras)
+
     
-    @info "Allocating working memory..."
+    # mdotf = get_flux(U_eqn, 2)
+    # nueff = get_flux(U_eqn, 3)
+    # rDf = get_flux(p_eqn, 1)
+    # divHv = get_source(p_eqn, 1)
+
+    # outputWriter = initialise_writer(output, model.domain)
+    
+    # @info "Allocating working memory..."
 
     # Define aux fields 
-    gradU = Grad{schemes.U.gradient}(U)
-    gradUT = T(gradU)
-    Uf = FaceVectorField(mesh)
-    S = StrainRate(gradU, gradUT, U, Uf)
+    # gradU = Grad{schemes.U.gradient}(U)
+    # gradUT = T(gradU)
+    # Uf = FaceVectorField(mesh)
 
-    n_cells = length(mesh.cells)
-    pf = FaceScalarField(mesh)
-    Hv = VectorField(mesh)
-    rD = ScalarField(mesh)
+
+
+    # S = StrainRate(gradU, gradUT, U, Uf)
+
+    # n_cells = length(mesh.cells)
+    # pf = FaceScalarField(mesh)
+    # Hv = VectorField(mesh)
+    # rD = ScalarField(mesh)
 
     # Pre-allocate auxiliary variables
-    TF = _get_float(mesh)
-    TI = _get_int(mesh)
+    # TF = _get_float(mesh)
+    # TI = _get_int(mesh)
     # prev = zeros(TF, n_cells)
     # prev = _convert_array!(prev, backend) 
-    prev = KernelAbstractions.zeros(backend, TF, n_cells)
+    # prev = KernelAbstractions.zeros(backend, TF, n_cells)
 
     # Pre-allocate vectors to hold residuals 
-    R_ux = ones(TF, iterations)
-    R_uy = ones(TF, iterations)
-    R_uz = ones(TF, iterations)
-    R_p = ones(TF, iterations)
-    cellsCourant =adapt(backend, zeros(TF, length(mesh.cells)))
+    # R_ux = ones(TF, iterations)
+    # R_uy = ones(TF, iterations)
+    # R_uz = ones(TF, iterations)
+    # R_p = ones(TF, iterations)
+    # cellsCourant =adapt(backend, zeros(TF, length(mesh.cells)))
     
     # Initial calculations
-    time = zero(TF) # assuming time=0
-    interpolate!(Uf, U, config)   
-    correct_boundaries!(Uf, U, boundaries.U, time, config)
-    flux!(mdotf, Uf, config)
-    grad!(∇p, pf, p, boundaries.p, time, config)
-    limit_gradient!(schemes.p.limiter, ∇p, p, config)
+    # time = zero(TF) # assuming time=0
+    # interpolate!(Uf, U, config)   
+    # correct_boundaries!(Uf, U, boundaries.U, time, config)
+    # flux!(mdotf, Uf, config)
+    # grad!(∇p, pf, p, boundaries.p, time, config)
+    # limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
-    update_nueff!(nueff, nu, model.turbulence, config)
+    # update_nueff!(nueff, nu, model.turbulence, config)
 
-    xdir, ydir, zdir = XDir(), YDir(), ZDir()
+    # xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
     @info "Starting PISO loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     @time for iteration ∈ 1:iterations
-        time = iteration *dt
+        aux.time = iteration *dt
 
         rx, ry, rz = solve_equation!(
-            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
+            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=aux.time)
           
         # Pressure correction
-        inverse_diagonal!(rD, U_eqn, config)
-        interpolate!(rDf, rD, config)
+        inverse_diagonal!(aux.rD, U_eqn, config)
+        interpolate!(aux.rDf, aux.rD, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         
         rp = 0.0
         for i ∈ 1:inner_loops
-            H!(Hv, U, U_eqn, config)
+            H!(aux.Hv, U, U_eqn, config)
             
             # Interpolate faces
-            interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
-            correct_boundaries!(Uf, Hv, boundaries.U, time, config)
+            interpolate!(Uf, aux.Hv, config) # Careful: reusing Uf for interpolation
+            correct_boundaries!(Uf, aux.Hv, boundaries.U, aux.time, config)
             # div!(divHv, Uf, config)
 
             # new approach
-            flux!(mdotf, Uf, config)
-            div!(divHv, mdotf, config)
+            flux!(aux.mdotf, Uf, config)
+            div!(aux.divHv, aux.mdotf, config)
             
             # Pressure calculations (previous implementation)
-            @. prev = p.values
-            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref, time=time)
+            @. aux.prev = p.values
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref, time=aux.time)
             if i == inner_loops
-                explicit_relaxation!(p, prev, 1.0, config)
+                explicit_relaxation!(p, aux.prev, 1.0, config)
             else
-                explicit_relaxation!(p, prev, solvers.p.relax, config)
+                explicit_relaxation!(p, aux.prev, solvers.p.relax, config)
             end
 
-            grad!(∇p, pf, p, boundaries.p, time, config) 
+            grad!(∇p, pf, p, boundaries.p, aux.time, config) 
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
             # nonorthogonal correction (experimental)
             for i ∈ 1:ncorrectors
                 discretise!(p_eqn, p, config)       
-                apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
+                apply_boundary_conditions!(p_eqn, boundaries.p, nothing, aux.time, config)
                 setReference!(p_eqn, pref, 1, config)
-                nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+                nonorthogonal_face_correction(p_eqn, ∇p, aux.rDf, config)
                 update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
                 rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
 
                 if i == ncorrectors
-                    explicit_relaxation!(p, prev, 1.0, config)
+                    explicit_relaxation!(p, aux.prev, 1.0, config)
                 else
-                    explicit_relaxation!(p, prev, solvers.p.relax, config)
+                    explicit_relaxation!(p, aux.prev, solvers.p.relax, config)
                 end
-                grad!(∇p, pf, p, boundaries.p, time, config) 
+                grad!(∇p, pf, p, boundaries.p, aux.time, config) 
                 limit_gradient!(schemes.p.limiter, ∇p, p, config)
             end
 
@@ -162,36 +172,36 @@ function PISO(
 
             # new approach
             interpolate!(Uf, U, config) # velocity from momentum equation
-            correct_boundaries!(Uf, U, boundaries.U, time, config)
-            flux!(mdotf, Uf, config)
-            correct_mass_flux(mdotf, p, rDf, config)
-            correct_velocity!(U, Hv, ∇p, rD, config)
+            correct_boundaries!(Uf, U, boundaries.U, aux.time, config)
+            flux!(aux.mdotf, Uf, config)
+            correct_mass_flux(aux.mdotf, p, aux.rDf, config)
+            correct_velocity!(U, aux.Hv, ∇p, aux.rD, config)
 
         end # corrector loop end
         
         # correct_mass_flux(mdotf, p, rDf, config) # new approach
 
-    turbulence!(turbulenceModel, model, S, prev, time, config) 
-    update_nueff!(nueff, nu, model.turbulence, config)
+    turbulence!(turbulenceModel, model, aux.S, aux.prev, aux.time, config) 
+    update_nueff!(aux.nueff, nu, model.turbulence, config)
 
     # if typeof(mesh) <: Mesh3
     #     residual!(R_uz, U_eqn, U.z, iteration, zdir, config)
     # end
-    maxCourant = max_courant_number!(cellsCourant, model, config)
+    maxCourant = max_courant_number!(aux.extras.cellsCourant, model, config)
 
-    R_ux[iteration] = rx
-    R_uy[iteration] = ry
-    R_uz[iteration] = rz
-    R_p[iteration] = rp
+    aux.R_ux[iteration] = rx
+    aux.R_uy[iteration] = ry
+    aux.R_uz[iteration] = rz
+    aux.R_p[iteration] = rp
 
     ProgressMeter.next!(
         progress, showvalues = [
             (:time, iteration*runtime.dt),
             (:Courant, maxCourant),
-            (:Ux, R_ux[iteration]),
-            (:Uy, R_uy[iteration]),
-            (:Uz, R_uz[iteration]),
-            (:p, R_p[iteration]),
+            (:Ux, aux.R_ux[iteration]),
+            (:Uy, aux.R_uy[iteration]),
+            (:Uz, aux.R_uz[iteration]),
+            (:p, aux.R_p[iteration]),
             turbulenceModel.state.residuals...
             ]
         )
@@ -203,5 +213,5 @@ function PISO(
 
     end # end for loop
 
-    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
+    return (Ux=aux.R_ux, Uy=aux.R_uy, Uz=aux.R_uz, p=aux.R_p)
 end

@@ -157,7 +157,7 @@ function energy!(
     Uf = FaceVectorField(mesh)
     Kf = FaceScalarField(mesh)
     # Kbounded = ScalarField(mesh)
-    Pr = model.fluid.Pr
+    Pr = model.medium.Pr
 
     dt = runtime.dt
 
@@ -239,7 +239,7 @@ function thermo_Psi!(
     ) where {T,ME<:AbstractCompressible,M,Tu,E,D,BI}
     (; coeffs, h) = model.energy
     (; Tref) = coeffs
-    Cp = model.fluid.cp; R = model.fluid.R
+    Cp = model.medium.cp; R = model.medium.R
     @. Psi.values = Cp.values/(R.values*(h.values + Cp.values*Tref))
 end
 
@@ -266,7 +266,7 @@ function thermo_Psi!(
     interpolate!(hf, h, config)
     correct_boundaries!(hf, h, config.boundaries.h, time, config)
     (; Tref) = coeffs
-    Cp = model.fluid.cp; R = model.fluid.R
+    Cp = model.medium.cp; R = model.medium.R
     @. Psif.values = Cp.values/(R.values*(hf.values + Cp.values*Tref))
 end
 
@@ -286,7 +286,7 @@ function Ttoh!(
     ) where {T1,ME<:AbstractCompressible,M,Tu,E,D,BI}
     (; coeffs) = model.energy
     (; Tref) = coeffs
-    Cp = model.fluid.cp
+    Cp = model.medium.cp
     @. h.values = Cp.values*(T.values-Tref)
 end
 
@@ -306,7 +306,7 @@ function htoT!(
     ) where {T1,ME<:AbstractCompressible,M,Tu,E,D,BI}
     (; coeffs) = model.energy
     (; Tref) = coeffs
-    Cp = model.fluid.cp
+    Cp = model.medium.cp
     @. T.values = (h.values/Cp.values) + Tref
 end
 
@@ -315,7 +315,7 @@ function thermoClamp!(
     ) where {T1,ME<:AbstractCompressible,M,Tu,E,D,BI}
     (; coeffs) = model.energy
     (; Tref) = coeffs
-    Cp = model.fluid.cp
+    Cp = model.medium.cp
     hmin = Cp.values*(Tmin-Tref)
     hmax = Cp.values*(Tmax-Tref)
     clamp!(h.values, hmin, hmax)
@@ -326,7 +326,7 @@ function thermoClamp!(
     ) where {T1,ME<:AbstractCompressible,M,Tu,E,D,BI}
     (; coeffs) = model.energy
     (; Tref) = coeffs
-    Cp = model.fluid.cp
+    Cp = model.medium.cp
     hmin = Cp.values*(Tmin-Tref)
     hmax = Cp.values*(Tmax-Tref)
     clamp!(hf.values, hmin, hmax)

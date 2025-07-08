@@ -1,4 +1,6 @@
 export run!
+export multi_run!
+
 
 """
     function run!(
@@ -74,6 +76,33 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
     
 - `T`   - (Vector?) of temperature residuals for each iteration.
 """
+
+
+
+# ERROR: UndefVarError: `model` not defined in `XCALibre.Solvers`
+# Suggestion: check for spelling errors or missing imports.
+# Stacktrace:
+
+
+multi_run!( # Veery rough implementation... 
+    mp, configs; #mp::MultiPhysics{C}
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    ) = 
+begin
+    println("Are we here??")
+    residuals = coupled!(
+        mp, configs, 
+        output=output,
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        inner_loops=inner_loops
+        )
+    return residuals
+end
+
+
+
+
 run!(
     model::Physics{T,ME,M,Tu,E,D,BI}, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
@@ -107,10 +136,6 @@ begin
         )
     return residuals
 end
-
-
-
-
 
 
 

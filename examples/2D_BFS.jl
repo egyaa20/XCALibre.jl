@@ -19,7 +19,7 @@ nu = 1e-3
 Re = velocity[1]*0.1/nu
 
 model = Physics(
-    time = Steady(),
+    time = Transient(),
     medium = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),

@@ -29,7 +29,7 @@ Pr = 0.7
 
 model = Physics(
     time = Transient(),
-    fluid = Fluid{WeaklyCompressible}(
+    medium = Fluid{WeaklyCompressible}(
         nu = nu,
         cp = cp,
         gamma = gamma,
@@ -111,6 +111,6 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, pressure)
 initialise!(model.energy.T, temp)
-initialise!(model.fluid.rho, pressure/(R*temp))
+initialise!(model.medium.rho, pressure/(R*temp))
 
 residuals = run!(model, config, ncorrectors=1)
