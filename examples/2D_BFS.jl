@@ -22,7 +22,8 @@ model = Physics(
     time = Transient(),
     medium = Fluid{Incompressible}(nu = nu),
     turbulence = RANS{Laminar}(),
-    energy = Energy{Isothermal}(),
+    # energy = Energy{Isothermal}(),
+    energy = Energy{SensibleEnthalpy}(Tref = 288.15),
     domain = mesh_dev
     )
 
@@ -50,7 +51,13 @@ BCs = assign(
 
             # Wall(:top)
             Symmetry(:top)
-        ]
+        ],
+        h = [
+            FixedTemperature(:inlet, T=300.0, Enthalpy(cp=cp, Tref=288.15)),
+            Extrapolated(:outlet),
+            FixedTemperature(:wall, T=310.0, Enthalpy(cp=cp, Tref=288.15)),
+            Symmetry(:top) # THIS ONE IS SUPPOSED TO BE ROBIN
+        ],
     )
 )
 
@@ -84,7 +91,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=5000, time_step=1.0, write_interval=1000)
+    iterations=500, time_step=1.0, write_interval=100)
     # iterations=1, time_step=1, write_interval=1)
 
 # hardware = Hardware(backend=CUDABackend(), workgroup=32)
@@ -102,13 +109,13 @@ initialise!(model.momentum.p, 0.0)
 @time residuals = run!(model, config) # 1106 iterations!
 
 # Profiling now 
-GC.gc()
+# GC.gc()
 
-initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.p, 0.0)
+# initialise!(model.momentum.U, velocity)
+# initialise!(model.momentum.p, 0.0)
 
-# @profview residuals = run!(model, config)
-@profview_allocs residuals = run!(model, config) sample_rate=0.00025
+# # @profview residuals = run!(model, config)
+# @profview_allocs residuals = run!(model, config) sample_rate=0.00025
 
 # @time residuals = run!(model, config)
 

@@ -7,7 +7,8 @@ using CUDA
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 # grid = "backwardFacingStep_10mm.unv"
 # grid = "summer_2d_5x10.unv"
-grid = "solid_mesh.unv"
+grid = "finer_mesh_laplace.unv"
+grid = "laplace_2d_mesh.unv"
 # grid = "summer_3d_extruded_pipe.unv"
 mesh_file = joinpath(grids_dir, grid)
 
@@ -23,8 +24,8 @@ mesh_dev = adapt(backend, mesh)
 
 model = Physics(
     time = Transient(),
-    medium = Solid{Uniform}(k=15.0), #add this
-    energy = Energy{CryogenicConduction}(material = :Steel, rho = 8000.0),
+    medium = Solid{Uniform}(k=10.0), #add this
+    energy = Energy{PureDiffusion}(),#(material = :Steel, rho = 8000.0),
     domain = mesh_dev
     )
 
@@ -32,19 +33,33 @@ BCs = assign(
     region = mesh_dev,
     (
         T = [     
-            Dirichlet(:interface, 250),
+            Dirichlet(:left_wall, 0),
+            Zerogradient(:right_wall),
+            Dirichlet(:bottom_wall, 1),
+            Zerogradient(:upper_wall)
             # Zerogradient(:outlet),    
-            Zerogradient(:walls)
+            # Zerogradient(:walls)
             # Dirichlet(:walls, 50)      
         ],
     )
 )
 
 
+# solvers = (
+#     T = SolverSetup(
+#         solver      = Cg(), # Bicgstab(), Gmres()
+#         preconditioner = Jacobi(), # Jacobi(), #NormDiagonal(), # DILU()
+#         convergence = 1e-8,
+#         relax       = 0.8,
+#         rtol = 1e-4,
+#         atol = 1e-5
+#     )
+# )
+
 solvers = (
     T = SolverSetup(
-        solver      = Cg(), # Bicgstab(), Gmres()
-        preconditioner = Jacobi(), # Jacobi(), #NormDiagonal(), # DILU()
+        solver      = Bicgstab(), # Bicgstab(), Gmres()
+        preconditioner = DILU(), # Jacobi(), #NormDiagonal(), # DILU()
         convergence = 1e-8,
         relax       = 0.8,
         rtol = 1e-4,
@@ -58,7 +73,7 @@ schemes = (
 
 
 runtime = Runtime(
-    iterations=10, write_interval=1, time_step=0.1) #0.1 * 100 = 10 sec
+    iterations=50, write_interval=1, time_step=0.1) #0.1 * 100 = 10 sec
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

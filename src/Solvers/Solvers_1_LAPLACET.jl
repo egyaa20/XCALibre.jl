@@ -181,12 +181,12 @@ function setup_transient_laplace_solver(
     if coupling==false #do this only if we don't couple
 
         residuals  = solver_variant(
-            model, energyModel, T_eqn, config; 
+            model, T_eqn, config; 
             output=output,
             pref=pref, 
             ncorrectors=ncorrectors, 
             inner_loops=inner_loops,
-            outputWriter, R_T, time, isCoupled=true)
+            outputWriter, R_T, time, isCoupled=false)
 
         return residuals
     else
@@ -195,7 +195,7 @@ function setup_transient_laplace_solver(
 end
 
 function LAPLACET(
-    model, energyModel, T_eqn, config; 
+    model, T_eqn, config; #energyModel
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
     outputWriter, R_T, time, isCoupled
     )
@@ -203,7 +203,11 @@ function LAPLACET(
     println("Let's check if it's coupled.......")
     println(isCoupled)
 
-    (; T, Tf, rDf, rhocp, k, kf, cp, rho, material) = model.energy
+    if typeof(model.energy) <: CryogenicConduction
+        (; T, Tf, rDf, rhocp, k, kf, cp, rho, material) = model.energy
+    else
+        (; T, Tf) = model.energy
+    end
 
     println(Tf[1])
     println(Tf.values)
@@ -239,7 +243,9 @@ function LAPLACET(
 
         rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
 
-        energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config) # does nothing for diffusion energy model
+        if typeof(model.energy) <: CryogenicConduction
+            energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config)
+        end
 
         # R_T[iteration] = rt 
         
@@ -251,7 +257,12 @@ function LAPLACET(
 
             rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
 
-            energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config) # does nothing for diffusion energy model
+            
+            if typeof(model.energy) <: CryogenicConduction
+                energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config)
+            end
+
+            # energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config) # does nothing for diffusion energy model
 
             R_T[iteration] = rt
 

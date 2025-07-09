@@ -32,7 +32,7 @@ model = Physics(
     time = Steady(),
     fluid = Fluid{WeaklyCompressible}(
         nu = nu,
-        cp = cp,
+        cp = 1005.0,
         gamma = gamma,
         Pr = Pr
         ),

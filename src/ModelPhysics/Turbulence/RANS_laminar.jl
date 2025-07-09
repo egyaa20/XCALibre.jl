@@ -87,7 +87,7 @@ end
 # Specialise VTK writer
 function save_output(model::Physics{T,ME,M,Tu,E,D,BI}, outputWriter, iteration, config
     ) where {T,ME,M,Tu<:Laminar,E,D,BI}
-    if typeof(model.fluid)<:AbstractCompressible
+    if typeof(model.medium)<:AbstractCompressible #model.fluid
         args = (
             ("U", model.momentum.U), 
             ("p", model.momentum.p),

@@ -48,6 +48,8 @@ include("boundary_conditions/symmetry.jl")
 include("boundary_conditions/symmetry_interpolation.jl")
 include("boundary_conditions/wall.jl")
 include("boundary_conditions/wall_interpolation.jl")
+include("boundary_conditions/robin.jl")
+include("boundary_conditions/robin_interpolation.jl")
 
 
 end
