@@ -51,9 +51,9 @@ run!() = nothing # dummy function for providing general documentation
 # Laplace solver (steady)
 """
     run!(
-        model::Physics{T,ME,M,Tu,E,D,BI}, config;
+        model::Physics{T,F,S,M,Tu,E,D,BI}, config;
         output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-        ) where{T<:Steady,ME<:Uniform,M,Tu,E,D,BI} = 
+        ) where{T<:Steady,S<:Uniform,M,Tu,E,D,BI} = 
     begin
         residuals = simple!(model, config, pref=pref)
         return residuals
@@ -75,9 +75,9 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 - `T`   - (Vector?) of temperature residuals for each iteration.
 """
 run!(
-    model::Physics{T,ME,M,Tu,E,D,BI}, config; 
+    model::Physics{T,F,S,M,Tu,E,D,BI}, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-    ) where{T<:Steady,ME<:Uniform,M,Tu,E,D,BI} = 
+    ) where{T<:Steady,F,S<:Uniform,M,Tu,E,D,BI} = 
 begin
     residuals = laplace!(
         model, config, 
@@ -123,9 +123,9 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     #model::Physics{T,F,M,Tu,E,D,BI}, config; 
-    model::Physics{T,ME,M,Tu,E,D,BI}, config; 
+    model::Physics{T,F,S,M,Tu,E,D,BI}, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-    ) where{T<:Steady,ME<:Incompressible,M,Tu,E,D,BI} = 
+    ) where{T<:Steady,F<:Incompressible,S,M,Tu,E,D,BI} = 
 begin
     residuals = simple!(
         model, config, 
@@ -169,9 +169,9 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     # model::Physics{T,F,M,Tu,E,D,BI}, config; 
-    model::Physics{T,ME,M,Tu,E,D,BI}, config; 
+    model::Physics{T,F,S,M,Tu,E,D,BI}, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
-    ) where{T<:Transient,ME<:Incompressible,M,Tu,E,D,BI} = 
+    ) where{T<:Transient,F<:Incompressible,S,M,Tu,E,D,BI} = 
 begin
     residuals = piso!(
         model, config, 
@@ -216,9 +216,9 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     # model::Physics{T,F,M,Tu,E,D,BI}, config; 
-    model::Physics{T,ME,M,Tu,E,D,BI}, config; 
+    model::Physics{T,F,S,M,Tu,E,D,BI}, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-    ) where{T<:Steady,ME<:WeaklyCompressible,M,Tu,E,D,BI} = 
+    ) where{T<:Steady,F<:WeaklyCompressible,S,M,Tu,E,D,BI} = 
 begin
     residuals = csimple!(
         model, config, 
@@ -233,9 +233,9 @@ end
 # Compressible solver (steady)
 run!(
     # model::Physics{T,F,M,Tu,E,D,BI}, config; 
-    model::Physics{T,ME,M,Tu,E,D,BI}, config; 
+    model::Physics{T,F,S,M,Tu,E,D,BI}, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-    ) where{T<:Steady,ME<:Compressible,M,Tu,E,D,BI} = 
+    ) where{T<:Steady,F<:Compressible,S,M,Tu,E,D,BI} = 
 begin
     residuals = csimple!(
         model, config, 
@@ -278,9 +278,9 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     # model::Physics{T,F,M,Tu,E,D,BI}, config;
-    model::Physics{T,ME,M,Tu,E,D,BI}, config; 
+    model::Physics{T,F,S,M,Tu,E,D,BI}, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
-    ) where{T<:Transient,ME<:WeaklyCompressible,M,Tu,E,D,BI} = 
+    ) where{T<:Transient,F<:WeaklyCompressible,S,M,Tu,E,D,BI} = 
 begin
     residuals = cpiso!(
         model, config, 
@@ -295,9 +295,9 @@ end
 # Compressible solver (transient)
 run!(
     # model::Physics{T,F,M,Tu,E,D,BI}, config;
-    model::Physics{T,ME,M,Tu,E,D,BI}, config; 
+    model::Physics{T,F,S,M,Tu,E,D,BI}, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
-    ) where{T<:Transient,ME<:Compressible,M,Tu,E,D,BI} = 
+    ) where{T<:Transient,F<:Compressible,S,M,Tu,E,D,BI} = 
 begin
     residuals = cpiso!(
         model, config, 

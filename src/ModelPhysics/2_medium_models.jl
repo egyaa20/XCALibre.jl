@@ -1,21 +1,36 @@
-export AbstractMedium
-export Fluid, Solid
-
 export AbstractFluid, AbstractIncompressible, AbstractCompressible
+export Fluid, Solid
 export Incompressible, WeaklyCompressible, Compressible
 
 export AbstractSolid, Uniform
+export Default
 
-# Top‐level “medium” category
-abstract type AbstractMedium end
+abstract type AbstractFluid end
 
-# Sub-category Fluid OR Solid
-abstract type AbstractFluid  <: AbstractMedium end
-abstract type AbstractSolid  <: AbstractMedium end
+abstract type AbstractSolid end
 
-# Fluid types
 abstract type AbstractIncompressible <: AbstractFluid end
 abstract type AbstractCompressible <: AbstractFluid end
+
+
+# export AbstractMedium
+# export Fluid, Solid
+
+# export AbstractFluid, AbstractIncompressible, AbstractCompressible
+# export Incompressible, WeaklyCompressible, Compressible
+
+# export AbstractSolid, Uniform
+
+# # Top‐level “medium” category
+# abstract type AbstractMedium end
+
+# # Sub-category Fluid OR Solid
+# abstract type AbstractFluid  <: AbstractMedium end
+# abstract type AbstractSolid  <: AbstractMedium end
+
+# # Fluid types
+# abstract type AbstractIncompressible <: AbstractFluid end
+# abstract type AbstractCompressible <: AbstractFluid end
 
 Base.show(io::IO, fluid::AbstractFluid) = print(io, typeof(fluid).name.wrapper)
 
@@ -92,6 +107,22 @@ end
 
 
 
+@kwdef struct Default{} <: AbstractFluid end
+Adapt.@adapt_structure Default
+
+Fluid{Default}() = begin
+    coeffs = nothing
+    ARG = typeof(coeffs)
+    Fluid{Default,ARG}(coeffs)
+end
+
+(fluid::Fluid{Default, ARG})(mesh) where ARG = begin
+    # coeffs = nothing
+    # (; k) = coeffs
+    # k = ConstantScalar(k)
+    # kf = k
+    Default()
+end
 
 
 

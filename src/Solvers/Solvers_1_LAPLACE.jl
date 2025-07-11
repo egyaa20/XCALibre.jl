@@ -1,4 +1,6 @@
 export laplace!
+export LAPLACE
+export setup_transient_laplace_solver
 
 """
     simple!(model_in, config; 
@@ -30,164 +32,264 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 
 
 
-function laplace!( #HOW ABOUT PASSING k value?
+function laplace!(
     model, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
 
-    residuals = setup_laplace_solvers(
-        LAPLACE, model, config;
+    residuals = setup_transient_laplace_solver(
+        LAPLACET, model, config;
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        inner_loops=inner_loops,
+        coupling=false
         )
 
     return residuals
 end
 
 # Setup for all incompressible algorithms
-function setup_laplace_solvers(
+function setup_transient_laplace_solver(
     solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, coupling=false
     ) 
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
+    (; iterations, write_interval, dt) = runtime
+    (; backend) = hardware
 
-    # (; T, Tf) = model.energy
     mesh = model.domain
 
-    rDf = FaceScalarField(mesh) #model.medium.k.values returns 16.2
-    k_val = model.medium.k.values
-    initialise!(rDf, 1.0/k_val)
+    # (; T, Tf, rDf, rhocp, k, kf, cp, rho, material) = model.energy
+
     
-    zero_field = ScalarField(mesh) #0.0 field
-    T_field = model.energy.T #initialised temp field
 
-    @info "Defining models..."
+    if typeof(model.energy) <: CryogenicConduction #this actually needs to be changed - e.g. check time term, account for steady cryogenic
+        (; T, Tf, rDf, rhocp, k, kf, cp, rho, material) = model.energy
+    
+        zero_field = ScalarField(mesh)
+        # T_field = model.energy.T
+
+        @info "Defining models..."
+        @info "THIS IS UNSTEADY VERSION"
+
+        T_eqn = (
+            Time{schemes.time}(rhocp, T)
+            - Laplacian{schemes.laplacian}(rDf, T) #keep in mind those are not initialised
+            ==
+            - Source(zero_field)
+        ) → ScalarEquation(T, boundaries.T)
+    elseif typeof(model.energy) <: PureDiffusion #this actually needs to be changed - e.g. check time term, account for steady cryogenic
+        (; T, Tf, rDf) = model.energy
+
+        rDf = FaceScalarField(mesh) #model.medium.k.values returns 16.2
+        k_val = model.medium.k.values
+        initialise!(rDf, 1.0/k_val)
+        
+        zero_field = ScalarField(mesh) #0.0 field
+        T_field = model.energy.T #initialised temp field
+
+        @info "Defining models..."
+
+        T_eqn = (
+            - Laplacian{schemes.laplacian}(rDf, T_field) #k field faces, T field centres
+            ==
+            - Source(zero_field) # do I need the -ve ??
+        ) → ScalarEquation(T_field, boundaries.T)
+    end
+    
 
 
-    T_eqn = (
-        - Laplacian{schemes.laplacian}(rDf, T_field) #k field faces, T field centres
-        ==
-        - Source(zero_field) # do I need the -ve ??
-    ) → ScalarEquation(T_field, boundaries.T)
+    # mesh = model.domain
+
+    # rDf = FaceScalarField(mesh) #model.medium.k.values returns 16.2
+    # k_val = model.medium.k.values
+    # initialise!(rDf, 1.0/k_val)
+    
+    # zero_field = ScalarField(mesh) #0.0 field
+    # T_field = model.energy.T #initialised temp field
+
+    # @info "Defining models..."
+
+
+    # T_eqn = (
+    #     - Laplacian{schemes.laplacian}(rDf, T_field) #k field faces, T field centres
+    #     ==
+    #     - Source(zero_field) # do I need the -ve ??
+    # ) → ScalarEquation(T_field, boundaries.T)
+
+
+
+    # rDf = FaceScalarField(mesh)
+    
+    # k_field = ScalarField(mesh) # do I need this? e.g. inverse of rD
+    # cp_field = ScalarField(mesh) # do I need this?
+
+    # rhocp_field = ScalarField(mesh)
+    # rho_val = model.energy.rho
+    # material = model.energy.material
+
+    # rhocp = rho_val * cp_val
+
+    # initialise!(rDf, 1.0/k_val)
+    # initialise!(rhocp_field, rhocp)
+    
+    # zero_field = ScalarField(mesh)
+    # T_field = model.energy.T
+
+    # @info "Defining models..."
+
+    # T_eqn = (
+    #     Time{schemes.time}(rhocp, T)
+    #     - Laplacian{schemes.laplacian}(rDf, T) #keep in mind those are not initialised
+    #     ==
+    #     - Source(zero_field)
+    # ) → ScalarEquation(T, boundaries.T)
 
     @info "Initialising preconditioners..."
 
-    # @reset U_eqn.preconditioner = set_preconditioner(
-    #                 solvers.U.preconditioner, U_eqn, boundaries.U, config)
-    # @reset p_eqn.preconditioner = set_preconditioner(
-    #                 solvers.p.preconditioner, p_eqn, boundaries.p, config)
-
     @reset T_eqn.preconditioner = set_preconditioner(solvers.preconditioner, T_eqn)
-    # @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
-    # @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
 
     @info "Pre-allocating solvers..."
 
-    @reset T_eqn.solver = _workspace(solvers.solver, _b(T_eqn)) # What is this _b doiing????
+    @reset T_eqn.solver = _workspace(solvers.solver, _b(T_eqn))
 
-    # @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
-    # @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
+    if typeof(model.energy) <: CryogenicConduction
+        @info "Initialising energy model..."
+        energyModel = initialise(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config)
+    end
 
-    @info "Initialising turbulence model... [NO NEED]"
-    # turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config) #Do I even need this?
-
-    residuals  = solver_variant(
-        model, T_eqn, config;  #Previously: model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-        output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops)
-
-    return residuals
-end # end function
-
-function LAPLACE(
-    model, T_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-    )
+    # The part that was previously inside the solver
     
-    (; T, Tf) = model.energy
-    interpolate!(Tf, T, config)   
-    
-    mesh = model.domain
+    outputWriter = initialise_writer(output, model.domain) # needs to be passed on
+    interpolate!(Tf, T, config)
 
-    (; solvers, schemes, runtime, hardware, boundaries) = config
-    (; iterations, write_interval) = runtime
-    (; backend) = hardware
-
-    outputWriter = initialise_writer(output, model.domain)
-    
     @info "Allocating working memory..."
 
-    # Define aux fields  
-
     n_cells = length(mesh.cells)
-    rDf = FaceScalarField(mesh)
     TF = _get_float(mesh)
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
     R_T = ones(TF, iterations)
     
     # Initial calculations
     time = zero(TF) # assuming time=0
+
+    # ...
+
+    if coupling==false #do this only if we don't couple
+
+        residuals  = solver_variant(
+            model, T_eqn, config; 
+            output=output,
+            pref=pref, 
+            ncorrectors=ncorrectors, 
+            inner_loops=inner_loops,
+            outputWriter, R_T, time, isCoupled=false)
+
+        return residuals
+    else
+        return T_eqn, outputWriter, R_T, time
+    end
+end
+
+function LAPLACE(
+    model, T_eqn, config; #energyModel
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
+    outputWriter, R_T, time, isCoupled
+    )
+    
+    println("Let's check if it's coupled.......")
+    println(isCoupled)
+
+    if typeof(model.energy) <: CryogenicConduction
+        (; T, Tf, rDf, rhocp, k, kf, cp, rho, material) = model.energy
+    else
+        (; T, Tf) = model.energy
+    end
+
+    println(Tf[1])
+    println(Tf.values)
     # interpolate!(Tf, T, config)   
-    # correct_boundaries!(Tf, T, boundaries.T, time, config)
+
+    # rho = model.energy.rho.values
+    # material = model.energy.material
+    
+    # mesh = model.domain
+
+    (; solvers, schemes, runtime, hardware, boundaries) = config
+    (; iterations, write_interval, dt) = runtime
+    (; backend) = hardware
+
+    # outputWriter = initialise_writer(output, model.domain)
+    
+    # @info "Allocating working memory..."
+
+    # # Define aux fields  
+
+    # n_cells = length(mesh.cells)
+    # # rDf = FaceScalarField(mesh)
+    # TF = _get_float(mesh)
+    # prev = KernelAbstractions.zeros(backend, TF, n_cells) 
+    # R_T = ones(TF, iterations)
+    
+    # # Initial calculations
+    # time = zero(TF) # assuming time=0
 
     @info "Starting LAPLACE loops..."
-    # println(T.values)
 
-    progress = Progress(iterations; dt=1.0, showspeed=true)
+    if (isCoupled)
 
-    for iteration ∈ 1:iterations
-        time = iteration
-        # println(time)
+        rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
 
-        rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config)
-      
+        if typeof(model.energy) <: CryogenicConduction
+            energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config)
+        end
 
-        # non-orthogonal correction
-        # for i ∈ 1:ncorrectors
-        #     # @. prev = p.values
-        #     discretise!(p_eqn, p, config)       
-        #     apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
-        #     # setReference!(p_eqn, pref, 1, config)
-        #     nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-        #     # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-        #     rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
-        #     explicit_relaxation!(p, prev, solvers.p.relax, config)
-        #     grad!(∇p, pf, p, boundaries.p, time, config) 
-        #     limit_gradient!(schemes.p.limiter, ∇p, p, config)
-        # end
+        # R_T[iteration] = rt 
+        
+    else
+        progress = Progress(iterations; dt=1.0, showspeed=true)
 
-        R_T[iteration] = rt
-        # println(T.values)
+        @time for iteration ∈ 1:iterations
+            time = iteration *dt
+
+            rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
+
+            
+            if typeof(model.energy) <: CryogenicConduction
+                energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config)
+            end
+
+            # energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, material, config) # does nothing for diffusion energy model
+
+            R_T[iteration] = rt
 
 
-        if R_T[iteration] <= solvers.convergence
-            progress.n = iteration
-            finish!(progress)
-            @info "Simulation converged in $iteration iterations!"
-            if !signbit(write_interval)
+            # if R_T[iteration] <= solvers.convergence
+            #     progress.n = iteration
+            #     finish!(progress)
+            #     @info "Simulation converged in $iteration iterations!"
+            #     if !signbit(write_interval)
+            #         save_output(model, outputWriter, time, config)
+            #     end
+                
+            #     break
+            # end
+
+            ProgressMeter.next!(
+                progress, showvalues = [
+                    (:time, iteration*runtime.dt),
+                    (:T_residual, R_T[iteration])
+                    ]
+                )
+
+            if iteration%write_interval + signbit(write_interval) == 0      
                 save_output(model, outputWriter, time, config)
             end
-            # println(T.values)
-            break
-        end
 
-        ProgressMeter.next!(
-            progress, showvalues = [
-                (:iter,iteration),
-                (:T_residual, R_T[iteration])
-                ]
-            )
-
-        if iteration%write_interval + signbit(write_interval) == 0      
-            save_output(model, outputWriter, time, config)
-        end
-
-    end # end for loop
+        end # end for loop
+    end
     
     return (T=R_T)
 end
