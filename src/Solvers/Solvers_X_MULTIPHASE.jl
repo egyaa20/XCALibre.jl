@@ -26,6 +26,10 @@ function piso!(
     model, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2)
 
+
+
+
+    
     residuals = setup_incompressible_solvers(
         PISO, model, config; 
         output=output,
@@ -35,6 +39,30 @@ function piso!(
         )
         
     return residuals
+
+
+
+
+
+
+    # Trying to construct Navier Stokes:
+
+    ### VOF TRANSPORT EQN.:
+
+    phif = mdotf  # ρ * U * n  (already used for momentum), where U is averaged by mass
+    
+
+    # Assume that all terms but sources need to go on the left side, modify signs accordingly?
+
+    alpha_eqn = (
+        Time{schemes.alpha.time}(1.0, alphai) #time term
+        + Divergence{schemes.alpha.div}(phif, alphai)          
+        #.......... other terms 
+        ==
+        #........... other sources
+        - Source(1.0, alphai .* drhodt ./ rho_i)  #compressibility.........
+    ) → ScalarEquation(alpha, boundaries.alpha)
+    # do I need to construct 1 such eqn per each phase? how to handle/differentiate supercritical fluid?
 end
 
 function PISO(
@@ -42,16 +70,27 @@ function PISO(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
     )
 
-
+    T = 200 # dummy placeholder
+    p = 10e6 # dummy placeholder
 
     ### THERMOPHYSICAL SECTION
     # Update fluid properties (rho, mu, cp, k, sigma, ?) for all fractions (e.g. liquid and vapour)
+    # Dummy values for now:
+
+    # supercritical vs multiphase????
+    rho = 50
+    mu = 7e-6
+    cp = 15000
+    cv = 6750
+    k = 0.12208
+    sigma = 0.003
+
     # Get mixture values (blend) e.g. rho_m
 
 
     ### VOLUME FRACTION SECTION
     # Solve volume fraction transport eqn.
-    # Some oth VoF steps...
+    # Any other VoF-related steps?????
 
 
     ### SUBGRID NUCLEATE BOILING SECTION
