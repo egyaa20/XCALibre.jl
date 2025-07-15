@@ -20,6 +20,24 @@ end
 
 
 
+# Temporary definitions, taken from openFoam damBreak just to quickly validate the results
+
+#0 = air, 1 = water
+
+rho_0 = 1
+rho_1 = 1000
+
+#nu is used in OF:
+
+nu_0 = 1.48e-5
+nu_1 = 1.0e-6
+
+# mu_0 = 
+# mu_1 = 
+
+sigma = 0.07
+
+# Temporary definitions
 
 
 
@@ -55,6 +73,18 @@ function setup_multiphase_solvers(
 
 
 
+    rho_m = 0.0
+
+    for k in n
+        rho_m += rho_k 
+    end
+
+
+
+    # water portion = alpha_water
+    # air portion = alpha_air
+
+
 
 
     
@@ -64,20 +94,32 @@ function setup_multiphase_solvers(
 
     phif = mdotf  # ρ * U * n  (already used for momentum), where U is averaged by mass
     
+    
 
     # Assume that all terms but sources need to go on the left side, modify signs accordingly?
 
-    alpha_eqn = (
-        Time{schemes.alpha.time}(1.0, alphai) #time term
+    #what is alpha_i?
+
+    alpha_eqn = ( # Volume Fraction Transport Eqn
+        Time{schemes.alpha.time}(1.0, alphai)
         + Divergence{schemes.alpha.div}(phif, alphai)          
-        #.......... other terms 
         ==
-        #........... other sources
-        - Source(1.0, alphai .* drhodt ./ rho_i)  #compressibility.........
+        - Source(zero_field) 
     ) → ScalarEquation(alpha, boundaries.alpha)
-    # do I need to construct 1 such eqn per each phase? how to handle/differentiate supercritical fluid?
 
 
+    U_eqn = ( # Momentum Eqn
+        Time{schemes.U.time}(alphaRho, U) #alpha * rho
+        + Divergence{schemes.U.divergence}(mdotf, U)  #mdotf = 
+        - Laplacian{schemes.U.laplacian}(mueff, U) #mueff = 
+        == 
+        - Source(∇p.result) #
+        + Source(rhoAlphaG) #
+        + Source(Mk) #
+    ) → VectorEquation(U, boundaries.U)
+
+
+    # P eqn too?
 
 
 
@@ -91,37 +133,37 @@ function setup_multiphase_solvers(
     #     -Source(divmdotf)
     # ) → ScalarEquation(mesh)
 
-    U_eqn = (
-        Time{schemes.U.time}(rho, U)
-        + Divergence{schemes.U.divergence}(mdotf, U) 
-        - Laplacian{schemes.U.laplacian}(mueff, U) 
-        == 
-        - Source(∇p.result)
-        + Source(mueffgradUt)
-    ) → VectorEquation(U, boundaries.U)
+    # U_eqn = (
+    #     Time{schemes.U.time}(rho, U)
+    #     + Divergence{schemes.U.divergence}(mdotf, U) 
+    #     - Laplacian{schemes.U.laplacian}(mueff, U) 
+    #     == 
+    #     - Source(∇p.result)
+    #     + Source(mueffgradUt)
+    # ) → VectorEquation(U, boundaries.U)
 
-    if typeof(model.fluid) <: WeaklyCompressible
+    # if typeof(model.fluid) <: WeaklyCompressible
         
-        p_eqn = (
-            Time{schemes.p.time}(psi, p)  # correction(fvm::ddt(p)) means d(p)/d(t) - d(pold)/d(t)
-            - Laplacian{schemes.p.laplacian}(rhorDf, p)
-            ==
-            - Source(divHv)
-        ) → ScalarEquation(p, boundaries.p)
+    #     p_eqn = (
+    #         Time{schemes.p.time}(psi, p)  # correction(fvm::ddt(p)) means d(p)/d(t) - d(pold)/d(t)
+    #         - Laplacian{schemes.p.laplacian}(rhorDf, p)
+    #         ==
+    #         - Source(divHv)
+    #     ) → ScalarEquation(p, boundaries.p)
 
-    elseif typeof(model.fluid) <: Compressible
+    # elseif typeof(model.fluid) <: Compressible
 
-        pconv = FaceScalarField(mesh)
+    #     pconv = FaceScalarField(mesh)
 
-        p_eqn = (
-            Time{schemes.p.time}(psi, p)
-            - Laplacian{schemes.p.laplacian}(rhorDf, p) 
-            + Divergence{schemes.p.divergence}(pconv, p)
-            ==
-            -Source(divHv)
-            -Source(ddtrho) # capture correction part of dPdT and explicit drhodt
-        ) → ScalarEquation(p, boundaries.p)
-    end
+    #     p_eqn = (
+    #         Time{schemes.p.time}(psi, p)
+    #         - Laplacian{schemes.p.laplacian}(rhorDf, p) 
+    #         + Divergence{schemes.p.divergence}(pconv, p)
+    #         ==
+    #         -Source(divHv)
+    #         -Source(ddtrho) # capture correction part of dPdT and explicit drhodt
+    #     ) → ScalarEquation(p, boundaries.p)
+    # end
 
     @info "Initialising preconditioners..."
 
