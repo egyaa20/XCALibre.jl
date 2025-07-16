@@ -25,6 +25,9 @@ include("Cryogenic_Conduction.jl")
 # Property Models
 include("PropertyModels/Cryogenic_metal_properties.jl")
 
+# Equations Of State
+include("PropertyModels/EquationsOfState/multiparameter.jl")
+
 # Viscosity Models
 include("PropertyModels/Viscosity/andrade_model.jl")
 include("PropertyModels/Viscosity/sutherland_model.jl")

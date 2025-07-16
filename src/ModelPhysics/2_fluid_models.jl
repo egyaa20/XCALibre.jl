@@ -33,6 +33,8 @@ end
     rho::S2
     alphaf::F1
     rhof::F2
+    # nu::S3
+    # nuf::F3
 end
 Adapt.@adapt_structure Multiphase
 
@@ -49,6 +51,9 @@ end
     alphaf = FaceScalarField(mesh)
     rho = ScalarField(mesh)
     rhof = FaceScalarField(mesh)
+
+    # nu = ConstantScalar(nu)
+    # nuf = nu
 
 
     #Based on fluid passed assign: initial rho; nu; (transport model?)

@@ -29,7 +29,7 @@ backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
-velocity = [1.5, 0.0, 0.0]
+velocity = [0.0, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
@@ -42,7 +42,7 @@ model = Physics(
     )
 
 
-    
+
 
 include("setField_utility.jl")
 
@@ -52,7 +52,7 @@ alpha_val = 1.0
 num_modified = setField!(mesh, model.fluid.alpha, alpha_val, region_to_initialize)
 
 
-show(IOContext(stdout, :displaysize => (10000, 80)), model.fluid.alpha.values)
+# show(IOContext(stdout, :displaysize => (10000, 80)), model.fluid.alpha.values)
 
 
 
@@ -62,26 +62,25 @@ BCs = assign(
     region = mesh_dev,
     (
         U = [
-            Dirichlet(:inlet, velocity),
-            Extrapolated(:outlet),
-            # Zerogradient(:outlet),
-            # Dirichlet(:wall, [0.0, 0.0, 0.0]),
-            # Dirichlet(:top, [0.0, 0.0, 0.0]),
-            Wall(:wall, [0.0, 0.0, 0.0]),
-
-            # Wall(:top, [0.0, 0.0, 0.0])
-            Symmetry(:top)
+            Wall(:leftWall, [0.0, 0.0, 0.0]),
+            Wall(:rightWall, [0.0, 0.0, 0.0]),
+            Wall(:lowerWall, [0.0, 0.0, 0.0]),
+            Zerogradient(:atmosphere),
+            Empty(:defaultFaces), #?
         ],
         p = [
-            # Neumann(:inlet, 0.0),
-            # Zerogradient(:inlet),
-            Extrapolated(:inlet),
-            Dirichlet(:outlet, 0.0),
-            Wall(:wall),
-            # Neumann(:top, 0.0),
-
-            # Wall(:top)
-            Symmetry(:top)
+            Extrapolated(:leftWall),
+            Extrapolated(:rightWall),
+            Extrapolated(:lowerWall),
+            Extrapolated(:atmosphere),
+            Empty(:defaultFaces), #?
+        ],
+        alpha = [
+            Zerogradient(:leftWall),
+            Zerogradient(:rightWall),
+            Zerogradient(:lowerWall),
+            Zerogradient(:atmosphere),
+            Empty(:defaultFaces), #?
         ]
     )
 )
@@ -90,7 +89,8 @@ schemes = (
     # U = Schemes(divergence = Linear, limiter=MFaceBased(model.domain)),
     # U = Schemes(divergence = Linear),
     U = Schemes(divergence = Upwind),
-    p = Schemes()
+    p = Schemes(),
+    alpha = Schemes()
     # p = Schemes(limiter=FaceBased(model.domain))
     # p = Schemes(limiter=MFaceBased(model.domain))
 )
@@ -106,7 +106,15 @@ solvers = (
         rtol = 1e-2
     ),
     p = SolverSetup(
-        solver      = Cg(), # Bicgstab(), Gmres(), Cg()
+        solver      = Bicgstab(), # Bicgstab(), Gmres(), Cg()
+        preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
+        # smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
+        convergence = 1e-7,
+        relax       = 0.2,
+        rtol = 1e-3
+    ),
+    alpha = SolverSetup(
+        solver      = Bicgstab(), # Bicgstab(), Gmres(), Cg()
         preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
         convergence = 1e-7,
@@ -116,7 +124,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=5000, time_step=1.0, write_interval=1000)
+    iterations=20, time_step=0.05, write_interval=1)
     # iterations=1, time_step=1, write_interval=1)
 
 # hardware = Hardware(backend=CUDABackend(), workgroup=32)
