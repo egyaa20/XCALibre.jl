@@ -1,5 +1,7 @@
 export mu_high_fidelity
 
+#Refer to "Correlation for the Viscosity of Normal Hydrogen Obtained from Symbolic Regression", 2013
+
 # Constants for Hydrogen (H2)
 const M         = 2.01588       # Molar mass
 const sigma         = 0.297         # Length scale
@@ -59,3 +61,5 @@ function mu_high_fidelity(T::Float64, rho::Float64) # End result
 
     return mu_0(T) + ( mu_1(T) * rho ) + ( c[1] * (rho_r^2) ) * exp_term
 end
+
+

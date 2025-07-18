@@ -104,10 +104,19 @@ end
 
 function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
     ) where {T,F,SO,M,Tu<:Laminar,E<:Nothing,D,BI}
-    args = (
-        ("U", model.momentum.U), 
-        ("p", model.momentum.p),
-    )
+
+    if typeof(model.fluid)<:Multiphase
+        args = (
+            ("U", model.momentum.U), 
+            ("p", model.momentum.p),
+            ("alpha", model.fluid.alpha)
+        )
+    else
+        args = (
+            ("U", model.momentum.U), 
+            ("p", model.momentum.p),
+        )
+    end
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
 

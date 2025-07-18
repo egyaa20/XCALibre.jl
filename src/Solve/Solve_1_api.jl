@@ -170,6 +170,7 @@ function solve_equation!(
     end
     update_preconditioner!(eqn.preconditioner, phi.mesh, config)
     res = solve_system!(eqn, solversetup, phi, nothing, config)
+    
     return res
 end
 
@@ -231,12 +232,13 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config) 
         solver, opA, b, values; 
         M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon)
         )
+
     # KernelAbstractions.synchronize(backend)
 
     Krylov.iteration_count(solver) == itmax && @warn "Maximum number of iteration reached!"
 
     # println(statistics(solver).niter)
-    
+
     ndrange = length(values)
     kernel! = _copy!(_setup(backend, workgroup, ndrange)...)
     kernel!(values, x)
@@ -398,5 +400,6 @@ function residual(eqn, component, config)
     normb = norm(b)
     denominator = ifelse(normb>0,normb, 1)
     Residual = sqrt(mean(R)) / denominator
+    
     return Residual
 end

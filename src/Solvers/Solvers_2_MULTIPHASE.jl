@@ -109,6 +109,7 @@ function setup_multiphase_solvers(
     # flux!(mdotf, Uf, config)
     # flux!(phiC, Uc, config)
 
+    # flux!(phif, Uf, config)  
     flux!(phif, Uf, alphaf, config)              # (ASK HUMBERTO ABOUT THIS)
     # @. phif.values = phif.values * alphaF.values (ASK HUMBERTO ABOUT THIS)
 
@@ -161,6 +162,7 @@ function setup_multiphase_solvers(
 
     @info "Defining models..."
 
+    zero_field = ScalarField(mesh)
 
 
 
@@ -175,11 +177,13 @@ function setup_multiphase_solvers(
 
     #what is alpha_i?
 
+    println(schemes.alpha.divergence)
+    
     alpha_eqn = ( # Volume Fraction Transport Eqn
         Time{schemes.alpha.time}(alpha)
         + Divergence{schemes.alpha.divergence}(phif, alpha) #phif is U * n * alpha
         ==
-        - Source(alpha_source)
+        - Source(zero_field) #zero_field
     ) → ScalarEquation(alpha, boundaries.alpha)
 
 
@@ -189,16 +193,27 @@ function setup_multiphase_solvers(
         - Laplacian{schemes.U.laplacian}(nueff, U) # nu_mixture
         == 
         - Source(∇p.result) # -∇p
-        + Source(rhoG) # (0, -9.81 * rho, 0)
+        # + Source(rhoG) # (0, -9.81 * rho, 0)
         # + Source(Mk) # leave it for now
     ) → VectorEquation(U, boundaries.U)
 
+
+
+    
+    g = -9.81
+    prgh = ScalarField(mesh)
+    ∇prgh = Grad{schemes.p.gradient}(prgh)
+
     p_eqn = (
        Time{schemes.p.time}(psi, p)
-      - Laplacian{schemes.p.laplacian}(rDf, p)
+      - Laplacian{schemes.p.laplacian}(rDf, prgh)
       ==
       - Source(divHv)
     ) → ScalarEquation(p, boundaries.p)
+
+    @. prgh.values = p.values - rho.values * g # * yCoords
+    grad!(∇prgh, pf, prgh, boundaries.p, time, config)
+    limit_gradient!(schemes.p.limiter, ∇prgh, prgh, config)
 
 
     @info "Initialising preconditioners..."
@@ -225,7 +240,7 @@ function setup_multiphase_solvers(
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops,
-        time, rDf, nueff
+        time, rDf, nueff, phif, prgh, ∇prgh
         )
 
     return residuals    
@@ -240,8 +255,10 @@ end # end function
 function MULTIPHASE(
     model, turbulenceModel, alpha_eqn, ∇p, U_eqn, p_eqn, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2,
-    time, rDf, nueff
+    time, rDf, nueff, phif, prgh, ∇prgh
     )
+    
+    g = 9.81
 
     # T = 200 # dummy placeholder
     # p = 10e6 # dummy placeholder
@@ -284,12 +301,27 @@ function MULTIPHASE(
     # Next iteration!
 
 
+
+
+
+
+
+
+# [DONE] Laplace validate + look up whats happening (analytical solution comparison)
+# EoS multiparam
+# Try to replicate cases for multiphase
+# OpenFoam look into code
+
+
+
+
+
     ###############################################################
 
 
     (; U, p, Uf, pf) = model.momentum
     # (; nu) = model.fluid
-    (; rho, alpha, alphaf) = model.fluid
+    (; rho, rhof, alpha, alphaf) = model.fluid
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval, dt) = runtime
@@ -329,15 +361,39 @@ function MULTIPHASE(
         # println(boundaries.alpha)
         # println("alpha solvers:")
         # println(solvers.alpha)
-        ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config)
-        println(ralpha)
+        
 
+
+        interpolate!(alphaf, alpha, config)
+        flux!(phif, Uf, alphaf, config)
+        @. rho.values = (rho_1 * alpha.values) + (rho_0 * (1 - alpha.values)) # this is rho_m
+        @. nueff.values = (nu_1 * alphaf.values) + (nu_0 * (1 - alphaf.values))
+
+        interpolate!(rhof, rho, config)
+
+
+        @. prgh.values = p.values - rho.values * g # * yCoords
+        grad!(∇prgh, pf, prgh, boundaries.p, time, config)
+        limit_gradient!(schemes.p.limiter, ∇prgh, prgh, config)
+
+
+            
+        # println("ralpha")
+        # ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
+
+            # rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref, time=time)
+        # break
+        # println(ralpha)
+        # break
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
+        # break
+        # break
+        # break
           
-        println(rx)
-        println(ry)
-        println(rz)
+        # println(rx)
+        # println(ry)
+        # println(rz)
 
 
         # Pressure correction
@@ -406,6 +462,10 @@ function MULTIPHASE(
         # correct_mass_flux(mdotf, p, rDf, config) # new approach
 
     # turbulence!(turbulenceModel, model, S, prev, time, config) 
+
+    println("ralpha")
+    ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
+
     update_nueff!(nueff, nueff, model.turbulence, config)
 
     # if typeof(mesh) <: Mesh3
