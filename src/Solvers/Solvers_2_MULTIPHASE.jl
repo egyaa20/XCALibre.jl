@@ -257,7 +257,7 @@ function MULTIPHASE(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2,
     time, rDf, nueff, phif, prgh, ∇prgh
     )
-    
+
     g = 9.81
 
     # T = 200 # dummy placeholder
@@ -308,7 +308,7 @@ function MULTIPHASE(
 
 
 # [DONE] Laplace validate + look up whats happening (analytical solution comparison)
-# EoS multiparam
+# [DONE!] EoS multiparam
 # Try to replicate cases for multiphase
 # OpenFoam look into code
 

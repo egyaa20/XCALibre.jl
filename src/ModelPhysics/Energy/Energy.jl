@@ -22,16 +22,27 @@ include("Sensible_Enthalpy.jl")
 include("Laplace_Energy.jl")
 include("Cryogenic_Conduction.jl")
 
+
+
 # Property Models
 include("PropertyModels/Cryogenic_metal_properties.jl")
 
 # Equations Of State
-include("PropertyModels/EquationsOfState/multiparameter.jl")
+include("PropertyModels/EquationsOfState/multiparameter_H2.jl")
+include("PropertyModels/EquationsOfState/multiparameter_N2.jl")
 
 # Viscosity Models
 include("PropertyModels/Viscosity/andrade_model.jl")
 include("PropertyModels/Viscosity/sutherland_model.jl")
-include("PropertyModels/Viscosity/high_fidelity_model.jl")
+include("PropertyModels/Viscosity/high_fidelity_mu_H2.jl")
+include("PropertyModels/Viscosity/high_fidelity_mu_N2.jl")
+
+# Thermal Conductivity
+include("PropertyModels/ThermalConductivity/thermal_conductivity_H2.jl")
+include("PropertyModels/ThermalConductivity/thermal_conductivity_N2.jl")
+# Surface Tension
+include("PropertyModels/surface_tension.jl")
+
 
 
 export initialise, energy!
