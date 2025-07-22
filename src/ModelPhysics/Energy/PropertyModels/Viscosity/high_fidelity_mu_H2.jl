@@ -63,4 +63,4 @@ function mu_high_fidelity_H2(T::Float64, rho::Float64) # End result
 end
 
 
-println(mu_high_fidelity_H2(28.803, 73.478)) # 1-2 % error.... could be better?
+# println(mu_high_fidelity_H2(28.803, 73.478)) # 1-2 % error.... could be better?

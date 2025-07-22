@@ -15,13 +15,26 @@ using CUDA
 
 
 # grids_dir = pkgdir(XCALibre, "prototype")
-grids_dir = pkgdir(XCALibre, "src", "prototype", "damBreak_mesh")
+# grids_dir = pkgdir(XCALibre, "src", "prototype", "damBreak_mesh")
+
+
+
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "pipe_fine_mesh.unv"
+mesh_file = joinpath(grids_dir, grid)
+# pipe_fine_mesh.unv
+# grid = "pipe_coarse_mesh.unv"
+
+mesh = UNV2D_mesh(mesh_file)#, scale=0.001)
+
+
 
 # grid = "damBreak_mesh/"
 
 # mesh_file = joinpath(grids_dir, grid)
 
-mesh = FOAM3D_mesh(grids_dir)
+# mesh = UNV2D_mesh(mesh_file)#, scale=0.001)
+# mesh = FOAM3D_mesh(grids_dir)
 
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
@@ -30,8 +43,8 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 velocity = [0.0, 0.0, 0.0]
-nu = 1e-3
-Re = velocity[1]*0.1/nu
+# nu = 1e-3
+# Re = velocity[1]*0.1/nu
 
 model = Physics(
     time = Transient(),
@@ -46,12 +59,14 @@ model = Physics(
 
 include("setField_utility.jl")
 
-region_to_initialize = "(0 0 -1) (0.1461 0.292 1)"
-alpha_val = 1.0
+# region_to_initialize = "(0 0 -1) (0.1461 0.292 1)"
+# region_to_initialize = "(0 0 -1) (0.05 0.1 1)"
+# alpha_val = 0.0
 
-num_modified = setField!(mesh, model.fluid.alpha, alpha_val, region_to_initialize)
+# num_modified = setField!(mesh, model.fluid.alpha, alpha_val, region_to_initialize)
 # num_modified = setField!(mesh, model.fluid.alpha, alpha_val, region_to_initialize)
 
+# show(IOContext(stdout, :displaysize => (10000, 80)), model.fluid.alpha.values)
 
 # show(IOContext(stdout, :displaysize => (10000, 80)), model.momentum.U.x.values)
 
@@ -63,26 +78,35 @@ BCs = assign(
     region = mesh_dev,
     (
         U = [
-            # Dirichlet(:leftWall, [5.0, -5.0, 0.0]),
             Wall(:leftWall, [0.0, 0.0, 0.0]),
             Wall(:rightWall, [0.0, 0.0, 0.0]),
-            Wall(:lowerWall, [0.0, 0.0, 0.0]),
-            Zerogradient(:atmosphere),
-            Empty(:defaultFaces), #?
+            Zerogradient(:upperWall),
+            Dirichlet(:water_inlet, [0.0, 0.015, 0.0]),
+            Dirichlet(:air_inlet, [0.0, 0.03, 0.0]),
+            # Zerogradient(:atmosphere),
+            # Empty(:defaultFaces), #?
         ],
         p = [
-            Extrapolated(:leftWall),
-            Extrapolated(:rightWall),
-            Extrapolated(:lowerWall),
-            Extrapolated(:atmosphere),
-            Empty(:defaultFaces), #?
+            Zerogradient(:leftWall),
+            Zerogradient(:rightWall),
+            Dirichlet(:upperWall, 0.0),
+            Zerogradient(:water_inlet),
+            Zerogradient(:air_inlet),
+            # Extrapolated(:atmosphere),
+            # Dirichlet(:atmosphere, 1000),
+            # Empty(:defaultFaces), #?
         ],
         alpha = [
             Zerogradient(:leftWall),
             Zerogradient(:rightWall),
-            Zerogradient(:lowerWall),
-            Zerogradient(:atmosphere),
-            Empty(:defaultFaces), #?
+            Zerogradient(:upperWall),
+            Dirichlet(:water_inlet, 1.0),
+            Dirichlet(:air_inlet, 0.0),
+            # Zerogradient(:leftWall),
+            # Zerogradient(:rightWall),
+            # Zerogradient(:lowerWall),
+            # Zerogradient(:atmosphere),
+            # Empty(:defaultFaces), #?
         ]
     )
 )
@@ -90,9 +114,9 @@ BCs = assign(
 schemes = (
     # U = Schemes(divergence = Linear, limiter=MFaceBased(model.domain)),
     # U = Schemes(divergence = Linear),
-    U = Schemes(time=Euler, divergence = Upwind),
+    U = Schemes(time=Euler, divergence = LUST),
     p = Schemes(time=Euler),
-    alpha = Schemes(time=Euler, divergence = Upwind)
+    alpha = Schemes(time=Euler, divergence = LUST)
     # p = Schemes(limiter=FaceBased(model.domain))
     # p = Schemes(limiter=MFaceBased(model.domain))
 )
@@ -142,7 +166,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=20, time_step=0.05, write_interval=1)
+    iterations=500, time_step=0.1, write_interval=50)
     # iterations=1, time_step=1, write_interval=1)
 
 # hardware = Hardware(backend=CUDABackend(), workgroup=32)
@@ -155,6 +179,15 @@ config = Configuration(
 GC.gc()
 
 initialise!(model.momentum.p, 0.0)
+initialise!(model.fluid.alpha, 1.0)
+
+
+# region_to_initialize = "(0 0 -1) (0.05 0.1 1)"
+# alpha_val = 0.0
+
+# num_modified = setField!(mesh, model.fluid.alpha, alpha_val, region_to_initialize)
+
+
 # initialise!(model.momentum.U, velocity)
 
 # initialise!(model.momentum.U, velocity)
@@ -162,6 +195,9 @@ initialise!(model.momentum.p, 0.0)
 # initialise!(model.momentum.p, 1000.0)
 
 @time residuals = run!(model, config) # 1106 iterations!
+
+# show(IOContext(stdout, :displaysize => (10000, 80)), model.fluid.alpha.values)
+
 
 
 # Profiling now 
