@@ -83,7 +83,6 @@ function setup_multiphase_solvers(
 
     flux!(phif, Uf, config)
     
-
     @. rho.values = (rho_1 * alpha.values) + (rho_0 * (1 - alpha.values)) # this is rho_m
     @. nueff.values = (nu_1 * alphaf.values) + (nu_0 * (1 - alphaf.values))
     @. y.values *= rho.values 
@@ -159,6 +158,9 @@ function setup_multiphase_solvers(
     #what is alpha_i?
 
     # println(schemes.alpha.divergence)
+
+
+
     
     alpha_eqn = ( # Volume Fraction Transport Eqn
         Time{schemes.alpha.time}(alpha)
@@ -390,7 +392,7 @@ function MULTIPHASE(
     flux!(phif, Uf, config)
     
     ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
-    
+
     @. alpha.values = clamp(alpha.values, 0.0, 1.0)
 
     interpolate!(alphaf, alpha, config)

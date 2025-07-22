@@ -15,17 +15,17 @@ using CUDA
 
 
 # grids_dir = pkgdir(XCALibre, "prototype")
-# grids_dir = pkgdir(XCALibre, "src", "prototype", "damBreak_mesh")
+grids_dir = pkgdir(XCALibre, "src", "prototype", "damBreak_mesh")
 
 
 
-grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "pipe_fine_mesh.unv"
-mesh_file = joinpath(grids_dir, grid)
+# grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+# grid = "pipe_fine_mesh.unv"
+# mesh_file = joinpath(grids_dir, grid)
 # pipe_fine_mesh.unv
 # grid = "pipe_coarse_mesh.unv"
 
-mesh = UNV2D_mesh(mesh_file)#, scale=0.001)
+# mesh = UNV2D_mesh(mesh_file)#, scale=0.001)
 
 
 
@@ -34,7 +34,7 @@ mesh = UNV2D_mesh(mesh_file)#, scale=0.001)
 # mesh_file = joinpath(grids_dir, grid)
 
 # mesh = UNV2D_mesh(mesh_file)#, scale=0.001)
-# mesh = FOAM3D_mesh(grids_dir)
+mesh = FOAM3D_mesh(grids_dir)
 
 # backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
@@ -59,12 +59,11 @@ model = Physics(
 
 include("setField_utility.jl")
 
-# region_to_initialize = "(0 0 -1) (0.1461 0.292 1)"
+region_to_initialize = "(0 0 -1) (0.1461 0.292 1)"
 # region_to_initialize = "(0 0 -1) (0.05 0.1 1)"
-# alpha_val = 0.0
+alpha_val = 1.0
 
-# num_modified = setField!(mesh, model.fluid.alpha, alpha_val, region_to_initialize)
-# num_modified = setField!(mesh, model.fluid.alpha, alpha_val, region_to_initialize)
+num_modified = setField!(mesh, model.fluid.alpha, alpha_val, region_to_initialize)
 
 # show(IOContext(stdout, :displaysize => (10000, 80)), model.fluid.alpha.values)
 
@@ -80,33 +79,23 @@ BCs = assign(
         U = [
             Wall(:leftWall, [0.0, 0.0, 0.0]),
             Wall(:rightWall, [0.0, 0.0, 0.0]),
-            Zerogradient(:upperWall),
-            Dirichlet(:water_inlet, [0.0, 0.005, 0.0]),
-            Dirichlet(:air_inlet, [0.0, 0.005, 0.0]),
-            # Zerogradient(:atmosphere),
-            # Empty(:defaultFaces), #?
+            Wall(:lowerWall, [0.0, 0.0, 0.0]),
+            Zerogradient(:atmosphere),
+            Empty(:defaultFaces), #?
         ],
         p = [
             Zerogradient(:leftWall),
             Zerogradient(:rightWall),
-            Zerogradient(:upperWall),
-            Zerogradient(:water_inlet),
-            Zerogradient(:air_inlet),
-            # Extrapolated(:atmosphere),
-            # Dirichlet(:atmosphere, 1000),
-            # Empty(:defaultFaces), #?
+            Zerogradient(:lowerWall),
+            Dirichlet(:atmosphere, 0),
+            Empty(:defaultFaces), #?
         ],
         alpha = [
             Zerogradient(:leftWall),
             Zerogradient(:rightWall),
-            Zerogradient(:upperWall),
-            Dirichlet(:water_inlet, 1.0),
-            Dirichlet(:air_inlet, 1.0),
-            # Zerogradient(:leftWall),
-            # Zerogradient(:rightWall),
-            # Zerogradient(:lowerWall),
-            # Zerogradient(:atmosphere),
-            # Empty(:defaultFaces), #?
+            Zerogradient(:lowerWall),
+            Zerogradient(:atmosphere),
+            Empty(:defaultFaces), #?
         ]
     )
 )
@@ -157,7 +146,7 @@ solvers = (
     ),
     alpha = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres(), Cg()
-        preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
+        preconditioner = DILU(), # IC0GPU, Jacobi, DILU
         # smoother=JacobiSmoother(domain=mesh_dev, loops=8, omega=1),
         convergence = 1e-7,
         relax       = 0.8,
@@ -166,7 +155,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=25, time_step=0.1, write_interval=1)
+    iterations=10000, time_step=0.0001, write_interval=1)
     # iterations=1, time_step=1, write_interval=1)
 
 # hardware = Hardware(backend=CUDABackend(), workgroup=32)
@@ -179,7 +168,7 @@ config = Configuration(
 GC.gc()
 
 initialise!(model.momentum.p, 0.0)
-initialise!(model.fluid.alpha, 1.0)
+# initialise!(model.fluid.alpha, 1.0)
 
 
 # region_to_initialize = "(0 0 -1) (0.05 0.1 1)"
