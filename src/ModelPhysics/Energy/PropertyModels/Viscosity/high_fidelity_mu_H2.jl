@@ -3,27 +3,34 @@ export mu_high_fidelity_H2
 ###Refer to "Correlation for the Viscosity of Normal Hydrogen Obtained from Symbolic Regression", 2013
 
 # Constants for Hydrogen (H2)
-M = 2.01588       # Molar mass
-sigma = 0.297         # Length scale
-epsilon_div_kb = 30.41         # Energy scale
-T_c = 33.145        # Critical temperature
-rho_sc = 90.5          # Symbolic-regression scaling rho
+# M = 2.01588          # Molar mass (g/mol)
+# sigma = 0.297          # Length scale (nm)
+# epsilon_div_kb = 30.41 # Energy scale (K)
+# T_c = 33.145           # Critical temperature (K)
+# rho_sc = 90.5          # Symbolic-regression scaling rho (kg/m^3)
+#
+# a = (0.209630, -0.455274, 0.143602, -0.0335325, 0.00276981)
+#
+# b = (-0.1870, 2.4871, 3.7151, -11.0972, 9.0965, -3.8292, 0.5166)
+#
+# c = (6.43449673, 4.56334068e-2, 0.232797868, 0.958326120,
+#      0.127941189, 0.363576595)
+
+struct HydrogenViscosityConstants
+    M::Float64
+    sigma::Float64
+    epsilon_div_kb::Float64
+    T_c::Float64
+    rho_sc::Float64
+    a::Vector{Float64}
+    b::Vector{Float64}
+    c::Vector{Float64}
+end
 
 
-# Tables of coefficients
-a = ( 0.209630, -0.455274, 0.143602, -0.0335325, 0.00276981 )
-
-b = (-0.1870, 2.4871, 3.7151, -11.0972, 9.0965, -3.8292, 0.5166)
-
-c = ( 6.43449673,
-            4.56334068e-2,
-            0.232797868,
-            0.958326120,
-            0.127941189,
-            0.363576595 )
-
-
-function mu_0(T::Float64) # so-called 'Zero-density Viscosity'
+function mu_0(T::Float64, constants::constants_mu_H2) # so-called 'Zero-density Viscosity'
+    (; T_c, M, sigma, epsilon_div_kb, rho_sc, a, b)
+    
     Tstar = T / epsilon_div_kb
     ln_Tstar = log(Tstar)
     
@@ -34,7 +41,9 @@ function mu_0(T::Float64) # so-called 'Zero-density Viscosity'
 end
 
 
-function beta_mu(T::Float64) # 'Second viscosity viral coefficient'
+function beta_mu(T::Float64, constants::constants_mu_H2) # 'Second viscosity viral coefficient'
+    (; T_c, M, sigma, epsilon_div_kb, rho_sc, a, b)
+
     Tstar = T / epsilon_div_kb
     
     Bstar = 0.0
@@ -46,20 +55,37 @@ function beta_mu(T::Float64) # 'Second viscosity viral coefficient'
 end
 
 
-function mu_1(T::Float64) # 'The initial-density coefficient of viscosity'
-    return mu_0(T) * beta_mu(T)
+function mu_1(T::Float64, constants::constants_mu_H2) # 'The initial-density coefficient of viscosity'
+    return mu_0(T, constants) * beta_mu(T, constants)
 end
 
 
 
 
 function mu_high_fidelity_H2(T::Float64, rho::Float64) # End result
+        
+    constants = constants_mu_H2(
+        2.01588, # M
+        0.297, # sigma
+        30.41, # epsilon_div_kb
+        33.145, # T_c
+        90.5, # rho_sc
+        [0.209630, -0.455274, 0.143602, -0.0335325, 0.00276981], # a
+        
+        [-0.1870, 2.4871, 3.7151, -11.0972, 9.0965, -3.8292, 0.5166], # b
+
+        [6.43449673, 4.56334068e-2, 0.232797868, 0.958326120,
+        0.127941189, 0.363576595] # c
+    )
+
+    (; T_c, M, sigma, epsilon_div_kb, rho_sc, a, b)
+
     T_r  = T / T_c
     rho_r  = rho / rho_sc
 
     exp_term = exp( c[2]*T_r + (c[3]/(T_r)) + ((c[4]*rho_r^2)/(c[5]+T_r)) + c[6]*(rho_r^6))
 
-    return mu_0(T) + ( mu_1(T) * rho ) + ( c[1] * (rho_r^2) ) * exp_term
+    return mu_0(T, constants) + ( mu_1(T, constants) * rho ) + ( c[1] * (rho_r^2) ) * exp_term
 end
 
 

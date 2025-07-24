@@ -1,70 +1,66 @@
-T_c = 32.938       # K
-rho_c = 15.538       # mol dm^-3
-R_univ = 8.314472 # J (mol * K)^-1
-M_H2 = 2.01588    # g mol^-1
+export EOS_wrapper
 
-a_para = [
-    2.5,
-    -1.4485891134,
-    1.884521239,
-    4.30256,
-    13.0289,
-    -47.7365,
-    50.0013,
-    -18.6261,
-    0.993973,
-    0.536078
-]
 
-k_para = [
-    0.0,
-    0.0,
-    0.0,
-    499.0,
-    826.5,
-    970.8,
-    1166.2,
-    1341.4,
-    5395.0,
-    10185.0
-]
+### CONSTANTS AND COEFFICIENTS ###
+# T_c = 32.938      # K
+# rho_c = 15.538      # mol dm^-3
+# R_univ = 8.314472 # J (mol * K)^-1
+# M_H2 = 2.01588   # g mol^-1
+# T_ref = 49.7175     # K
+#
+# a_para = [2.5, -1.4485891134, 1.884521239, 4.30256, 13.0289,
+#           -47.7365, 50.0013, -18.6261, 0.993973, 0.536078]
+#
+# k_para = [0.0, 0.0, 0.0, 499.0, 826.5, 970.8, 1166.2, 1341.4, 5395.0, 10185.0]
+#
+# N = [-7.33375, 0.01, 2.60375, 4.66279, 0.68239, -1.47078, 0.135801,
+#      -1.05327, 0.328239, -0.0577833, 0.0449743, 0.0703464, -0.0401766, 0.11951]
+#
+# t = [0.6855, 1.0, 1.0, 0.489, 0.774, 1.133, 1.386, 1.619, 1.162, 3.96,
+#      5.276, 0.99, 6.791, 3.19]
+#
+# d = [1, 4, 1, 1, 2, 2, 3, 1, 3, 2, 1, 3, 1, 1]
+#
+# p = [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0]
+#
+# α = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+#      -1.7437, -0.5516, -0.0634, -2.1341, -1.777]
+#
+# β = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+#      -0.194, -0.2019, -0.0301, -0.2383, -0.3253]
+#
+# γ = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+#      0.8048, 1.5248, 0.6648, 0.6832, 1.493]
+#
+# D = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+#      1.5487, 0.1785, 1.28, 0.6319, 1.7104]
 
-N = [-7.33375, 0.01, 2.60375, 4.66279, 0.68239,
-           -1.47078, 0.135801, -1.05327, 0.328239,
-           -0.0577833, 0.0449743, 0.0703464, -0.0401766, 0.11951]
+struct constants_EoS_H2
+    T_c::Float64
+    rho_c::Float64
+    R_univ::Float64
+    M_H2::Float64
+    T_ref::Float64
+    a_para::Vector{Float64}
+    k_para::Vector{Float64}
+    N::Vector{Float64}
+    t::Vector{Float64}
+    d::Vector{Int}
+    p::Vector{Int}
+    α::Vector{Float64}
+    β::Vector{Float64}
+    γ::Vector{Float64}
+    D::Vector{Float64}
+end
 
-t = [0.6855, 1.0, 1.0, 0.489, 0.774, 1.133, 1.386,
-           1.619, 1.162, 3.96, 5.276, 0.99, 6.791, 3.19]
 
-d = [1, 4, 1, 1, 2, 2, 3, 1, 3, 2, 1, 3, 1, 1]
-
-p = [0,0,0,0,0,0,0, 1,1, 0,0,0,0,0]
-
-α = [
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-   -1.7437, -0.5516, -0.0634, -2.1341, -1.777
-]
-
-β = [
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-   -0.194, -0.2019, -0.0301, -0.2383, -0.3253
-]
-
-γ = [
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    0.8048, 1.5248, 0.6648, 0.6832, 1.493
-]
-
-D = [
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    1.5487, 0.1785, 1.28, 0.6319, 1.7104
-]
 
 
 ### PREPARATORY FUNCTIONS
 
 
 function alpha_0(δ::Float64, τ::Float64)
+    (; T_c, a_para, k_para) = constants
     sum_val = 0.0
     for i in 4:10
         sum_val += a_para[i] * log(1.0 - exp((-k_para[i] * τ)/T_c))
@@ -325,7 +321,10 @@ end
 
 ### CORE CALCULATIONS SECTION
 
-function find_density(T::Float64, P_target::Float64; max_iter=25, tol=1.0e-8) # DOES NOT SUPPORT GPU
+function find_density(T::Float64, P_target::Float64; max_iter=25, tol=1.0e-8, 
+    constants::constants_EoS_H2) # DOES NOT SUPPORT GPU
+    (; T_c, rho_c, R_univ, M_H2, T_ref, a_para, k_para, N, t, d, p, α, β, γ, D) = constants
+
     τ = T_c / T
     RT = R_univ * T
 
@@ -335,10 +334,10 @@ function find_density(T::Float64, P_target::Float64; max_iter=25, tol=1.0e-8) # 
     for it in 1:max_iter
         δ = rho / rho_c
 
-        Z = lambda_total_01(δ, τ)
+        # Z = lambda_total_01(δ, τ, constants)
 
         # EOS pressure
-        p_calc = pressure(T, rho)
+        p_calc = pressure(T, rho, constants)
         # p_calc = rho * RT * Z
 
         # Residual for Newton
@@ -352,7 +351,7 @@ function find_density(T::Float64, P_target::Float64; max_iter=25, tol=1.0e-8) # 
         end
 
         # Analytical derivative dp/drho
-        dp_drho = RT * (1.0 + 2.0 * lambda_r_01(δ, τ) + lambda_r_02(δ, τ))
+        dp_drho = RT * (1.0 + 2.0 * lambda_r_01(δ, τ, constants) + lambda_r_02(δ, τ, constants))
 
         # Newton step
         rho_new = rho - f / dp_drho
@@ -366,93 +365,126 @@ function find_density(T::Float64, P_target::Float64; max_iter=25, tol=1.0e-8) # 
 end
 
 
-function pressure(T::Float64, rho::Float64)
+function pressure(T::Float64, rho::Float64, constants::constants_EoS_H2)
+    (; T_c, rho_c, R_univ) = constants
     τ = T_c / T
     δ = rho / rho_c
-    Z = lambda_total_01(δ, τ)
-    
+    Z = 1.0 + lambda_r_01(δ, τ, constants)
     return Z * rho * R_univ * T
 end
 
-
-function c_v(δ::Float64, τ::Float64)
-    return ( - R_univ * lambda_total_20(δ, τ) )
+function c_v(δ::Float64, τ::Float64, constants::constants_EoS_H2)
+    (; R_univ) = constants
+    return -R_univ * lambda_total_20(δ, τ, constants)
 end
 
-function c_p(δ::Float64, τ::Float64)
-    cv_term = c_v(δ, τ)
-
-    numerator = (1.0 + lambda_r_01(δ, τ) - lambda_r_11(δ, τ))^2
-    denominator = (1.0 + 2.0 * lambda_r_01(δ, τ) + lambda_r_02(δ, τ))
-
-    fraction = numerator / denominator
-
-    return cv_term + (R_univ * fraction)
+function c_p(δ::Float64, τ::Float64, constants::constants_EoS_H2)
+    (; R_univ) = constants
+    cv_term = c_v(δ, τ, constants)
+    numerator = (1.0 + lambda_total_01(δ, τ, constants) - lambda_total_11(δ, τ, constants))^2
+    denominator = 1.0 + 2.0 * lambda_total_01(δ, τ, constants) + lambda_total_02(δ, τ, constants)
+    return cv_term + (R_univ * (numerator / denominator))
 end
 
-function k_T(T::Float64, rho::Float64, δ::Float64, τ::Float64)
-    term1 = rho*R_univ*T
-    term2 = 1.0 + 2.0*lambda_r_01(δ, τ) + lambda_r_02(δ, τ)
-
-    return 1.0 / (term1*term2)
-end
-
-
-
-
-
-function cv0_calc(T::Float64)
+function k_T(T::Float64, rho::Float64, constants::constants_EoS_H2)
+    (; T_c, rho_c, R_univ) = constants
     τ = T_c / T
-    
-    return - R_univ * lambda_0_20(1.0, τ)
+    δ = rho / rho_c
+    term1 = rho * R_univ * T
+    term2 = 1.0 + 2.0 * lambda_r_01(δ, τ, constants) + lambda_r_02(δ, τ, constants)
+    return 1.0 / (term1 * term2)
 end
 
-function u0_calc(T::Float64)
+function cv0_calc(T::Float64, constants::constants_EoS_H2)
+    (; T_c, R_univ) = constants
     τ = T_c / T
-    
-    return R_univ * T * lambda_0_10(1.0, τ)
+    return -R_univ * lambda_0_20(1.0, τ, constants)
 end
 
-function h0_calc(T::Float64)
-    return u0_calc(T) + R_univ * T
+function u0_calc(T::Float64, constants::constants_EoS_H2)
+    (; T_c, R_univ) = constants
+    τ = T_c / T
+    return R_univ * T * lambda_0_10(1.0, τ, constants)
 end
 
-function internal_energy_calc(T::Float64, δ::Float64, τ::Float64)
-    u_ideal = u0_calc(T)
-    
-    u_residual = R_univ * T * lambda_r_10(δ, τ)
+function h0_calc(T::Float64, constants::constants_EoS_H2)
+    (; R_univ) = constants
+    return u0_calc(T, constants) + R_univ * T
+end
 
+function internal_energy_calc(T::Float64, δ::Float64, τ::Float64, constants::constants_EoS_H2)
+    (; R_univ) = constants
+    u_ideal = u0_calc(T, constants)
+    u_residual = R_univ * T * lambda_r_10(δ, τ, constants)
     return u_ideal + u_residual
 end
 
-function enthalpy_calc(T::Float64, δ::Float64, τ::Float64)
-    h_ideal = h0_calc(T)
-    
-    h_residual = R_univ * T * (lambda_r_10(δ, τ) + lambda_r_01(δ, τ))
+function enthalpy_calc(T::Float64, δ::Float64, τ::Float64, constants::constants_EoS_H2)
+    (; R_univ) = constants
+    h_ideal = h0_calc(T, constants)
+    h_residual = R_univ * T * (lambda_r_10(δ, τ, constants) + lambda_r_01(δ, τ, constants))
     return h_ideal + h_residual
 end
 
-function entropy_calc(δ::Float64, τ::Float64)
-    term1 = lambda_total_10(δ, τ)
-    term2 = alpha_0(δ, τ) + alpha_r(δ, τ)
-    
+function entropy_calc(δ::Float64, τ::Float64, constants::constants_EoS_H2)
+    (; R_univ) = constants
+    term1 = lambda_total_10(δ, τ, constants)
+    term2 = alpha_0(δ, τ, constants) + alpha_r(δ, τ, constants)
     return R_univ * (term1 - term2)
 end
 
 
-function EOS_wrapper(T::Float64, p::Float64)
-    rho_mol = find_density(T, p)
+function EOS_wrapper(T::Float64, pressure::Float64)
+
+    constants = constants_EoS_H2(
+        32.938, # T_c
+        15.538, # rho_c
+        8.314472, # R_univ
+        2.01588, # M_H2
+        49.7175, # T_ref
+        
+        [2.5, -1.4485891134, 1.884521239, 4.30256, 13.0289,
+        -47.7365, 50.0013, -18.6261, 0.993973, 0.536078], # a_para
+
+        [0.0, 0.0, 0.0, 499.0, 826.5, 970.8, 1166.2, 1341.4, 5395.0, 10185.0], # k_para
+
+        [-7.33375, 0.01, 2.60375, 4.66279, 0.68239, -1.47078, 0.135801,
+        -1.05327, 0.328239, -0.0577833, 0.0449743, 0.0703464, -0.0401766, 0.11951], # N
+
+        [0.6855, 1.0, 1.0, 0.489, 0.774, 1.133, 1.386, 1.619, 1.162, 3.96,
+        5.276, 0.99, 6.791, 3.19], # t
+
+        [1, 4, 1, 1, 2, 2, 3, 1, 3, 2, 1, 3, 1, 1], # d
+
+        [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0], # p
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+
+        -1.7437, -0.5516, -0.0634, -2.1341, -1.777], # α
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+
+        -0.194, -0.2019, -0.0301, -0.2383, -0.3253], # β
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.8048, 1.5248, 0.6648, 0.6832, 1.493], # γ
+
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        1.5487, 0.1785, 1.28, 0.6319, 1.7104] # D
+    )
+
+    (; T_c, rho_c, R_univ, M_H2, T_ref, a_para, k_para, N, t, d, p, α, β, γ, D) = constants
+
+    rho_mol = find_density(T, pressure, constants)
 
     τ = T_c / T
     δ = rho_mol / rho_c
 
-    cv_mol = c_v(δ, τ)
-    cp_mol = c_p(δ, τ)
-    kT = k_T(T, rho_mol, δ, τ)
+    cv_mol = c_v(δ, τ, constants)
+    cp_mol = c_p(δ, τ, constants)
+    kT = k_T(T, rho_mol, δ, τ, constants)
+    kT_ref = k_T(T_ref, rho_mol, δ, τ, constants)
 
-    internal_energy_mol = internal_energy_calc(T, δ, τ)
-    enthalpy_mol = enthalpy_calc(T, δ, τ)
-    entropy_mol = entropy_calc(δ, τ)
+    internal_energy_mol = internal_energy_calc(T, δ, τ, constants)
+    enthalpy_mol = enthalpy_calc(T, δ, τ, constants)
+    entropy_mol = entropy_calc(δ, τ, constants)
 
     conversion_factor = 1.0 / M_H2
 
@@ -464,18 +496,23 @@ function EOS_wrapper(T::Float64, p::Float64)
     enthalpy = enthalpy_mol*conversion_factor
     entropy = entropy_mol*conversion_factor
 
-
-
-    return rho, cv, cp, kT, internal_energy, enthalpy, entropy
+    return rho, cv, cp, kT, kT_ref, internal_energy, enthalpy, entropy
 end
 
 
+T_input = 28.803  # Temperature in K
+P_input = 10.0e3 # Pressure in kPa
+
+
+rho0, cv0, cp0, kT0, kT_ref, internal_energy0, enthalpy0, entropy0 = EOS_wrapper(T_input, P_input)
+
+println("Rho: $rho0")
 
 # T_input = 28.80  # Temperature in K
 # P_input = 10.0e3 # Pressure in kPa
 
 
-# rho0, cv0, cp0, kT0, internal_energy0, enthalpy0, entropy0 = EOS_wrapper(T_input, P_input)
+# rho0, cv0, cp0, kT0, kT_ref, internal_energy0, enthalpy0, entropy0 = EOS_wrapper(T_input, P_input)
 
 # println("DENSITY:")
 # println(rho0)

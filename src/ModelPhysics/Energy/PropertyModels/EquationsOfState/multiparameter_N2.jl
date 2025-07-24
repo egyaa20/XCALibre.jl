@@ -454,7 +454,7 @@ function entropy_calc(δ::Float64, τ::Float64)
 end
 
 
-function EOS_wrapper(T::Float64, p::Float64)
+function EOS_wrapper_N2(T::Float64, p::Float64)
     rho_mol = find_density(T, p)
 
     τ = T_c / T
@@ -485,14 +485,15 @@ end
 
 
 
-# T_input = 73.151 # Temperature in K
-# P_input = 10.0e3 # Pressure in kPa
+T_input = 68.151 # Temperature in K
+P_input = 10.0e3 # Pressure in kPa
 
 
-# rho0, cv0, cp0, kT0, internal_energy0, enthalpy0, entropy0 = EOS_wrapper(T_input, P_input)
+rho0, cv0, cp0, kT0, internal_energy0, enthalpy0, entropy0 = EOS_wrapper_N2(T_input, P_input)
 
-# println("DENSITY:")
-# println(rho0)
+
+println("DENSITY:")
+println(rho0)
 # println("CV:")
 # println(cv0)
 # println("CP:")
