@@ -38,8 +38,8 @@ end
 end
 Adapt.@adapt_structure Multiphase
 
-Fluid{Multiphase}(; fluid::Symbol, alpha=0.0, rho=1.0) = begin
-    coeffs = (alpha=alpha, rho=rho, fluid=fluid)
+Fluid{Multiphase}(; fluid_type::Symbol, alpha=0.0, rho=1.0) = begin
+    coeffs = (alpha=alpha, rho=rho, fluid_type=fluid_type)
     ARG = typeof(coeffs)
     Fluid{Multiphase,ARG}(coeffs)
 end

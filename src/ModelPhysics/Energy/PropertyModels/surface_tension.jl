@@ -28,10 +28,11 @@ function calculate_surface_tension(fluid::Symbol, T::Float64)
     properties = FLUID_PROPERTIES[fluid]
 
     if !(properties.T_min <= T <= properties.T_max)
-        throw(DomainError(T, "Input temperature is outside the recommended range of $T_min K to $T_max K."))
+        # throw(DomainError(T, "Input temperature is outside the recommended range of $T_min K to $T_max K."))
 
 
         ### QUESTION: Just return sigma=0 ? (above critical)
+        return 0.0
     end
     
     reduced_temp_term = 1.0 - (T / properties.T_c)
@@ -44,7 +45,7 @@ end
 
 
 
-test_temperature = 20.0
-st_h2 = calculate_surface_tension(:hydrogen, test_temperature)
+# test_temperature = 20.0
+# st_h2 = calculate_surface_tension(:hydrogen, test_temperature)
 
-println("Calculated Surface Tension: $(round(st_h2, digits=5)) N/m")
+# println("Calculated Surface Tension: $(round(st_h2, digits=5)) N/m")

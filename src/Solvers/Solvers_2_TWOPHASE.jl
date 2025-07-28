@@ -63,14 +63,20 @@ function setup_multiphase_solvers(
 
     @info "Computing Fluid Properties..."
 
-    if fluid_type == :hydrogen
-        EOS_wrapper() = XCALibre.ModelPhysics.EOS_wrapper_H2()
-    elseif fluid_type == :nitrogen
-        EOS_wrapper() = XCALibre.ModelPhysics.EOS_wrapper_H2()
-    end
 
-    rho_0, cv0, cp0, kT0, internal_energy0, enthalpy0, entropy0 = EOS_wrapper(T_input, P_input)
-    mu0 = mu_high_fidelity_H2(T_input, rho_0)
+    # TEST INPUTS #
+    T_input = 20.0
+    P_input = 10.0e6
+
+
+    EOS = FLUID_EOS_MAP[fluid_type]
+    rho0, cv0, cp0, internal_energy0, enthalpy0, entropy0, nu_bar, k0 = EOS(T_input, P_input)
+
+    println("Rho: $rho0, k0: $k0, viscosity: $nu_bar")
+
+
+    # rho_0, cv0, cp0, kT0, internal_energy0, enthalpy0, entropy0 = EOS_wrapper(T_input, P_input)
+    # mu0 = mu_high_fidelity_H2(T_input, rho_0)
 
     # @. rh
 
