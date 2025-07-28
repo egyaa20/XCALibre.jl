@@ -16,7 +16,7 @@ export mu_high_fidelity_H2
 # c = (6.43449673, 4.56334068e-2, 0.232797868, 0.958326120,
 #      0.127941189, 0.363576595)
 
-struct HydrogenViscosityConstants
+struct constants_mu_H2
     M::Float64
     sigma::Float64
     epsilon_div_kb::Float64
@@ -29,7 +29,7 @@ end
 
 
 function mu_0(T::Float64, constants::constants_mu_H2) # so-called 'Zero-density Viscosity'
-    (; T_c, M, sigma, epsilon_div_kb, rho_sc, a, b)
+    (; T_c, M, sigma, epsilon_div_kb, rho_sc, a, b) = constants
     
     Tstar = T / epsilon_div_kb
     ln_Tstar = log(Tstar)
@@ -42,7 +42,7 @@ end
 
 
 function beta_mu(T::Float64, constants::constants_mu_H2) # 'Second viscosity viral coefficient'
-    (; T_c, M, sigma, epsilon_div_kb, rho_sc, a, b)
+    (; T_c, M, sigma, epsilon_div_kb, rho_sc, a, b) = constants
 
     Tstar = T / epsilon_div_kb
     
@@ -78,7 +78,7 @@ function mu_high_fidelity_H2(T::Float64, rho::Float64) # End result
         0.127941189, 0.363576595] # c
     )
 
-    (; T_c, M, sigma, epsilon_div_kb, rho_sc, a, b)
+    (; T_c, M, sigma, epsilon_div_kb, rho_sc, a, b, c) = constants
 
     T_r  = T / T_c
     rho_r  = rho / rho_sc

@@ -79,6 +79,9 @@ function write_results(iteration::TI, time, mesh, meshData::VTKWriter2D, BCs, ar
         for arg ∈ args
             label = arg[1]
             field = arg[2]
+            
+            # println("Argu: $arg; label : $label, cells: $(nCells)\n")
+
             field_type = typeof(field)
             if field_type <: ScalarField
                 write(io, "SCALARS $(label) double 1\n")

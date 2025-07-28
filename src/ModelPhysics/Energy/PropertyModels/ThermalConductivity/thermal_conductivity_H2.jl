@@ -94,7 +94,8 @@ function delta_lambda_c_empirical(rho::Float64, T::Float64, constants::constants
     end
 end
 
-function xi(rho::Float64, T::Float64, kT::Float64, kT_ref::Float64)
+function xi(rho::Float64, T::Float64, kT::Float64, kT_ref::Float64, constants::constants_k_H2)
+    (; T_c, rho_c, P_CRIT, A1, A2, B1, B2, C1, C2, C3, R_D, ν, γ_crit, xi_0, GAMMA_0, qD, T_ref, k_B) = constants
     # kT = (1/rho) * (d rho / d p) at constant T
     # kT is evaluated at T passed into delta_lambda_c, while kT_ref evaluated at T_ref
     
@@ -111,7 +112,9 @@ function xi(rho::Float64, T::Float64, kT::Float64, kT_ref::Float64)
     return term1 * term2
 end
 
-function omega_0(rho::Float64, T::Float64, xi::Float64)
+function omega_0(rho::Float64, T::Float64, xi::Float64, constants::constants_k_H2)
+    (; T_c, rho_c, P_CRIT, A1, A2, B1, B2, C1, C2, C3, R_D, ν, γ_crit, xi_0, GAMMA_0, qD, T_ref, k_B) = constants
+
     rhoc_div_rho = rho_c / rho
     denom = ( (qD*xi)^(-1.0) ) + ( ( ( qD*xi*rhoc_div_rho )^2.0 )/3.0 )
     exponent_term = -(1.0/denom)
@@ -119,7 +122,8 @@ function omega_0(rho::Float64, T::Float64, xi::Float64)
     return (2.0/pi) * (1.0 - exp(exponent_term))
 end
 
-function omega(rho::Float64, T::Float64, xi::Float64, cp::Float64, cv::Float64)
+function omega(rho::Float64, T::Float64, xi::Float64, cp::Float64, cv::Float64, constants::constants_k_H2)
+    (; T_c, rho_c, P_CRIT, A1, A2, B1, B2, C1, C2, C3, R_D, ν, γ_crit, xi_0, GAMMA_0, qD, T_ref, k_B) = constants
 
     term1 = ( (cp-cv)/cp ) * atan(qD*xi)
 
@@ -134,12 +138,18 @@ end
 function delta_lambda_c(rho::Float64, T::Float64, cp::Float64, cv::Float64, kT::Float64, 
     kT_ref::Float64, nu_bar::Float64, constants::constants_k_H2)
 
-    ###### ENFORCE CHECK IF XI IS ZERO THEN USE THE EMPIRICAL one
-    ###### Other check for empirical???
-    xi_val = xi(rho, T, kT, kT_ref)
+    (; T_c, rho_c, P_CRIT, A1, A2, B1, B2, C1, C2, C3, R_D, ν, γ_crit, xi_0, GAMMA_0, qD, T_ref, k_B) = constants
 
-    omega_0_val = omega_0(rho, T, xi_val)
-    omega_val = omega(rho, T, xi_val, cp, cv)
+    tol=1.0e-12
+    xi_val = xi(rho, T, kT, kT_ref, constants)
+
+    if (xi_val < tol)
+        println("XI: $xi_val")
+        return 0.0
+    end
+
+    omega_0_val = omega_0(rho, T, xi_val, constants)
+    omega_val = omega(rho, T, xi_val, cp, cv, constants)
 
     numerator = rho*cp*R_D*k_B*T
     denominator = 6.0*pi*nu_bar*xi_val
@@ -174,13 +184,19 @@ function thermal_conductivity_H2(rho::Float64, T::Float64, cp::Float64, cv::Floa
 
     lambda_0_val = lambda0(T, constants)
     delta_lambda_val = delta_lambda(rho, T, constants)
-    # lambda_crit_val = delta_lambda_c(rho, T, cp, cv, kT, kT_ref, nu_bar)
-    lambda_crit_val = delta_lambda_c_empirical(rho, T, constants)
 
-    println("Vals:")
-    println(lambda_0_val)
-    println(delta_lambda_val)
-    println(lambda_crit_val)
+    lambda_crit_val = 0.0
+
+    if abs(T_c - T) < 7.0 # If it is close to critical point (within 7 K) - use complex function
+        lambda_crit_val = delta_lambda_c(rho, T, cp, cv, kT, kT_ref, nu_bar, constants)
+        println("WE USE FANCY FUNCTION HERE!")
+        println(lambda_crit_val)
+        # if lambda_crit_val == 0.0 # Safety check in case xi = 0, we just switch to simple function (MAYBE NOT NEEDED!)
+        #     lambda_crit_val = delta_lambda_c_empirical(rho, T, constants)
+        # end
+    else # Otherwise simpler function is good enough
+        lambda_crit_val = delta_lambda_c_empirical(rho, T, constants)
+    end
 
     return lambda_0_val + delta_lambda_val + lambda_crit_val
 end
@@ -189,16 +205,20 @@ end
 
 
 
-T_input = 28.803  # Temperature in K
-P_input = 10.0e3 # Pressure in kPa
+# T_input = 32.0		  # Temperature in K
+# P_input = 1.5e6 # Pressure in kPa
 
 
-rho0, cv0, cp0, kT0, kT_ref, internal_energy0, enthalpy0, entropy0 = XCALibre.ModelPhysics.EOS_wrapper(T_input, P_input)
+# rho0, cv0, cp0, kT0, kT_ref, internal_energy0, enthalpy0, entropy0 = XCALibre.ModelPhysics.EOS_wrapper_H2(T_input, P_input)
 
-println("T: $T_input")
-println("Rho: $rho0")
+# println("T: $T_input")
+# println("Rho: $rho0")
 
-nu_bar = XCALibre.ModelPhysics.mu_high_fidelity_H2(T_input, rho0) #do unit conversion e.g. 1e6
+# nu_bar = XCALibre.ModelPhysics.mu_high_fidelity_H2(T_input, rho0)
 
-k0 = thermal_conductivity_H2(rho0, T_input, cp0, cv0, kT0, kT_ref, nu_bar)
-println("k: $k0")
+# println("Nu: $nu_bar")
+
+
+# k0 = thermal_conductivity_H2(rho0, T_input, cp0, cv0, kT0, kT_ref, nu_bar)
+
+# println("K > $k0")
