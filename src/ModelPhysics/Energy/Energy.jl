@@ -19,6 +19,7 @@ include("energy_types.jl")
 
 # Energy models
 include("Sensible_Enthalpy.jl")
+include("HighFidelity_Energy.jl")
 include("Laplace_Energy.jl")
 include("Cryogenic_Conduction.jl")
 
@@ -43,6 +44,8 @@ include("PropertyModels/ThermalConductivity/thermal_conductivity_N2.jl")
 # Surface Tension
 include("PropertyModels/surface_tension.jl")
 
+# Top level functor
+include("PropertyModels/EOS_closures.jl")
 
 
 export initialise, energy!

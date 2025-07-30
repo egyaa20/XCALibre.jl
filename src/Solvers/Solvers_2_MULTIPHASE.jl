@@ -914,7 +914,6 @@
 
 #     # if min_val < 0.0 || max_val > 1.0
 #     #     println("WARNING: Alpha field is not bounded! Min: $(min_val), Max: $(max_val)")
-#     #     # You might want to halt the simulation or apply a bounding correction here
 #     # end
 #     # has_invalid_values = any(x -> isnan(x) | isinf(x), vals)
 #     # println("Vals:")

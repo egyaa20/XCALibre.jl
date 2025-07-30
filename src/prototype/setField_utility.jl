@@ -1,5 +1,9 @@
-function setField!(mesh, field, value::Real, region_box::String)
-    coords = map(s -> parse(Float64, s), split(replace(region_box, r"[()]" => ""))) #split input region into array of coords
+
+using LinearAlgebra
+
+
+function setField_Box!(mesh, field, value::Float64, region::String)
+    coords = map(s -> parse(Float64, s), split(replace(region, r"[()]" => ""))) #split input region into array of coords
     p1 = coords[1:3] #min corner of the box
     p2 = coords[4:6] #max corner of the box
     
@@ -24,4 +28,62 @@ function setField!(mesh, field, value::Real, region_box::String)
     end
     
     return length(cells_in_region)
+end
+
+
+
+function setField_Sphere!(mesh, field, value::Float64, region::String)
+    
+    # region = "(x y z) r" would imply sphere in 3D
+    # region = "(x y) r" would imply circle in 2D
+
+    # THUS we need to check if we have 3 or 4 elements in our region string
+
+
+    coords = parse.(Float64, split(replace(region, r"[()]" => "")))
+
+
+    centre, radius = if length(coords) == 4 # 3D sphere
+        (coords[1:3], coords[4])
+    elseif length(coords) == 3 # 2D circle
+        ([coords[1], coords[2], 0.0], coords[3]) # Introduce 0.0 for the third dimension
+    else
+        error("Invalid region format!!!")
+    end
+
+
+    cells_in_region = Int[]
+
+    for (id, cell) in enumerate(mesh.cells) # Loop over cells and select those that are inside desired radius
+        if norm(cell.centre .- centre) <= radius # Check if the cell centre is less than 1 radius away from centre coord
+            push!(cells_in_region, id)
+        end
+    end
+
+    if !isempty(cells_in_region)
+        field.values[cells_in_region] .= value # Reassign values inside the field
+    end
+
+    return length(cells_in_region)
+end
+
+
+function setField_HydrostaticPressure(mesh, field, value::Float64, region::String)
+    # We want to impose (for each cell) p = pin + (pout - pin) * (x - xinlet) / L
+    
+    # 3 CASES: 
+        #2D plane - we need centre point and distance to edge; axis and length
+        #3D pipe - we need centre point, radius, normal axis and length
+        #3D rectangle - we need centre point, rectangle in normal plane, length
+
+    # We compute first cell layer height; appriate p
+    # We need to figure out step (how tall is the layer, what tolerance to use to find cells)
+    
+    # Assign p for this layer height +- tolerange height based on cell centre
+
+    # Repeat until you are at outlet
+
+
+
+    # ISSUES - Problematic for non-quad meshes
 end

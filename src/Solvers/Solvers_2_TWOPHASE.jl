@@ -2,8 +2,6 @@ export multiphase!
 using XCALibre
 
 const FLUID_EOS_MAP = Dict(
-    # :hydrogen => XCALibre.ModelPhysics.EOS_H2,
-    # :nitrogen => XCALibre.ModelPhysics.EOS_N2,
     :hydrogen => EOS_H2,
     :nitrogen => EOS_N2,
 )
@@ -69,10 +67,11 @@ function setup_multiphase_solvers(
     P_input = 10.0e6
 
 
+    println("STARTING...")
     EOS = FLUID_EOS_MAP[fluid_type]
-    rho0, cv0, cp0, internal_energy0, enthalpy0, entropy0, nu_bar, k0 = EOS(T_input, P_input)
+    rho0, cv0, cp0, internal_energy0, enthalpy0, entropy0, nu_bar, k0, sigma0 = EOS(T_input, P_input)
 
-    println("Rho: $rho0, k0: $k0, viscosity: $nu_bar")
+    println("Rho: $rho0, k0: $k0, viscosity: $nu_bar, sigma: $sigma0")
 
 
     # rho_0, cv0, cp0, kT0, internal_energy0, enthalpy0, entropy0 = EOS_wrapper(T_input, P_input)

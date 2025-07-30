@@ -6,6 +6,9 @@ g = 9.81
 function boiling_flux(T_w::Float64, T_sat::Float64, sigma::Float64, rho_l::Float64, 
     rho_v::Float64, c_pl::Float64, k_l::Float64, h_lv::Float64, q_con::Float64, alpha_v::Float64)
     
+    #c_pl = cp of liquid;
+    #k_l = k of liquid
+    
     Npp = nucleate_site_density(T_w, T_sat)
 
     D_dep = bubble_departure_diameter(sigma, rho_l, rho_v)

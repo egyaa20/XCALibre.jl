@@ -51,6 +51,8 @@ struct constants_EoS_H2
     β::Vector{Float64}
     γ::Vector{Float64}
     D::Vector{Float64}
+    # c_τ_evap::Float64
+    # c_τ_cond::Float64
 end
 
 
@@ -489,6 +491,89 @@ function vapour_pressure_ancillary(T::Float64, constants::constants_EoS_H2)
 end
 
 
+function dPsat_dT(T::Float64, p_pair::Float64, constants::constants_EoS_H2)
+    (; T_c) = constants
+    
+    # Critical pressure for parahydrogen from the paper (in Pa)
+    p_c = 1.2858e6
+
+    # Coefficients and exponents from Table 8 from the paper mentioned above
+    N = [-4.87767, 1.03359, 0.82668, -0.129412]
+    k = [1.0, 1.5, 2.65, 7.4]
+    
+    θ = 1.0 - T / T_c
+    
+    S_T = 0.0
+    sum_dS_dT_term = 0.0
+    for i in eachindex(N)
+        S_T += N[i] * (θ^k[i])
+        sum_dS_dT_term += N[i] * k[i] * (θ^(k[i] - 1.0))
+    end
+
+    derivative_term = ( (-T_c / (T^2.0)) * S_T ) - ( (1.0 / T) * sum_dS_dT_term )
+    
+    return p_pair * derivative_term # apply chain rule
+end
+
+
+function find_saturation_temperature(P_target::Float64, constants::constants_EoS_H2; max_iter=20, tol=1.0e-7)
+    # Newton-Raphson method, similar to density
+
+    (; T_c) = constants
+    p_c = 1.2858e6 # Critical pressure in Pa (PARAHYDROGEN)
+    T_triple = 13.8033 # Triple point temperature in K (PARAHYDROGEN)
+    p_triple = 7042.0 # Triple point pressure in Pa (PARAHYDROGEN)
+
+    # Check if there is such thing as saturation temperature
+    if P_target > p_c
+        println("Pressure ($P_target Pa) is above the critical pressure ($p_c Pa). Saturation temperature is not defined!!!")
+        return 0.0
+    end
+    if P_target < p_triple
+         println("Pressure ($P_target Pa) is below the triple point pressure ($p_triple Pa). Saturation temperature is not defined11!")
+        return 0.0
+    end
+
+
+
+    # Initial guess for temp using a simplified inversion of the ancillary equation
+    N1 = -4.87767 # First coefficient from the ancillary equation
+    T_guess = T_c / (1.0 + log(P_target / p_c) / N1)
+    
+    T = clamp(T_guess, T_triple, T_c - 1e-6) # Make sure guess is physical
+
+
+    
+
+    for it in 1:max_iter
+        # Calculate residual
+        P_calc = vapour_pressure_ancillary(T, constants)
+        f = P_calc - P_target
+
+        # Check for convergence
+        if abs(f / P_target) < tol
+            return T
+        end
+
+        # Calculate derivative for Newton-Raphson step
+        dP_dT = dPsat_dT(T, P_calc, constants)
+        
+        if abs(dP_dT) < 1e-9 # Avoid division by zero
+             error("T_SAT : DERIVATIVE IS ALMOST ZERO")
+        end
+
+        # Newton-Raphson step
+        T_new = T - f / dP_dT
+        
+        T = clamp(T_new, T_triple, T_c - 1e-6)
+    end
+    
+    error("T_saturation solver did not converge in $max_iter iterations.")
+end
+
+
+
+
 
 function find_density_advanced(T::Float64, P_target::Float64, rho_guess::Float64, constants::constants_EoS_H2;
     max_iter=100, tol=1.0e-8) # DOES NOT SUPPORT GPU
@@ -500,7 +585,6 @@ function find_density_advanced(T::Float64, P_target::Float64, rho_guess::Float64
 
     # Initial guess for density can now account for discontinuity
     rho = rho_guess
-
 
     for it in 1:max_iter
         δ = rho / rho_c
@@ -532,8 +616,7 @@ end
 
 
 
-
-function find_saturation_properties(T::Float64, constants::constants_EoS_H2; max_iter=20, tol=1.0e-7)
+function find_saturation_properties(T::Float64, pressure::Float64, constants::constants_EoS_H2; max_iter=20, tol=1.0e-7)
     (; T_c, rho_c, R_univ) = constants
     if T >= T_c # Ensure the temperature is in the valid range (below critical)
         error("Temperature must be below the critical temperature for saturation calculation.")
@@ -550,7 +633,7 @@ function find_saturation_properties(T::Float64, constants::constants_EoS_H2; max
 
     for it in 1:max_iter
         p_ideal_gas = p_current / (R_univ * T)
-        p_multiplied =  2.0 * rho_c
+        p_multiplied =  2.5 * rho_c
 
         rho_l = find_density_advanced(T, p_current, p_multiplied, constants) # Higher guess for liquid
         rho_v = find_density_advanced(T, p_current, p_ideal_gas, constants) # Ideal gas guess for vapour
@@ -568,7 +651,12 @@ function find_saturation_properties(T::Float64, constants::constants_EoS_H2; max
         # Convergence check based on gibbs energy
         if abs(g_diff_current / g_l) < tol
             println("Saturation solver converged in $it iterations.")
-            return (p_current, rho_l * 1000.0, rho_v * 1000.0) # Conversion into appropriate units
+
+
+            T_sat = 0.0
+            T_sat = find_saturation_temperature(pressure, constants::constants_EoS_H2)
+
+            return (p_current, T_sat, rho_l, rho_v) # Conversion into appropriate units
         end
 
         # Secant method step
@@ -600,7 +688,7 @@ function find_saturation_properties(T::Float64, constants::constants_EoS_H2; max
 end
 
 
-function EOS_wrapper_H2(T::Float64, pressure::Float64)
+function EOS_wrapper_H2(T::Float64, pressure::Float64, alpha::Float64)
     constants = constants_EoS_H2(
         32.938, # T_c
         15.538e3, # rho_c, multiplied by e3 for convenience
@@ -633,32 +721,67 @@ function EOS_wrapper_H2(T::Float64, pressure::Float64)
 
         [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
         1.5487, 0.1785, 1.28, 0.6319, 1.7104] # D
+
+        # 15.0, # c_τ_evap
+        # 15.0 # c_τ_cond
     )
 
     (; T_c, rho_c, R_univ, M_H2, T_ref, a_para, k_para, N, t, d, p, α, β, γ, D) = constants
 
+    pressure_tol = 1e-4
+    alpha_tol = 1e-8
 
     rho_mol = 0.0
+    rho_list = [0.0, 0.0]
+
+    isMultiphase = false
+    latentHeat = 0.0
+    T_sat = 0.0
 
     # Firstly, account for supercritical fluid state
-    if T >= constants.T_c # Maybe add fancier check "within tolerance"
-        rho_guess = pressure / (constants.R_univ * T) # Ideal gas guess
+    if T >= T_c # Maybe add fancier check "within tolerance"
+        rho_guess = pressure / (R_univ * T) # Ideal gas guess
         rho_mol = find_density_advanced(T, pressure, rho_guess, constants)
 
     else # Else it is not supercritical
-        (Psat_Pa, rho_l_sat, rho_v_sat) = find_saturation_properties(T, constants)
+        (P_sat, T_sat, rho_l_sat, rho_v_sat) = find_saturation_properties(T, pressure, constants)
 
-        if abs(pressure - Psat_Pa) < 1e-3 # TWO PHASE REGION
-            error("TWO PHASE REGION AT T=$T !")
+        println("rho_l : $rho_l_sat, rho_v: $rho_v_sat")
 
-        elseif pressure < Psat_Pa # VAPOUR REGION
+        if ( abs(pressure - P_sat) / P_sat ) < pressure_tol # TWO PHASE REGION, pressure matched saturation line
+            # error("TWO PHASE REGION AT T=$T !")
+            # println("WE ARE HERE")
+            isMultiphase = true
+
+            rho_mol_liquid = find_density_advanced(T, pressure, rho_l_sat, constants)
+            rho_mol_vapour = find_density_advanced(T, pressure, rho_v_sat, constants)
+
+            # println("rho_mol_LIQUID: $rho_mol_liquid, rho_mol_VAPOUR: $rho_mol_vapour")
+
+            rho_list[1] = rho_mol_liquid
+            rho_list[2] = rho_mol_vapour
+
+            # compute everything for both phases and use alpha to find mixtures?
+
+
+        elseif (alpha <= (1.0 - alpha_tol) && alpha >= (0.0 + alpha_tol)) # TWO PHASE REGION, based on alpha
+            # need to also account for mass flow rate!!!
+            isMultiphase = true
+
+            rho_mol_liquid = find_density_advanced(T, pressure, rho_l_sat, constants)
+            rho_mol_vapour = find_density_advanced(T, pressure, rho_v_sat, constants)
+
+            rho_list[1] = rho_mol_liquid
+            rho_list[2] = rho_mol_vapour
+
+        elseif pressure < P_sat # VAPOUR REGION
             println("VAPOUR")
-            rho_guess = pressure / (constants.R_univ * T) # Ideal gas guess
+            rho_guess = pressure / (R_univ * T) # Ideal gas guess
             rho_mol = find_density_advanced(T, pressure, rho_guess, constants)
 
-        elseif pressure > Psat_Pa # LIQUID REGION
+        elseif pressure > P_sat # LIQUID REGION
             println("LIQUID")
-            rho_guess = 2.0 * constants.rho_c # Higher density guess
+            rho_guess = 2.5 * rho_c # Higher density guess
             rho_mol = find_density_advanced(T, pressure, rho_guess, constants)
         end
 
@@ -667,7 +790,42 @@ function EOS_wrapper_H2(T::Float64, pressure::Float64)
         end
     end
 
+    # println("RHO_MOL : $rho_mol")
+
     # rho_mol = find_density(T, pressure, constants) ## OLD WAY
+
+    if isMultiphase == false
+        rho_val, cp_val, cv_val, kT_val, kT_ref_val, 
+        internal_energy_val, enthalpy_val, entropy_val = params_computation(rho_mol, T, constants)
+
+        return isMultiphase, rho_val, cp_val, cv_val, kT_val, kT_ref_val, 
+                internal_energy_val, enthalpy_val, entropy_val, latentHeat, T_sat
+    else
+        rho_vals = [0.0, 0.0]
+        cv_vals = [0.0, 0.0]
+        cp_vals = [0.0, 0.0]
+        kT_vals = [0.0, 0.0]
+        kT_ref_vals = [0.0, 0.0]
+        internal_energy_vals = [0.0, 0.0]
+        enthalpy_vals = [0.0, 0.0]
+        entropy_vals = [0.0, 0.0]
+
+        for i in eachindex(rho_list)
+            rho_vals[i], cp_vals[i], cv_vals[i], kT_vals[i], kT_ref_vals[i], 
+            internal_energy_vals[i], enthalpy_vals[i], entropy_vals[i] = params_computation(rho_list[i], T, constants)
+        end
+
+        latentHeat = enthalpy_vals[2] - enthalpy_vals[1] #enthalpy_V - enthalpy_L
+        
+
+        return isMultiphase, rho_vals, cp_vals, cv_vals, kT_vals, 
+                kT_ref_vals, internal_energy_vals, enthalpy_vals, entropy_vals, latentHeat, T_sat
+
+    end
+end
+
+function params_computation(rho_mol::Float64, T::Float64, constants::constants_EoS_H2)
+    (; T_c, rho_c, R_univ, M_H2, T_ref, a_para, k_para, N, t, d, p, α, β, γ, D) = constants
 
     τ = T_c / T
     δ = rho_mol / rho_c
@@ -681,7 +839,7 @@ function EOS_wrapper_H2(T::Float64, pressure::Float64)
     enthalpy_mol = enthalpy_calc(T, δ, τ, constants)
     entropy_mol = entropy_calc(δ, τ, constants)
 
-    conversion_factor = 1.0 / M_H2
+    conversion_factor = 1.0 / (M_H2*1.0e3)
 
     rho = rho_mol * M_H2
 
@@ -695,20 +853,19 @@ function EOS_wrapper_H2(T::Float64, pressure::Float64)
 end
 
 
-# T_input = 35.0  # Temperature in K
-# P_input = 10.0e6
+T_input = 18.35  # Temperature in K
+P_input = 5.5e6
+
+is_mp, rho0, cv0, cp0, kT0, kT_ref, internal_energy0, enthalpy0, 
+        entropy0, latentHeat0, T_sat = EOS_wrapper_H2(T_input, P_input, 0.9)
 
 
-# rho0, cv0, cp0, kT0, kT_ref, internal_energy0, enthalpy0, entropy0 = EOS_wrapper_H2(T_input, P_input)
-
-# println("Rho: $rho0")
-
-# T_input = 28.80  # Temperature in K
-# P_input = 10.0e3 # Pressure in kPa
 
 
 # rho0, cv0, cp0, kT0, kT_ref, internal_energy0, enthalpy0, entropy0 = EOS_wrapper(T_input, P_input)
 
+# println("IS IT MULTIPHASE?:")
+# println(is_mp)
 # println("DENSITY:")
 # println(rho0)
 # println("CV:")
