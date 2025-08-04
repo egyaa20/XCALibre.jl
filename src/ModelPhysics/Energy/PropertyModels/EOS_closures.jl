@@ -22,7 +22,7 @@ function (eos::EOS_functions)(T_input, P_input)
         surface_tension = calculate_surface_tension(eos.fluid_symbol, T_input)
         
         return is_mp, rho0, cv0, cp0, internal_energy0, enthalpy0, entropy0, 
-                    nu_bar, k0, surface_tension, latentHeat, T_sat
+                    nu_bar, k0, surface_tension, latentHeat0, T_sat
     else
         nu_bar_vals = [0.0, 0.0]
         k0_vals = [0.0, 0.0]
@@ -35,7 +35,7 @@ function (eos::EOS_functions)(T_input, P_input)
         surface_tension = calculate_surface_tension(eos.fluid_symbol, T_input)
 
         return is_mp, rho0, cv0, cp0, internal_energy0, enthalpy0, entropy0, 
-                nu_bar_vals, k0_vals, surface_tension, latentHeat, T_sat
+                nu_bar_vals, k0_vals, surface_tension, latentHeat0, T_sat
     end
 end
 
@@ -54,11 +54,11 @@ const EOS_N2 = EOS_functions(
 )
 
 
-# T_input = 20.227  # Temperature in K
-# P_input = 0.1e6
+T_input = 18.803  # Temperature in K
+P_input = 0.1e6
 
-# is_mp, rho0, cv0, cp0, internal_energy0, enthalpy0, entropy0, nu_bar, k0, surface_tension = EOS_H2(T_input, P_input)
-# println("rho: $rho0, is_mp: $is_mp, cv: $cv0, mu: $nu_bar, k: $k0")
+is_mp, rho0, cv0, cp0, internal_energy0, enthalpy0, entropy0, nu_bar, k0, surface_tension = EOS_H2(T_input, P_input)
+println("rho: $rho0, is_mp: $is_mp, cv: $cv0, mu: $nu_bar, k: $k0")
 
 # Works well, but vapour side thermal conductivity is questionable - 5% error....
 

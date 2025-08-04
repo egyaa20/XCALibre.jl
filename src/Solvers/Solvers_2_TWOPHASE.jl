@@ -49,9 +49,11 @@ function setup_multiphase_solvers(
 
     @info "Extracting configuration and input fields..."
 
+    (; iterations, write_interval, dt) = runtime
     (; U, p, Uf, pf) = model.momentum
     (; rho, alpha, alphaf, fluid_type) = model.fluid
     mesh = model.domain
+
 
     @info "Pre-allocating fields..."
     
@@ -248,8 +250,33 @@ function setup_multiphase_solvers(
     @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
     @reset alpha_eqn.solver = _workspace(solvers.alpha.solver, _b(alpha_eqn))
 
-    # @info "Initialising energy model..."
-    # energyModel = initialise(model.energy, model, mdotf, rho, p_eqn, config)
+
+
+    
+
+
+
+    @info "Initialising Helmholtz EoS..."
+
+
+
+    @info "Auxiliary operations..."
+    ∇U = Grad{schemes.p.gradient}(U)
+    grad!(∇U, Uf, U, boundaries.U, time, config)
+    limit_gradient!(schemes.U.limiter, ∇U, U, config)
+
+
+    @info "Initialising energy model..."
+    energyModel = initialise(model.energy, model,
+    alpha, p, rho_l, rho_v, u_l, u_v, U_m, ∇U, U_m_prev, dt,
+    config)
+
+
+
+
+    
+    # energy!(energyModel, model, )
+    # energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
 
     @info "Initialising turbulence model..."
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)

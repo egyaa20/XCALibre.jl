@@ -634,7 +634,7 @@ function find_saturation_properties(T::Float64, constants::constants_EoS_N2; max
         # Convergence check based on gibbs energy
         if abs(g_diff_current / g_l) < tol
             println("Saturation solver converged in $it iterations.")
-            return (p_current, rho_l * 1000.0, rho_v * 1000.0) # Conversion into appropriate units
+            return (p_current, rho_l, rho_v) # Conversion into appropriate units
         end
 
         # Secant method step
@@ -775,7 +775,7 @@ function EOS_wrapper_N2(T::Float64, pressure::Float64)
     enthalpy_mol = enthalpy_calc(T, δ, τ, constants)
     entropy_mol = entropy_calc(δ, τ, constants)
 
-    conversion_factor = 1.0 / M_N2
+    conversion_factor = 1.0 / (M_N2*1.0e3)
 
     rho = rho_mol * M_N2
 
@@ -792,24 +792,24 @@ end
 
 
 
-# T_input = 68.151 # Temperature in K
-# P_input = 10.0e6 # Pressure in kPa
+T_input = 73.151 # Temperature in K
+P_input = 0.1e6 # Pressure in kPa
 
 
-# rho0, cv0, cp0, kT0, internal_energy0, enthalpy0, entropy0 = EOS_wrapper_N2(T_input, P_input)
+rho0, cv0, cp0, kT0, internal_energy0, enthalpy0, entropy0 = EOS_wrapper_N2(T_input, P_input)
 
 
-# println("DENSITY:")
-# println(rho0)
-# println("CV:")
-# println(cv0)
-# println("CP:")
-# println(cp0)
-# println("KT:")
-# println(kT0)
-# println("Internal E:")
-# println(internal_energy0)
-# println("Enthalpy:")
-# println(enthalpy0)
-# println("Entropy:")
-# println(entropy0)
+println("DENSITY:")
+println(rho0)
+println("CV:")
+println(cv0)
+println("CP:")
+println(cp0)
+println("KT:")
+println(kT0)
+println("Internal E:")
+println(internal_energy0)
+println("Enthalpy:")
+println(enthalpy0)
+println("Entropy:")
+println(entropy0)

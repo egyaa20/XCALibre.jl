@@ -853,11 +853,57 @@ function params_computation(rho_mol::Float64, T::Float64, constants::constants_E
 end
 
 
-T_input = 18.35  # Temperature in K
-P_input = 5.5e6
+
+function u_into_T(u_target::Float64, P_target::Float64, T_guess::Float64, constants::constants_EoS_H2;
+                    max_iter=20, tol=1.0e-7)
+
+    (; T_c, rho_c, R_univ, M_H2, T_ref, a_para, k_para, N, t, d, p, α, β, γ, D) = constants
+    # u_target is u_n+1
+    # p_target is p_n+1
+    # T_guess is T_n
+
+    T = T_guess # Start with an initial guess
+    
+    for it in 1:max_iter
+
+        rho_current = find_density(T, P_target, constants) # A MORE ADVANCED APPROACH IS REQUIRED!
+
+        if isnan(rho_current)
+            error("Density solver failed during T inversion.")
+        end
+
+        τ = T_c / T
+        δ = rho_current / rho_c #mol value!
+
+        u_calc = internal_energy_calc(T, δ, τ, constants) #WARNING : need to check units!!!
+
+        # Calculate the residual
+        f = u_calc - u_target
+        if abs(f / u_target) < tol
+            return T # Converged
+        end
+
+        # Calculate the derivative (cv)
+        cv_val = c_v(T, rho_current, constants)
+        if abs(cv_val) < 1e-9
+            error("Derivative (cv) is near zero.")
+        end
+
+        # Newton's step
+        T = T - f / cv_val
+    end
+
+    error("Temperature inversion failed to converge.")
+end
+
+
+
+
+T_input = 18.803  # Temperature in K
+P_input = 0.1e6
 
 is_mp, rho0, cv0, cp0, kT0, kT_ref, internal_energy0, enthalpy0, 
-        entropy0, latentHeat0, T_sat = EOS_wrapper_H2(T_input, P_input, 0.9)
+        entropy0, latentHeat0, T_sat = EOS_wrapper_H2(T_input, P_input, 1.0)
 
 
 

@@ -42,17 +42,73 @@ end
 
 
 function initialise(
-    energy::HighFidelity_Energy, model::Physics{T1,F,SO,M,Tu,E,D,BI}, mdotf, rho, peqn, config
+    energy::HighFidelity_Energy, model::Physics{T1,F,SO,M,Tu,E,D,BI}, 
+        alpha, p, rho_l, rho_v, u_l, u_v, U_m, ∇U, U_m_prev, dt, config
     ) where {T1,F,SO,M,Tu,E,D,BI}
 
-    (; h, T, dpdt) = energy
+    # (; h, T, dpdt) = energy
+
+    dUdt = VectorField(mesh)
+    # for i ∈ 1:dUdt
+    @. dUdt[i].values = ( U_m[i] - U_m_prev[i] ) / dt
+    # end
+
+
+    g = VectorField(mesh)
+    @. g[2].values = -9.81 # y direction, hard-coded
+
+    a = VectorField(mesh)
+
+    # for i ∈ 1:a
+    @. a[i] = g[i] - (U[i] * ∇U.result[i]) - dUdt[i]
+    # end
+
 
 end
 
 
 function energy!(
-    energy::HighFidelityModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, prev, mdotf, rho, mueff, time, config
+    energy::HighFidelityModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, 
+        alpha, p, rho_l, rho_v, u_l, u_v, U_m, U_m_prev, mdotf, mueff, time, config
     ) where {T1,F,SO,M,Tu,E,D,BI}
+
+    # Fields required:
+        # alpha
+        # p
+        # rho_k
+        # u_k
+        # U_m
+
+        # prev U_m
+
+    # Steps:
+    # 1) ( U - prev_U ) / dt
+    # dUdt = VectorField(mesh)
+    # 2) grad (U)
+    # 3) Compute a
+    # 4) Compute Re
+    # 5) Compute f_drag
+    
+    # Keep turbulence = 0 for now
+    # 6) Compute rho_m
+    # 7) Compute d_p
+    # 8) Compute v_pq
+    # 9) Compute v_dr
+    # 10) Compute v_k
+
+    # 11) Compute E_k
+    # 12) Compute S_h
+
+    # 13) Compute k_eff
+    # 14) Compute tau_eff
+    # 15) Compute laplacian
+
+    # 16) Compute Lee Model field
+    # 17) Compute RPI field
+
+    # SOLVE ENERGY EQN.
+
+    # TBD: MOMENTUM;    VOF;    Sketch algo;    PPT
 
     mesh = model.domain
 
