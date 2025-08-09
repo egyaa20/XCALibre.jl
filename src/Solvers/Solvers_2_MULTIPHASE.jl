@@ -17,6 +17,8 @@ function multiphase!(
     return residuals
 end
 
+
+
 #0 = air, 1 = water
 
 rho_0 = 1
@@ -310,9 +312,12 @@ function MULTIPHASE(
         # break
         # println(ralpha)
         # break
+        # println("B4")
+
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
 
+        # println("AFTER")
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
@@ -393,7 +398,7 @@ function MULTIPHASE(
     
     ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
 
-    @. alpha.values = clamp(alpha.values, 0.0, 1.0)
+    # @. alpha.values = clamp(alpha.values, 1.0e-6, 1.0)
 
     interpolate!(alphaf, alpha, config)
     # flux!(phif, Uf, config)
