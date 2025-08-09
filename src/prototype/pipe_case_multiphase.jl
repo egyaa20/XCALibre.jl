@@ -13,11 +13,33 @@ velocity = [0.0, 0.0, 0.0]
 
 model = Physics(
     time = Transient(),
-    fluid = Fluid{Multiphase}(fluid = :hydrogen),
+    fluid = Fluid{Multiphase}(
+        phases = (
+            liquid(name=Water()),
+            gas(name=Air()),
+        )
+    ),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
     )
+
+
+# fluid = Fluid{Multiphase}(
+#     phases = (
+#         Fluid(name=N2(), eos=Helmholtz()) #takes care about liquid / vapour on its own
+#         #OR
+#         Liquid(name=Water(), eos=Const(), mu=Const()),    #alpha = 1
+#         Gas(name=Air(), eos=PerfectGas(), mu=Sutherland())     #alpha = 0
+#         IF NAME IS NOT PASSED, then more info inside eos, mu, etc is required (e.g. custom fluid)
+#     ),
+    
+#     physicsProperties = (
+#         gravity=Gravity(axis=Y(), g=9.81), #Axis, magnitude (-ve by default)
+#         slipVelocity(...) #define 'd' etc
+#         interphase(...)
+#     )
+# )
 
 
 
@@ -115,7 +137,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=600, time_step=1.0e-6, write_interval=100)
+    iterations=1, time_step=1.0e-6, write_interval=100)
     # iterations=1, time_step=1, write_interval=1)
 
 # hardware = Hardware(backend=CUDABackend(), workgroup=32)

@@ -3,10 +3,18 @@ export Fluid
 export Incompressible, WeaklyCompressible, Compressible
 export Multiphase
 
+export liquid, gas, mixture
+export Water, Air, H2, N2
+
+
 abstract type AbstractFluid end
+
 abstract type AbstractMultiphase <: AbstractFluid end
 abstract type AbstractIncompressible <: AbstractFluid end
 abstract type AbstractCompressible <: AbstractFluid end
+
+
+
 
 Base.show(io::IO, fluid::AbstractFluid) = print(io, typeof(fluid).name.wrapper)
 
@@ -23,47 +31,6 @@ Abstract fluid model type for constructing new fluid models.
 struct Fluid{T,ARG}
     args::ARG
 end
-
-
-
-
-@kwdef struct Multiphase{F, S1, S2, F1, F2} <: AbstractMultiphase
-    fluid::F
-    alpha::S1
-    rho::S2
-    alphaf::F1
-    rhof::F2
-    # nu::S3
-    # nuf::F3
-end
-Adapt.@adapt_structure Multiphase
-
-Fluid{Multiphase}(; fluid::Symbol, alpha=0.0, rho=1.0) = begin
-    coeffs = (alpha=alpha, rho=rho, fluid=fluid)
-    ARG = typeof(coeffs)
-    Fluid{Multiphase,ARG}(coeffs)
-end
-
-(fluid::Fluid{Multiphase, ARG})(mesh) where ARG = begin
-    coeffs = fluid.args
-    (; rho, alpha, fluid) = coeffs
-    alpha = ScalarField(mesh)
-    alphaf = FaceScalarField(mesh)
-    rho = ScalarField(mesh)
-    rhof = FaceScalarField(mesh)
-
-    # nu = ConstantScalar(nu)
-    # nuf = nu
-
-
-    #Based on fluid passed assign: initial rho; nu; (transport model?)
-
-    Multiphase(fluid, alpha, rho, alphaf, rhof)
-end
-
-
-
-
 
 
 
