@@ -11,12 +11,16 @@ mesh_dev = adapt(backend, mesh)
 
 velocity = [0.0, 0.0, 0.0]
 
+
+
+
+### QUESTION : How to turn Const() into just "=10.0" ?
 model = Physics(
     time = Transient(),
     fluid = Fluid{Multiphase}(
         phases = (
-            liquid(name=Water()),
-            gas(name=Air()),
+            liquid(name=Water(), transport=ConstMu(5.1e-3)),
+            gas(name=Air(), eos=PerfectGas(1.0), transport=Sutherland()),
         )
     ),
     turbulence = RANS{Laminar}(),
