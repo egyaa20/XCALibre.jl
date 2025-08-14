@@ -21,6 +21,7 @@ using CUDA
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "pipe_fine_mesh.unv"
+grid = "laplace_unit_5by5.unv"
 mesh_file = joinpath(grids_dir, grid)
 # pipe_fine_mesh.unv
 # grid = "pipe_coarse_mesh.unv"
@@ -46,9 +47,22 @@ velocity = [0.0, 0.0, 0.0]
 # nu = 1e-3
 # Re = velocity[1]*0.1/nu
 
+
+
+
+
+
 model = Physics(
     time = Transient(),
-    fluid = Fluid{Multiphase}(fluid = :hydrogen),
+    fluid = Fluid{Multiphase}(
+        phases = (
+            phase_1(eos=HelmholtzEnergy(:H2)),
+            phase_2(eos=HelmholtzEnergy(:H2))
+        ),
+        gravity = gravity([0.0, -9.81, 0.0]),
+        surfaceTension = constSurfaceTension(0.07),
+        leeModel = leeModel(evap_coeff=10.0, condens_coeff=20.0)
+    ),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
@@ -57,7 +71,12 @@ model = Physics(
 
 
 
-include("setField_utility.jl")
+
+
+
+
+
+# include("setField_utility.jl")
 
 # region_to_initialize = "(0 0 -1) (0.1461 0.292 1)"
 # region_to_initialize = "(0 0 -1) (0.05 0.1 1)"
