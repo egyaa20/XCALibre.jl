@@ -1,0 +1,111 @@
+[33m218d3c93[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mAA/multiphase_testing[m[33m, [m[1;33mtag: [m[1;33mrescue-2025-08-14[m[33m, [m[1;31morigin/AA/multiphase_testing[m[33m, [m[1;32mAA/multiphase_reset[m[33m)[m HEAD@{2025-08-14 06:36:22 +0100}: checkout: moving from AA/multiphase_reset to AA/multiphase_testing
+[33m218d3c93[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mAA/multiphase_testing[m[33m, [m[1;33mtag: [m[1;33mrescue-2025-08-14[m[33m, [m[1;31morigin/AA/multiphase_testing[m[33m, [m[1;32mAA/multiphase_reset[m[33m)[m HEAD@{2025-08-14 04:53:48 +0100}: checkout: moving from 218d3c93ae7f086f88cd5f6e8608df97468c6082 to AA/multiphase_reset
+[33m218d3c93[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mAA/multiphase_testing[m[33m, [m[1;33mtag: [m[1;33mrescue-2025-08-14[m[33m, [m[1;31morigin/AA/multiphase_testing[m[33m, [m[1;32mAA/multiphase_reset[m[33m)[m HEAD@{2025-08-14 04:48:39 +0100}: checkout: moving from a2e6002e7f3a945654df540f542d4d68dfc68777 to 218d3c93ae7f086f88cd5f6e8608df97468c6082
+[33ma2e6002e[m[33m ([m[1;32mAA/address-review-Laplace-PR[m[33m)[m HEAD@{2025-08-14 04:35:35 +0100}: checkout: moving from 194440002f82750cacb9dd3798686a749ff3f039 to a2e6002e7f3a945654df540f542d4d68dfc68777
+[33m19444000[m HEAD@{2025-08-14 04:35:18 +0100}: checkout: moving from 218d3c93ae7f086f88cd5f6e8608df97468c6082 to 194440002f82750cacb9dd3798686a749ff3f039
+[33m218d3c93[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mAA/multiphase_testing[m[33m, [m[1;33mtag: [m[1;33mrescue-2025-08-14[m[33m, [m[1;31morigin/AA/multiphase_testing[m[33m, [m[1;32mAA/multiphase_reset[m[33m)[m HEAD@{2025-08-14 04:34:57 +0100}: checkout: moving from local-main to 218d3c93ae7f086f88cd5f6e8608df97468c6082
+[33m7c06a57a[m[33m ([m[1;31morigin/local-main[m[33m, [m[1;32mlocal-main[m[33m)[m HEAD@{2025-08-14 04:32:56 +0100}: commit: Small update
+[33me9aaf294[m HEAD@{2025-08-14 04:24:19 +0100}: commit (merge): Merge branch 'tmp/laplace-update' into local-main
+[33mf0f94b4a[m HEAD@{2025-08-14 04:23:52 +0100}: pull --rebase origin local-main: Fast-forward
+[33m0d24ab6c[m HEAD@{2025-08-14 04:23:41 +0100}: checkout: moving from tmp/laplace-update to local-main
+[33m9b990f1f[m[33m ([m[1;32mtmp/laplace-update[m[33m)[m HEAD@{2025-08-14 04:23:33 +0100}: checkout: moving from 9b990f1fbf46df97bb6b341135e1e52ce35c1b61 to tmp/laplace-update
+[33m9b990f1f[m[33m ([m[1;32mtmp/laplace-update[m[33m)[m HEAD@{2025-08-14 04:18:53 +0100}: commit: images for user guide
+[33m174c6530[m HEAD@{2025-08-14 04:15:13 +0100}: commit: PR Ready (with user guide)
+[33m687a409d[m HEAD@{2025-08-14 02:39:46 +0100}: commit: Grid files added
+[33mda6b03a8[m HEAD@{2025-08-14 02:36:01 +0100}: commit: Laplace solver is PR ready (incl. functionality and unit tests)
+[33ma2e6002e[m[33m ([m[1;32mAA/address-review-Laplace-PR[m[33m)[m HEAD@{2025-08-12 20:05:54 +0100}: checkout: moving from 8a7185a71f6bf503d7126509688aa638a4e793a7 to a2e6002e7f3a945654df540f542d4d68dfc68777
+[33m8a7185a7[m HEAD@{2025-08-12 20:05:43 +0100}: commit: save multiphase
+[33m19444000[m HEAD@{2025-08-12 16:26:29 +0100}: checkout: moving from 0eb87e7b4b9c167e760d5adf08377272f23d38af to 194440002f82750cacb9dd3798686a749ff3f039
+[33m0eb87e7b[m HEAD@{2025-08-12 16:25:22 +0100}: commit: save....
+[33ma2e6002e[m[33m ([m[1;32mAA/address-review-Laplace-PR[m[33m)[m HEAD@{2025-08-12 16:15:03 +0100}: checkout: moving from 2553ad454c7ad8a7ad4896f9bc9d86056e93a2d4 to a2e6002e7f3a945654df540f542d4d68dfc68777
+[33m2553ad45[m HEAD@{2025-08-12 16:14:46 +0100}: commit: save
+[33mdd55ff8c[m HEAD@{2025-08-12 11:00:27 +0100}: commit: Multiphase dispatch (saved for later)
+[33mb7c9277a[m HEAD@{2025-08-09 21:46:09 +0100}: commit: Added the skeleton for multiphase API
+[33mcaa14bed[m HEAD@{2025-08-09 16:29:14 +0100}: commit: Solver fixed => Stephen's simulation is running
+[33m7d7e80a3[m HEAD@{2025-08-08 15:28:50 +0100}: checkout: moving from 8b09ddf16889680159baaf4cfd87515c0286ba0a to 7d7e80a3fb6dc046aea0b0f67b747106caa487ab
+[33m8b09ddf1[m HEAD@{2025-08-07 16:47:42 +0100}: checkout: moving from f1dc950f92cfb0d537db90ef2c8a35b290b5012e to 8b09ddf16889680159baaf4cfd87515c0286ba0a
+[33mf1dc950f[m HEAD@{2025-08-07 16:46:53 +0100}: checkout: moving from eaab6696cf5dcf9d13c3afbc8b0e7c8c8ce7eb32 to f1dc950f92cfb0d537db90ef2c8a35b290b5012e
+[33meaab6696[m HEAD@{2025-08-07 16:46:47 +0100}: commit: save_those
+[33m218d3c93[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mAA/multiphase_testing[m[33m, [m[1;33mtag: [m[1;33mrescue-2025-08-14[m[33m, [m[1;31morigin/AA/multiphase_testing[m[33m, [m[1;32mAA/multiphase_reset[m[33m)[m HEAD@{2025-08-07 16:41:56 +0100}: checkout: moving from b07c4d99e0a9c9cc02415abcc5cd65fe765bd2ef to 218d3c93ae7f086f88cd5f6e8608df97468c6082
+[33mb07c4d99[m HEAD@{2025-08-07 16:41:52 +0100}: commit: save_others
+[33md21da803[m HEAD@{2025-08-07 16:41:13 +0100}: commit: add
+[33m0fd13b68[m HEAD@{2025-08-07 16:40:15 +0100}: commit: save_123
+[33m218d3c93[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mAA/multiphase_testing[m[33m, [m[1;33mtag: [m[1;33mrescue-2025-08-14[m[33m, [m[1;31morigin/AA/multiphase_testing[m[33m, [m[1;32mAA/multiphase_reset[m[33m)[m HEAD@{2025-08-07 13:47:07 +0100}: checkout: moving from AA/address-review-Laplace-PR to 218d3c93ae7f086f88cd5f6e8608df97468c6082
+[33ma2e6002e[m[33m ([m[1;32mAA/address-review-Laplace-PR[m[33m)[m HEAD@{2025-08-07 13:44:39 +0100}: commit (merge): Merge branch 'AA/address-review-Laplace-PR' of https://github.com/egyaa20/XCALibre.jl into AA/address-review-Laplace-PR
+[33m8b09ddf1[m HEAD@{2025-08-07 12:50:38 +0100}: commit: PR update #1
+[33m0daa63ee[m HEAD@{2025-08-04 13:26:27 +0100}: pull --tags origin AA/address-review-Laplace-PR: Merge made by the 'ort' strategy.
+[33m28372f73[m HEAD@{2025-08-04 13:26:26 +0100}: commit: Add mesh files for testing
+[33m8604b895[m HEAD@{2025-08-04 12:45:13 +0100}: commit: commit
+[33m0d24ab6c[m HEAD@{2025-08-04 12:25:55 +0100}: checkout: moving from local-main to AA/address-review-Laplace-PR
+[33m0d24ab6c[m HEAD@{2025-08-04 12:25:00 +0100}: merge AA/address-review-Laplace-PR: Fast-forward
+[33m54f99df4[m HEAD@{2025-08-04 12:24:48 +0100}: checkout: moving from AA/address-review-Laplace-PR to local-main
+[33m0d24ab6c[m HEAD@{2025-08-04 12:24:00 +0100}: merge upstream/main: Merge made by the 'ort' strategy.
+[33m54f99df4[m HEAD@{2025-08-04 12:22:25 +0100}: checkout: moving from local-main to AA/address-review-Laplace-PR
+[33m54f99df4[m HEAD@{2025-08-04 12:21:19 +0100}: checkout: moving from a402c0c9f32881ecdf385b37a5cd3b6392415919 to local-main
+[33ma402c0c9[m HEAD@{2025-08-04 12:13:08 +0100}: merge upstream/main: Merge made by the 'ort' strategy.
+[33m54f99df4[m HEAD@{2025-08-04 12:11:25 +0100}: checkout: moving from AA/multiphase_testing to 54f99df4935de907ade237e9247f60c3a114aa8b
+[33m218d3c93[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mAA/multiphase_testing[m[33m, [m[1;33mtag: [m[1;33mrescue-2025-08-14[m[33m, [m[1;31morigin/AA/multiphase_testing[m[33m, [m[1;32mAA/multiphase_reset[m[33m)[m HEAD@{2025-08-04 12:10:40 +0100}: commit: save_this
+[33m19444000[m HEAD@{2025-07-30 23:21:33 +0100}: commit: Another upgrade to Helmholtz EoS
+[33mb262c8a5[m HEAD@{2025-07-28 19:22:33 +0100}: commit: Surface tension embedded into properties wrapper
+[33mb41421fa[m HEAD@{2025-07-28 19:14:46 +0100}: commit: BIG UPDATE: All required fluid properties for Nitrogen and Hydrogen are completely ready; problem with different phases was solved and it is all very accurate under different conditions
+[33m5ed33b64[m[33m ([m[1;31morigin/multiphase_updated[m[33m, [m[1;32mmultiphase_updated[m[33m)[m HEAD@{2025-07-26 08:05:31 +0100}: checkout: moving from 5ed33b649733c08920f4fd6cb9094a432d0a06eb to AA/multiphase_testing
+[33m5ed33b64[m[33m ([m[1;31morigin/multiphase_updated[m[33m, [m[1;32mmultiphase_updated[m[33m)[m HEAD@{2025-07-26 08:04:49 +0100}: checkout: moving from f1dc950f92cfb0d537db90ef2c8a35b290b5012e to 5ed33b649733c08920f4fd6cb9094a432d0a06eb
+[33mf1dc950f[m HEAD@{2025-07-26 08:00:10 +0100}: checkout: moving from 5ed33b649733c08920f4fd6cb9094a432d0a06eb to f1dc950f92cfb0d537db90ef2c8a35b290b5012e
+[33m5ed33b64[m[33m ([m[1;31morigin/multiphase_updated[m[33m, [m[1;32mmultiphase_updated[m[33m)[m HEAD@{2025-07-26 07:58:53 +0100}: checkout: moving from 9e55c74ae20de316e8b7b0ca4dac9efa56c223ab to 5ed33b649733c08920f4fd6cb9094a432d0a06eb
+[33m9e55c74a[m HEAD@{2025-07-26 07:58:46 +0100}: commit: trying to make multphase solver work...
+[33m5ed33b64[m[33m ([m[1;31morigin/multiphase_updated[m[33m, [m[1;32mmultiphase_updated[m[33m)[m HEAD@{2025-07-24 16:30:15 +0100}: checkout: moving from 7e7a80aae9ce8a44b972597413f2e925a3691238 to 5ed33b649733c08920f4fd6cb9094a432d0a06eb
+[33m7e7a80aa[m HEAD@{2025-07-24 16:30:07 +0100}: commit: save2
+[33m9fdb65df[m HEAD@{2025-07-24 16:11:44 +0100}: checkout: moving from multiphase_updated to 9fdb65dfbcc8d0e010461e63b69d5bc00054dbd5
+[33m5ed33b64[m[33m ([m[1;31morigin/multiphase_updated[m[33m, [m[1;32mmultiphase_updated[m[33m)[m HEAD@{2025-07-24 16:11:37 +0100}: commit: save
+[33m7d7e80a3[m HEAD@{2025-07-22 20:16:20 +0100}: commit: pause on multiphase solver testing;
+[33mf1dc950f[m HEAD@{2025-07-22 01:12:13 +0100}: commit: Multiphase solver works now.
+[33m9fdb65df[m HEAD@{2025-07-20 23:21:57 +0100}: commit: Added: Multiparameter EoS for both H2 and N2, returning values for rho, cp, cv, kT, internal energy, enthalpy, entropy
+[33m68a57b2c[m HEAD@{2025-07-18 23:46:24 +0100}: commit: multiphase: pause for now
+[33m91bb391f[m HEAD@{2025-07-16 10:13:45 +0100}: commit: update
+[33mf4e305df[m HEAD@{2025-07-15 22:13:06 +0100}: commit: Added: 3 viscosity models (Sutherland's, Andrade's, High Fidelity one for cryogenic temps)
+[33m2f93e1f9[m HEAD@{2025-07-15 15:49:38 +0100}: checkout: moving from multiphase_updated to multiphase_updated
+[33m2f93e1f9[m HEAD@{2025-07-15 15:49:26 +0100}: commit: Added: setFields utility that allows to initialise specific field value in cells within region of interest, not just the whole field
+[33m54f99df4[m HEAD@{2025-07-14 10:36:31 +0100}: checkout: moving from local-main to multiphase_updated
+[33m54f99df4[m HEAD@{2025-07-14 10:36:18 +0100}: checkout: moving from MultiPhase-Solver to local-main
+[33m7160b2c5[m[33m ([m[1;31morigin/MultiPhase-Solver[m[33m, [m[1;32mMultiPhase-Solver[m[33m)[m HEAD@{2025-07-13 12:15:46 +0100}: checkout: moving from local-main to MultiPhase-Solver
+[33m54f99df4[m HEAD@{2025-07-13 00:33:55 +0100}: commit: laplace solver for PR
+[33m09a342ca[m HEAD@{2025-07-12 16:06:02 +0100}: checkout: moving from AA/laplace-development to local-main
+[33m8d93477f[m[33m ([m[1;31morigin/AA/laplace-development[m[33m, [m[1;32mAA/laplace-development[m[33m)[m HEAD@{2025-07-12 16:05:51 +0100}: checkout: moving from local-main to AA/laplace-development
+[33m09a342ca[m HEAD@{2025-07-12 16:04:01 +0100}: reset: moving to upstream/main
+[33mec0fc465[m HEAD@{2025-07-12 16:03:53 +0100}: pull --tags origin local-main: Merge made by the 'ort' strategy.
+[33m66825f06[m HEAD@{2025-07-12 16:03:48 +0100}: commit: upstream copy
+[33m09a342ca[m HEAD@{2025-07-12 16:03:17 +0100}: reset: moving to upstream/main
+[33mb89efe0c[m HEAD@{2025-07-12 15:46:23 +0100}: pull --tags origin local-main: Fast-forward
+[33m09a342ca[m HEAD@{2025-07-12 15:46:06 +0100}: reset: moving to upstream/main
+[33mb89efe0c[m HEAD@{2025-07-12 15:45:13 +0100}: checkout: moving from local-main to local-main
+[33mb89efe0c[m HEAD@{2025-07-12 15:44:36 +0100}: commit: trying to copy upstream before PR
+[33mc0aae07c[m HEAD@{2025-07-12 15:32:07 +0100}: commit (merge): Merge remote-tracking branch 'upstream/main' into local-main
+[33m0c636e0b[m HEAD@{2025-07-12 15:26:19 +0100}: checkout: moving from local-main to local-main
+[33m0c636e0b[m HEAD@{2025-07-12 15:23:57 +0100}: checkout: moving from AA/laplace-development to local-main
+[33m8d93477f[m[33m ([m[1;31morigin/AA/laplace-development[m[33m, [m[1;32mAA/laplace-development[m[33m)[m HEAD@{2025-07-12 15:19:57 +0100}: checkout: moving from MultiPhase-Solver to AA/laplace-development
+[33m7160b2c5[m[33m ([m[1;31morigin/MultiPhase-Solver[m[33m, [m[1;32mMultiPhase-Solver[m[33m)[m HEAD@{2025-07-11 15:45:51 +0100}: checkout: moving from laplace-solver-testing to MultiPhase-Solver
+[33m8c022a0e[m[33m ([m[1;31morigin/laplace-solver-testing[m[33m, [m[1;32mlaplace-solver-testing[m[33m)[m HEAD@{2025-07-11 15:26:20 +0100}: checkout: moving from AA/MultiRegion to laplace-solver-testing
+[33m083910b1[m[33m ([m[1;31morigin/AA/MultiRegion[m[33m, [m[1;32mAA/MultiRegion[m[33m)[m HEAD@{2025-07-11 15:26:04 +0100}: checkout: moving from MultiPhase-Solver to AA/MultiRegion
+[33m7160b2c5[m[33m ([m[1;31morigin/MultiPhase-Solver[m[33m, [m[1;32mMultiPhase-Solver[m[33m)[m HEAD@{2025-07-11 15:21:07 +0100}: checkout: moving from laplace-solver-testing to MultiPhase-Solver
+[33m8c022a0e[m[33m ([m[1;31morigin/laplace-solver-testing[m[33m, [m[1;32mlaplace-solver-testing[m[33m)[m HEAD@{2025-07-11 14:49:41 +0100}: checkout: moving from AA/laplace-development to laplace-solver-testing
+[33m8d93477f[m[33m ([m[1;31morigin/AA/laplace-development[m[33m, [m[1;32mAA/laplace-development[m[33m)[m HEAD@{2025-07-11 14:49:32 +0100}: commit: almost updated as requested
+[33m0c636e0b[m HEAD@{2025-07-11 14:04:51 +0100}: checkout: moving from local-main to AA/laplace-development
+[33m0c636e0b[m HEAD@{2025-07-11 14:04:10 +0100}: checkout: moving from MultiPhase-Solver to local-main
+[33m7160b2c5[m[33m ([m[1;31morigin/MultiPhase-Solver[m[33m, [m[1;32mMultiPhase-Solver[m[33m)[m HEAD@{2025-07-11 14:03:47 +0100}: commit: save for later...
+[33maa9a8225[m HEAD@{2025-07-09 20:26:36 +0100}: commit: Updated: subgrid model
+[33me731e149[m HEAD@{2025-07-09 20:12:58 +0100}: commit: Added: Subgrid nucleate boiling model;
+[33m083910b1[m[33m ([m[1;31morigin/AA/MultiRegion[m[33m, [m[1;32mAA/MultiRegion[m[33m)[m HEAD@{2025-07-09 10:41:59 +0100}: checkout: moving from laplace-solver-testing to MultiPhase-Solver
+[33m8c022a0e[m[33m ([m[1;31morigin/laplace-solver-testing[m[33m, [m[1;32mlaplace-solver-testing[m[33m)[m HEAD@{2025-07-09 10:41:14 +0100}: commit: struggling...
+[33md15a1a99[m[33m ([m[1;31morigin/AA/transient-laplace[m[33m, [m[1;32mAA/transient-laplace[m[33m)[m HEAD@{2025-07-08 12:33:44 +0100}: checkout: moving from AA/transient-laplace to laplace-solver-testing
+[33md15a1a99[m[33m ([m[1;31morigin/AA/transient-laplace[m[33m, [m[1;32mAA/transient-laplace[m[33m)[m HEAD@{2025-07-08 12:33:28 +0100}: checkout: moving from local-main to AA/transient-laplace
+[33m0c636e0b[m HEAD@{2025-07-08 12:33:06 +0100}: checkout: moving from laplace-solver-testing to local-main
+[33md15a1a99[m[33m ([m[1;31morigin/AA/transient-laplace[m[33m, [m[1;32mAA/transient-laplace[m[33m)[m HEAD@{2025-07-08 12:32:22 +0100}: checkout: moving from AA/transient-laplace to laplace-solver-testing
+[33md15a1a99[m[33m ([m[1;31morigin/AA/transient-laplace[m[33m, [m[1;32mAA/transient-laplace[m[33m)[m HEAD@{2025-07-08 12:31:38 +0100}: commit: Pause with multiphysics.... Need to talk to Humberto about creating new boundary condition
+[33ma73549fa[m HEAD@{2025-07-08 00:34:09 +0100}: commit: improve_stability
+[33m8bad6928[m HEAD@{2025-07-08 00:28:43 +0100}: checkout: moving from local-main to AA/transient-laplace
+[33m0c636e0b[m HEAD@{2025-07-08 00:28:35 +0100}: commit: test finished; all good!
+[33m2dfa7cbf[m HEAD@{2025-07-08 00:23:01 +0100}: checkout: moving from main to local-main
+[33m91f61dd9[m[33m ([m[1;33mtag: [m[1;33mv0.5.0[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m HEAD@{2025-07-08 00:21:55 +0100}: checkout: moving from local-main to main
+[33m2dfa7cbf[m HEAD@{2025-07-08 00:21:40 +0100}: checkout: moving from MultiPhase-Solver to local-main
+[33m083910b1[m[33m ([m[1;31morigin/AA/MultiRegion[m[33m, [m[1;32mAA/MultiRegion[m[33m)[m HEAD@{2025-07-08 00:21:20 +0100}: checkout: moving from AA/transient-laplace to MultiPhase-Solver
+[33m8bad6928[m HEAD@{2025-07-08 00:21:20 +0100}: reset: moving to HEAD

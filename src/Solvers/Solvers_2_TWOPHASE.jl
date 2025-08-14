@@ -1,10 +1,10 @@
 export multiphase!
 using XCALibre
 
-const FLUID_EOS_MAP = Dict(
-    :hydrogen => EOS_H2,
-    :nitrogen => EOS_N2,
-)
+# const FLUID_EOS_MAP = Dict(
+#     :hydrogen => EOS_H2,
+#     :nitrogen => EOS_N2,
+# )
 
 
 function multiphase!(

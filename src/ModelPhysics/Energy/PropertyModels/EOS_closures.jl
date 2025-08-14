@@ -40,14 +40,14 @@ function (eos::EOS_functions)(T_input, P_input)
 end
 
 const EOS_H2 = EOS_functions(
-    :hydrogen,
+    Hydrogen(),
     XCALibre.ModelPhysics.EOS_wrapper_H2,
     XCALibre.ModelPhysics.mu_high_fidelity_H2,
     XCALibre.ModelPhysics.thermal_conductivity_H2
 )
 
 const EOS_N2 = EOS_functions(
-    :nitrogen,
+    Nitrogen(),
     XCALibre.ModelPhysics.EOS_wrapper_N2,
     XCALibre.ModelPhysics.mu_high_fidelity_N2,
     XCALibre.ModelPhysics.thermal_conductivity_N2
