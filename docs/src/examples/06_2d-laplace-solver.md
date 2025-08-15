@@ -166,6 +166,7 @@ end
 
 # Then pass this material as an argument
 solid = Solid{NonUniform}(material=Titanium(), rho=5000.0),
+#change to (k=(..., ...,), cp=(...,...), rho=...)
 ```
 
 

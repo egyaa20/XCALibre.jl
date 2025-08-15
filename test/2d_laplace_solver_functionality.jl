@@ -1,5 +1,5 @@
 using XCALibre
-using Test # DOESNT WORK OTHERWISE!
+# using Test # DOESNT WORK OTHERWISE!
 
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
@@ -63,7 +63,7 @@ schemes = (
 
 
 runtime = Runtime(
-    iterations=10, write_interval=10, time_step=0.1)
+    iterations=10, write_interval=10, time_step=1.0)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

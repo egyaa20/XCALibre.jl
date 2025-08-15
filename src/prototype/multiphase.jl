@@ -50,18 +50,21 @@ velocity = [0.0, 0.0, 0.0]
 
 
 
+# Transient test
+# k and cp
+
 
 
 model = Physics(
     time = Transient(),
     fluid = Fluid{Multiphase}(
         phases = (
-            phase_1(eos=HelmholtzEnergy(:H2)),
-            phase_2(eos=HelmholtzEnergy(:H2))
+            Phase(eos=perfectGas(rho=10.0, R=287.0), mu=constMu(1.0e-3)),
+            Phase(eos=constEos(50.0), mu=constMu(5.0e-3))
         ),
         gravity = gravity([0.0, -9.81, 0.0]),
         surfaceTension = constSurfaceTension(0.07),
-        leeModel = leeModel(evap_coeff=10.0, condens_coeff=20.0)
+        leeModel = leeModel(evap_coeff=10.0, condens_coeff=20.0) #Capital - LeeModel
     ),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),

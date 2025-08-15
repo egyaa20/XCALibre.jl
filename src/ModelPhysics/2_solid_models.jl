@@ -30,7 +30,7 @@ end
 end
 Adapt.@adapt_structure Uniform
 
-Solid{Uniform}(; k, cp=nothing, rho=nothing) = begin 
+Solid{Uniform}(; k, cp=nothing, rho=nothing) = begin # default is zero
     coeffs = (; k=k, cp, rho)
     ARG = typeof(coeffs)
     Solid{Uniform,ARG}(coeffs)

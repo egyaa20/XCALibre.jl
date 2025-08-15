@@ -319,19 +319,19 @@ leeModel(; evap_coeff::T, condens_coeff::T) where {T<:AbstractFloat} = LeeModel(
 nucleatBoilingModel() = NucleateBoilingModel()
 
 
-struct Phase1{E<:AbstractEosModel, M<:AbstractViscosityModel} <: AbstractPhase
+struct Phase{E<:AbstractEosModel, M<:AbstractViscosityModel} <: AbstractPhase
     eos::E
     mu::M
 end
 
 
-struct Phase2{E<:AbstractEosModel, M<:AbstractViscosityModel} <: AbstractPhase
-    eos::E
-    mu::M
-end
+# struct Phase2{E<:AbstractEosModel, M<:AbstractViscosityModel} <: AbstractPhase
+#     eos::E
+#     mu::M
+# end
 
-phase_1(; eos::AbstractEosModel, mu::AbstractViscosityModel) = Phase1(eos, mu)
-phase_2(; eos::AbstractEosModel, mu::AbstractViscosityModel) = Phase2(eos, mu)
+phase_1(; eos::AbstractEosModel, mu::AbstractViscosityModel) = Phase(eos, mu)
+phase_2(; eos::AbstractEosModel, mu::AbstractViscosityModel) = Phase(eos, mu)
 
 
 
