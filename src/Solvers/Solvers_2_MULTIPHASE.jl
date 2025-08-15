@@ -14,8 +14,10 @@
 # #         inner_loops=inner_loops
 # #         )
         
-# #     return residuals
-# # end
+    return residuals
+end
+
+
 
 # # #0 = air, 1 = water
 
@@ -306,17 +308,17 @@
 # #         # println("ralpha")
 # #         # ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
 
-# #             # rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref, time=time)
-# #         # break
-# #         # println(ralpha)
-# #         # break
-# #         rx, ry, rz = solve_equation!(
-# #             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
+            # rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref, time=time)
+        # break
+        # println(ralpha)
+        # break
+        rx, ry, rz = solve_equation!(
+            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
 
-# #         # Pressure correction
-# #         inverse_diagonal!(rD, U_eqn, config)
-# #         interpolate!(rDf, rD, config)
-# #         remove_pressure_source!(U_eqn, ∇p, config)
+        # Pressure correction
+        inverse_diagonal!(rD, U_eqn, config)
+        interpolate!(rDf, rD, config)
+        remove_pressure_source!(U_eqn, ∇p, config)
         
 # #         rp = 0.0
 # #         # println(inner_loops)
@@ -861,7 +863,7 @@
     
 #     ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
 
-#     # @. alpha.values = clamp(alpha.values, 0.0, 1.0)
+    @. alpha.values = clamp(alpha.values, 0.0, 1.0)
 
 #     interpolate!(alphaf, alpha, config)
 #     # flux!(phif, Uf, config)

@@ -3,10 +3,18 @@ export Fluid
 export Incompressible, WeaklyCompressible, Compressible
 export Multiphase
 
+export liquid, gas, mixture
+export Water, Air, H2, N2
+
+
 abstract type AbstractFluid end
+
 abstract type AbstractMultiphase <: AbstractFluid end
 abstract type AbstractIncompressible <: AbstractFluid end
 abstract type AbstractCompressible <: AbstractFluid end
+
+
+
 
 Base.show(io::IO, fluid::AbstractFluid) = print(io, typeof(fluid).name.wrapper)
 
