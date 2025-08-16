@@ -19,7 +19,7 @@ include("energy_types.jl")
 
 # Energy models
 include("Sensible_Enthalpy.jl")
-include("HighFidelity_Energy.jl")
+include("Multiphase_Energy.jl")
 include("Conduction.jl")
 
 

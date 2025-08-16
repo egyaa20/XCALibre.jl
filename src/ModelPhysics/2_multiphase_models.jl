@@ -1,10 +1,8 @@
 export Phase, Fluid, Multiphase
-export Gravity#, gravity
+export Gravity
 export ConstEos, PerfectGas, HelmholtzEnergy, ConstMu, Sutherland, Andrade
-# export constEos, perfectGas, constMu, sutherland, andrade
 export Phase, physicsProperties
 
-# export constSurfaceTension, surfaceTensionModel, leeModel, nucleateBoilingModel
 export ConstSurfaceTension, SurfaceTensionModel, LeeModel, NucleateBoilingModel
 
 

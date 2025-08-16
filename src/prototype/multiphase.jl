@@ -24,19 +24,24 @@ mesh_dev = adapt(backend, mesh)
 noSlipVelocity = [0.0, 0.0, 0.0]
 
 
+# mu=Sutherland(mu_ref=1.8e-5, S=110.4)
+# mu=Andrade(B = 1.732e-6, C = 1863.0)
+
 model = Physics(
     time = Transient(),
     fluid = Fluid{Multiphase}(
         phases = (
-            Phase(eos=PerfectGas(rho=10.0, R=287.0), mu=ConstMu(1.0e-3)),
-            Phase(eos=ConstEos(50.0), mu=ConstMu(5.0e-3))
+            Phase(eos=ConstEos(1.0), mu=ConstMu(1.8e-5)),       #air
+            Phase(eos=ConstEos(1000.0), mu=ConstMu(1.0e-3))     #water
         ),
-        gravity = Gravity([0.0, -9.81, 0.0]),
+        gravity = Gravity([0.0, 0.0, -9.81]),
         surfaceTension = ConstSurfaceTension(0.07),
         leeModel = LeeModel(evap_coeff=10.0, condens_coeff=20.0)
+        #drag model (Shiller-Naumann, others...)
     ),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
+    # energy = Energy{MultiphaseEnergy}(),
     domain = mesh_dev
     )
 
@@ -131,4 +136,4 @@ GC.gc()
 initialise!(model.momentum.p, 0.0)
 initialise!(model.fluid.alpha, 1.0)
 
- residuals = run!(model, config) 
+residuals = run!(model, config) 

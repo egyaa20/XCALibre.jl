@@ -1,48 +1,36 @@
-struct HighFidelity_Energy{S1,S2,F1,F2,S3,S4,C} <: AbstractEnergyModel
+export MultiphaseEnergy
+
+struct MultiphaseEnergy{S1} <: AbstractEnergyModel
     h::S1
-    T::S2
-    hf::F1
-    Tf::F2
-    K::S3
-    dpdt::S4
-    # update_BC::F
-    coeffs::C
 end
-Adapt.@adapt_structure HighFidelity_Energy
+Adapt.@adapt_structure MultiphaseEnergy
 
 
-struct HighFidelityModel{E1,State}
+struct MultiphaseEnergyModel{E1,State}
     energy_eqn::E1 
     state::State
 end
-Adapt.@adapt_structure HighFidelityModel
+Adapt.@adapt_structure MultiphaseEnergyModel
 
 
 
 # Model API constructor
-Energy{HighFidelity_Energy}(; Tref) = begin
-    coeffs = (Tref=Tref, other=nothing)
+Energy{MultiphaseEnergy}() = begin
+    coeffs = (nothing)
     ARG = typeof(coeffs)
-    Energy{HighFidelity_Energy,ARG}(coeffs)
+    Energy{MultiphaseEnergy,ARG}(coeffs)
 end
 
 # Functor as constructor
-(energy::Energy{EnergyModel, ARG})(mesh, fluid) where {EnergyModel<:HighFidelity_Energy,ARG} = begin
+(energy::Energy{EnergyModel, ARG})(mesh, fluid) where {EnergyModel<:MultiphaseEnergy,ARG} = begin
     h = ScalarField(mesh)
-    T = ScalarField(mesh)
-    hf = FaceScalarField(mesh)
-    Tf = FaceScalarField(mesh)
-    K = ScalarField(mesh)
-    dpdt = ScalarField(mesh)
-    # update_BC =  return_thingy(EnergyModel, fluid, energy.args.Tref)
-    coeffs = energy.args
-    # SensibleEnthalpy(h, T, hf, Tf, K, dpdt, update_BC, coeffs)
-    HighFidelity_Energy(h, T, hf, Tf, K, dpdt, coeffs)
+    
+    MultiphaseEnergy(h)
 end
 
 
 function initialise(
-    energy::HighFidelity_Energy, model::Physics{T1,F,SO,M,Tu,E,D,BI}, 
+    energy::MultiphaseEnergy, model::Physics{T1,F,SO,M,Tu,E,D,BI}, 
         alpha, p, rho_l, rho_v, u_l, u_v, U_m, ∇U, U_m_prev, dt, config
     ) where {T1,F,SO,M,Tu,E,D,BI}
 
@@ -63,12 +51,13 @@ function initialise(
     @. a[i] = g[i] - (U[i] * ∇U.result[i]) - dUdt[i]
     # end
 
+    # return MultiphaseEnergyModel()
 
 end
 
 
 function energy!(
-    energy::HighFidelityModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, 
+    energy::MultiphaseEnergyModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, 
         alpha, p, rho_l, rho_v, u_l, u_v, U_m, U_m_prev, mdotf, mueff, time, config
     ) where {T1,F,SO,M,Tu,E,D,BI}
 
@@ -112,6 +101,7 @@ function energy!(
 
     mesh = model.domain
 
+    return nothing
 end
 
 
