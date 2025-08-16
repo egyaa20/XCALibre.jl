@@ -1,7 +1,6 @@
 using XCALibre
-using KernelAbstractions
 using Accessors
-using Test
+using KernelAbstractions
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 
@@ -12,11 +11,6 @@ grid = "laplace_unit_3by3.unv"
 mesh_file = joinpath(grids_dir, grid)
 
 mesh = UNV2D_mesh(mesh_file)
-
-T_test  = ScalarField(mesh)
-initialise!(T_test, 300.0)
-
-k_test, cp_test = XCALibre.ModelPhysics.get_coefficients(Aluminium(),T_test)
 
 
 backend = CPU(); workgroup = 1024; activate_multithread(backend)

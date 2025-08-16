@@ -148,24 +148,18 @@ where *a*, *b*, *c*, *d*, *e*, *f*, *g*, *h*, and *i* are the fitted coefficient
 Currently only 3 material models are available for use: `Steel()`, `Aluminium()`, and `Copper()`. The coefficients for those materials were taken from [Cryogenic Material Properties Database by Marquardt (2002)](https://www.researchgate.net/publication/226513158_Cryogenic_Material_Properties_Database), and work well for temperatures between 4 and 300 Kelvin.
 Custom material can be defined in the following way:
 ```julia
-# Define a new material type
-struct Titanium <: AbstractMaterial end
+# Define your custom coefficient vectors for k and cp:
+k_coeffs = MaterialCoefficients(
+    c1=-1.4087, c2=1.3982, c3=0.2543, c4=-0.6260, c5=0.2334,
+    c6=0.4256, c7=-0.4658, c8=0.1650, c9=-0.0199
+)
+cp_coeffs = MaterialCoefficients(
+    c1=22.0061, c2=-127.5528, c3=303.6470, c4=-381.0098, c5=274.0328,
+    c6=-112.9212, c7=24.7593, c8=-2.239153, c9=0.0
+)
 
-# Define custom coefficients for this new material
-function XCALibre.material_coefficients(material::Titanium)
-    k_coeffs = MaterialCoefficients(
-        c1=0.12, c2=0.95, c3=-0.11, c4=0.08, c5=0.02,
-        c6=-0.03, c7=0.01, c8=-0.001, c9=0.0
-    )
-    cp_coeffs = MaterialCoefficients(
-        c1=30.0, c2=-150.0, c3=400.0, c4=-600.0, c5=550.0,
-        c6=-280.0, c7=85.0, c8=-14.0, c9=1.0
-    )
-    return k_coeffs, cp_coeffs
-end
-
-# Then pass this material as an argument
-solid = Solid{NonUniform}(material=Titanium(), rho=5000.0),
+# Pass them instead of `material`:
+solid = Solid{NonUniform}(k=k_coeffs, cp=cp_coeffs, rho=7850.0),
 ```
 
 
