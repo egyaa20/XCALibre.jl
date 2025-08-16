@@ -792,24 +792,24 @@ end
 
 
 
-T_input = 73.151 # Temperature in K
-P_input = 0.1e6 # Pressure in kPa
+# T_input = 73.151 # Temperature in K
+# P_input = 0.1e6 # Pressure in kPa
 
 
-rho0, cv0, cp0, kT0, internal_energy0, enthalpy0, entropy0 = EOS_wrapper_N2(T_input, P_input)
+# rho0, cv0, cp0, kT0, internal_energy0, enthalpy0, entropy0 = EOS_wrapper_N2(T_input, P_input)
 
 
-println("DENSITY:")
-println(rho0)
-println("CV:")
-println(cv0)
-println("CP:")
-println(cp0)
-println("KT:")
-println(kT0)
-println("Internal E:")
-println(internal_energy0)
-println("Enthalpy:")
-println(enthalpy0)
-println("Entropy:")
-println(entropy0)
+# println("DENSITY:")
+# println(rho0)
+# println("CV:")
+# println(cv0)
+# println("CP:")
+# println(cp0)
+# println("KT:")
+# println(kT0)
+# println("Internal E:")
+# println(internal_energy0)
+# println("Enthalpy:")
+# println(enthalpy0)
+# println("Entropy:")
+# println(entropy0)

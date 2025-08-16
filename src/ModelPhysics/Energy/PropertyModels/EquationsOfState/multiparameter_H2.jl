@@ -899,11 +899,11 @@ end
 
 
 
-T_input = 18.803  # Temperature in K
-P_input = 0.1e6
+# T_input = 18.803  # Temperature in K
+# P_input = 0.1e6
 
-is_mp, rho0, cv0, cp0, kT0, kT_ref, internal_energy0, enthalpy0, 
-        entropy0, latentHeat0, T_sat = EOS_wrapper_H2(T_input, P_input, 1.0)
+# is_mp, rho0, cv0, cp0, kT0, kT_ref, internal_energy0, enthalpy0, 
+#         entropy0, latentHeat0, T_sat = EOS_wrapper_H2(T_input, P_input, 1.0)
 
 
 

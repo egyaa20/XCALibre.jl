@@ -39,26 +39,26 @@ function (eos::EOS_functions)(T_input, P_input)
     end
 end
 
-const EOS_H2 = EOS_functions(
-    Hydrogen(),
-    XCALibre.ModelPhysics.EOS_wrapper_H2,
-    XCALibre.ModelPhysics.mu_high_fidelity_H2,
-    XCALibre.ModelPhysics.thermal_conductivity_H2
-)
+# const EOS_H2 = EOS_functions(
+#     Hydrogen(),
+#     XCALibre.ModelPhysics.EOS_wrapper_H2,
+#     XCALibre.ModelPhysics.mu_high_fidelity_H2,
+#     XCALibre.ModelPhysics.thermal_conductivity_H2
+# )
 
-const EOS_N2 = EOS_functions(
-    Nitrogen(),
-    XCALibre.ModelPhysics.EOS_wrapper_N2,
-    XCALibre.ModelPhysics.mu_high_fidelity_N2,
-    XCALibre.ModelPhysics.thermal_conductivity_N2
-)
+# const EOS_N2 = EOS_functions(
+#     Nitrogen(),
+#     XCALibre.ModelPhysics.EOS_wrapper_N2,
+#     XCALibre.ModelPhysics.mu_high_fidelity_N2,
+#     XCALibre.ModelPhysics.thermal_conductivity_N2
+# )
 
 
-T_input = 18.803  # Temperature in K
-P_input = 0.1e6
+# T_input = 18.803  # Temperature in K
+# P_input = 0.1e6
 
-is_mp, rho0, cv0, cp0, internal_energy0, enthalpy0, entropy0, nu_bar, k0, surface_tension = EOS_H2(T_input, P_input)
-println("rho: $rho0, is_mp: $is_mp, cv: $cv0, mu: $nu_bar, k: $k0")
+# is_mp, rho0, cv0, cp0, internal_energy0, enthalpy0, entropy0, nu_bar, k0, surface_tension = EOS_H2(T_input, P_input)
+# println("rho: $rho0, is_mp: $is_mp, cv: $cv0, mu: $nu_bar, k: $k0")
 
 # Works well, but vapour side thermal conductivity is questionable - 5% error....
 

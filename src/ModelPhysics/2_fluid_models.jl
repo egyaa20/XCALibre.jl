@@ -35,41 +35,6 @@ end
 
 
 
-@kwdef struct Multiphase{F, S1, S2, F1, F2} <: AbstractMultiphase
-    fluid_type::F
-    alpha::S1
-    rho::S2
-    alphaf::F1
-    rhof::F2
-    # nu::S3
-    # nuf::F3
-end
-Adapt.@adapt_structure Multiphase
-
-Fluid{Multiphase}(; fluid_type::Symbol, alpha=0.0, rho=1.0) = begin
-    coeffs = (alpha=alpha, rho=rho, fluid_type=fluid_type)
-    ARG = typeof(coeffs)
-    Fluid{Multiphase,ARG}(coeffs)
-end
-
-(fluid::Fluid{Multiphase, ARG})(mesh) where ARG = begin
-    coeffs = fluid.args
-    (; rho, alpha, fluid_type) = coeffs
-    alpha = ScalarField(mesh)
-    alphaf = FaceScalarField(mesh)
-    rho = ScalarField(mesh)
-    rhof = FaceScalarField(mesh)
-
-    # nu = ConstantScalar(nu)
-    # nuf = nu
-
-
-    #Based on fluid passed assign: initial rho; nu; (transport model?)
-
-    Multiphase(fluid_type, alpha, rho, alphaf, rhof)
-end
-
-
 
 
 
