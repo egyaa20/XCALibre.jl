@@ -87,6 +87,3 @@ function mu_high_fidelity_H2(T::Float64, rho::Float64) # End result
 
     return mu_0(T, constants) + ( mu_1(T, constants) * rho ) + ( c[1] * (rho_r^2) ) * exp_term
 end
-
-
-# println(mu_high_fidelity_H2(28.803, 73.478)) # 1-2 % error.... could be better?

@@ -12,17 +12,20 @@ _thermal_conductivity(fluid::N2, args...) = XCALibre.ModelPhysics.thermal_conduc
 
 
 function (eos::HelmholtzEnergy)(T_input, P_input, alpha_input)
-    is_mp, rho0, cv0, cp0, kT0, kT_ref, internal_energy0, 
-            enthalpy0, entropy0, latentHeat0, T_sat0 = _eos_wrapper(eos.name, T_input, P_input, alpha_input)
+    rho0, cv0, cp0, kT0, kT_ref, internal_energy0, 
+            enthalpy0, entropy0, latentHeat0, T_sat0, m_lv, m_vl = _eos_wrapper(eos.name, T_input, P_input, alpha_input)
         
-    # DEPENDING ON IS_MP, DEFINE ARRAYS....
+    is_mp = true
+    # !is_mp should be T > T_crit; to be added later
     if !is_mp
         nu_bar = _mu_high_fidelity(eos.name, T_input, rho0)
         k0 = _thermal_conductivity(eos.name, rho0, T_input, cp0, cv0, kT0, kT_ref, nu_bar)
         surface_tension = calculate_surface_tension(eos.name, T_input)
-        
+
+        nu_bar = nu_bar * 1.0e-6 # convert to SI
+
         return (is_mp=is_mp, rho=rho0, cv=cv0, cp=cp0, u=internal_energy0, h=enthalpy0, s=entropy0, 
-                mu=nu_bar, k=k0, sigma=surface_tension, L_vap=latentHeat0, T_sat=T_sat0)
+                mu=nu_bar, k=k0, sigma=surface_tension, L_vap=latentHeat0, T_sat=T_sat0, m_lv=m_lv, m_vl=m_vl)
     else
         nu_bar_vals = [0.0, 0.0]
         k0_vals = [0.0, 0.0]
@@ -34,8 +37,10 @@ function (eos::HelmholtzEnergy)(T_input, P_input, alpha_input)
 
         surface_tension = calculate_surface_tension(eos.name, T_input)
 
+        @. nu_bar_vals = nu_bar_vals * 1.0e-6 # convert to SI
+
         return (is_mp=is_mp, rho=rho0, cv=cv0, cp=cp0, u=internal_energy0, h=enthalpy0, s=entropy0, 
-                mu=nu_bar_vals, k=k0_vals, sigma=surface_tension, L_vap=latentHeat0, T_sat=T_sat0)
+                mu=nu_bar_vals, k=k0_vals, sigma=surface_tension, L_vap=latentHeat0, T_sat=T_sat0, m_lv=m_lv, m_vl=m_vl)
     end
 end
 

@@ -26,17 +26,16 @@ noSlipVelocity = [0.0, 0.0, 0.0]
 
 # mu=Sutherland(mu_ref=1.8e-5, S=110.4)
 # mu=Andrade(B = 1.732e-6, C = 1863.0)
-
 gravity = Gravity([0.0, 0.0, -9.81])
 
 model = Physics(
     time = Transient(),
     fluid = Fluid{Multiphase}(
-        phases = (
+        phases = ( #first phase is liquid, second if vapour - common assumption
             # Phase(eos=ConstEos(1.0), mu=ConstMu(1.8e-5)),       #air
             # Phase(eos=ConstEos(1000.0), mu=ConstMu(1.0e-3))     #water
-            Phase(eos=HelmholtzEnergy(H2()), mu=ConstMu(1.8e-5)),       
-            Phase(eos=HelmholtzEnergy(H2()), mu=ConstMu(1.0e-3))    
+            Phase(eos=HelmholtzEnergy(N2()), mu=ConstMu(1.8e-5)),      
+            Phase(eos=HelmholtzEnergy(N2()), mu=ConstMu(1.0e-3))    
             # Phase(eos=ConstEos(1.225), mu=Sutherland(mu_ref=1.8e-5, S=110.4)),
             # Phase(eos=ConstEos(1.0), mu=ConstMu(1.8e-5)),       #air
             # Phase(eos=PerfectGas(rho=1.225, R=287.0), mu=ConstMu(1.8e-5)),       #air
@@ -49,9 +48,9 @@ model = Physics(
             d_p = 1.0e-9
             #maybe define drag here?
         ),
-        drag = Drag_SchillerNaumann()
+        drag = Drag_SchillerNaumann(),
         # surfaceTension = ConstSurfaceTension(0.07),
-        # leeModel = LeeModel(evap_coeff=30.0, condens_coeff=30.0)
+        leeModel = LeeModel(evap_coeff=30.0, condens_coeff=30.0)
     ),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
@@ -67,7 +66,7 @@ outer_velocity = 2.0
 inner_alpha = 1.0
 outer_alpha = 0.0
 
-operating_pressure = 0.0
+operating_pressure = 3.0e4
 
 
 BCs = assign(
@@ -139,7 +138,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=25, time_step=0.1, write_interval=1)
+    iterations=10, time_step=0.1, write_interval=1)
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
@@ -147,7 +146,8 @@ config = Configuration(
 
 GC.gc()
 
-initialise!(model.momentum.p, 0.0)
+initialise!(model.momentum.p, operating_pressure) # GAUGE vs ABSOLUTE ?
+# initialise!(model.momentum.p, 0.1e6)
 initialise!(model.fluid.alpha, 1.0)
 
 residuals = run!(model, config) 

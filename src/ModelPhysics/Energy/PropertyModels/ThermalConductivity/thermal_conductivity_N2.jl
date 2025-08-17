@@ -152,7 +152,7 @@ function lambda_c_N2(rho::Float64, T::Float64, cp::Float64, cv::Float64, kT::Flo
     tol=1.0e-12
     xi_val = xi(rho, T, kT, kT_ref, constants)
 
-    println("xi_value: $xi_val")
+    # println("xi_value: $xi_val")
 
     if (xi_val < tol)
         return 0.0
@@ -207,7 +207,7 @@ function thermal_conductivity_N2(rho::Float64, T::Float64, cp::Float64, cv::Floa
     lambda_crit_val = lambda_c_N2(rho, T, cp, cv, kT, kT_ref, nu_bar, constants)
 
 
-    println("lambda0: $lambda_0_val, lambda_r: $lambda_r_val, lambda_c: $lambda_crit_val")
+    # println("lambda0: $lambda_0_val, lambda_r: $lambda_r_val, lambda_c: $lambda_crit_val")
 
 
     thermal_conductivity = lambda_0_val + lambda_r_val + lambda_crit_val

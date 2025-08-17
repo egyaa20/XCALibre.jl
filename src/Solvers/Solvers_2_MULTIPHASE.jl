@@ -78,14 +78,13 @@ function setup_multiphase_solvers(
     # DUMMY FIELD
 
     T_temp = ScalarField(mesh)
-    initialise!(T_temp, 100.0)
+    initialise!(T_temp, 70.0)
     
     # DUMMY FIELD
 
     
     if typeof(model.fluid.phases[1].eos) <: HelmholtzEnergy
-        model.fluid.phases[1].eos(50.0, 1.0e5, 1.0)
-        # helmholtz_properties!()
+        helmholtz_energy!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, model, config)
     else
         update_properties!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, phases, model, config)
     end
@@ -353,19 +352,17 @@ function MULTIPHASE(
     # DUMMY FIELD
 
     T_temp = ScalarField(mesh)
-    initialise!(T_temp, 100.0)
-    # DUMMY FIELD
+    initialise!(T_temp, 70.0)
 
+    # DUMMY FIELD
 
     
     if typeof(model.fluid.phases[1].eos) <: HelmholtzEnergy
-        model.fluid.phases[1].eos(50.0, 1.0e5, 1.0)
-        # helmholtz_properties!()
+        helmholtz_energy!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, model, config)
     else
         update_properties!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, phases, model, config)
     end
 
-    
 
     if typeof(model.energy) <: MultiphaseEnergy
         println("ENERGY ON")
@@ -439,7 +436,7 @@ function momentum_eqn_sources(props, rhs, rho, mesh)
 end
 
 function blend_properties!(property_field, alpha_field, property_0, property_1)
-    @. property_field.values = (property_0.values * alpha_field.values) + (property_1.values * (1 - alpha_field.values)) #cant do 1.0 (OR CAN I?)
+    @. property_field.values = (property_0.values * alpha_field.values) + (property_1.values * (1.0 - alpha_field.values))
     nothing
 end
 
@@ -492,7 +489,7 @@ end
 
 
 function perfectGas!(density_field, T_ref, R, pressure_field) 
-    p_ref = 101_325.0 # for conversion to absolute pressure, avoid rho=0
+    p_ref = 101_325.0 # for conversion to absolute pressure, avoid rho=0 
     @. density_field.values = (pressure_field.values+p_ref) / (R * T_ref) # NOT SURE ABOUT THIS
     nothing
 end
@@ -538,4 +535,31 @@ function construct_drag_field(rho_q, mu_q, props) # here q = vapour (from kassem
         d_p = props.DriftVelocity.d_p
         # Re = compute
     end
+end
+
+
+function helmholtz_energy!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, model, config)
+    (; p) = model.momentum
+    (; rho, rhof, alpha, alphaf) = model.fluid
+    HelmholtzEOS = model.fluid.phases[1].eos
+
+    # Horrible solution, replace later.....
+    for cell in eachindex(rho)
+        _, rho_temp, _, _, _, _, _, mu_temp, _, _, _, _, _, _ = HelmholtzEOS(T_temp[cell], p[cell], alpha[cell])
+        
+        for i in eachindex(rho_fractions)
+            rho_fractions[i][cell] = rho_temp[i]
+            nu_fractions[i][cell]  = mu_temp[i]
+        end
+    end
+
+    @. nu_fractions[1].values *= nu_fractions[1].values/rho_fractions[1].values # conversion
+    @. nu_fractions[2].values *= nu_fractions[2].values/rho_fractions[2].values # conversion
+    interpolate!(nuf_fractions[1], nu_fractions[1], config)
+    interpolate!(nuf_fractions[2], nu_fractions[2], config)
+    
+    blend_properties!(rho, alpha, rho_fractions[1], rho_fractions[2]) # 1 is alpha=0,   2 is alpha=1
+    blend_properties!(nueff, alphaf, nuf_fractions[1], nuf_fractions[2]) # weird mu <-> nu conversion
+
+    interpolate!(rhof, rho, config)
 end
