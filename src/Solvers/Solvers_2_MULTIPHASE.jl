@@ -82,7 +82,13 @@ function setup_multiphase_solvers(
     
     # DUMMY FIELD
 
-    update_properties!(rho_fractions, nu_fractions, nuf_fractions, nueff, phases, model, config)
+    
+    if typeof(model.fluid.phases[1].eos) <: HelmholtzEnergy
+        model.fluid.phases[1].eos(50.0, 1.0e5, 1.0)
+        # helmholtz_properties!()
+    else
+        update_properties!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, phases, model, config)
+    end
 
 
 
@@ -351,7 +357,13 @@ function MULTIPHASE(
     # DUMMY FIELD
 
 
-    update_properties!(rho_fractions, nu_fractions, nuf_fractions, nueff, phases, model, config)
+    
+    if typeof(model.fluid.phases[1].eos) <: HelmholtzEnergy
+        model.fluid.phases[1].eos(50.0, 1.0e5, 1.0)
+        # helmholtz_properties!()
+    else
+        update_properties!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, phases, model, config)
+    end
 
     
 
@@ -434,7 +446,7 @@ end
 
 
 
-function update_properties!(rho_fractions, nu_fractions, nuf_fractions, nueff, phases, model, config)
+function update_properties!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, phases, model, config)
     (; p) = model.momentum
     (; rho, rhof, alpha, alphaf) = model.fluid
 
@@ -479,15 +491,15 @@ function update_properties!(rho_fractions, nu_fractions, nuf_fractions, nueff, p
 end
 
 
-function perfectGas!(density_field, T_ref, R, pressure_field)
-    @. density_field.values = pressure_field.values / (R * T_ref)
+function perfectGas!(density_field, T_ref, R, pressure_field) 
+    p_ref = 101_325.0 # for conversion to absolute pressure, avoid rho=0
+    @. density_field.values = (pressure_field.values+p_ref) / (R * T_ref) # NOT SURE ABOUT THIS
     nothing
 end
 
 function sutherland!(mu_field, T_field, mu_ref, S)
     T_ref = 273.0
-    @. C.values = mu_ref * (T_field.values/T_ref)^1.5 #would this work????????????
-    @. mu_field.values = C.values * ((T_ref + S)/(T_field.values + S))
+    @. mu_field.values = (mu_ref * (T_field.values/T_ref)^1.5) * ((T_ref + S)/(T_field.values + S))
     nothing
 end
 
@@ -496,7 +508,34 @@ function andrade!(mu_field, T_field, B, C) # maybe do it in Phase(mu=(...)) inst
     nothing
 end
 
-# function construct_acceleration_field()
+function construct_acceleration_field(U_m, U_m_prev, props, dt) #, workgroup
+    a = VectorField(mesh)
+    g = props.DriftVelocity.gravity
 
-#     return alpha_
-# end
+    x0, y0, z0 = g[1], g[2], g[3]
+
+    x = ScalarField(mesh)
+    y = ScalarField(mesh)
+    z = ScalarField(mesh)
+    initialise!(x, x0)
+    initialise!(y, y0)
+    initialise!(z, z0)
+    G = VectorField(x, y, z, mesh)
+
+    dUdt = VectorField(mesh)
+    @. dUdt[i].values = ( U_m[i] - U_m_prev[i] ) / dt
+
+    @. a[i] = g[i] - (U[i] * ∇U.result[i]) - dUdt[i]
+    
+    # AK.foreachindex(dUdt, min_elems=workgroup, block_size=workgroup) do i 
+    #     dUdt[i] = ( U_m[i] - U_m_prev[i] ) / dt
+    # end
+    return a
+end
+
+function construct_drag_field(rho_q, mu_q, props) # here q = vapour (from kassemi paper)
+    if ( hasproperty(props, :drag) ) && ( props.drag isa Drag_SchillerNaumann )
+        d_p = props.DriftVelocity.d_p
+        # Re = compute
+    end
+end

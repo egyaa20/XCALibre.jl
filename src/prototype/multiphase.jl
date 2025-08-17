@@ -27,17 +27,31 @@ noSlipVelocity = [0.0, 0.0, 0.0]
 # mu=Sutherland(mu_ref=1.8e-5, S=110.4)
 # mu=Andrade(B = 1.732e-6, C = 1863.0)
 
+gravity = Gravity([0.0, 0.0, -9.81])
+
 model = Physics(
     time = Transient(),
     fluid = Fluid{Multiphase}(
         phases = (
-            Phase(eos=ConstEos(1.0), mu=ConstMu(1.8e-5)),       #air
-            Phase(eos=ConstEos(1000.0), mu=ConstMu(1.0e-3))     #water
+            # Phase(eos=ConstEos(1.0), mu=ConstMu(1.8e-5)),       #air
+            # Phase(eos=ConstEos(1000.0), mu=ConstMu(1.0e-3))     #water
+            Phase(eos=HelmholtzEnergy(H2()), mu=ConstMu(1.8e-5)),       
+            Phase(eos=HelmholtzEnergy(H2()), mu=ConstMu(1.0e-3))    
+            # Phase(eos=ConstEos(1.225), mu=Sutherland(mu_ref=1.8e-5, S=110.4)),
+            # Phase(eos=ConstEos(1.0), mu=ConstMu(1.8e-5)),       #air
+            # Phase(eos=PerfectGas(rho=1.225, R=287.0), mu=ConstMu(1.8e-5)),       #air
+            # Phase(eos=ConstEos(1000.0), mu=ConstMu(1.0e-3))     #water
+            # Phase(eos=ConstEos(1000.0), mu=Andrade(B = 1.732e-6, C = 1863.0))     #water
         ),
-        gravity = Gravity([0.0, 0.0, -9.81]),
-        surfaceTension = ConstSurfaceTension(0.07),
-        leeModel = LeeModel(evap_coeff=10.0, condens_coeff=20.0)
-        #drag model (Shiller-Naumann, others...)
+        gravity = gravity,
+        driftVelocity = DriftVelocity(
+            gravity = gravity,
+            d_p = 1.0e-9
+            #maybe define drag here?
+        ),
+        drag = Drag_SchillerNaumann()
+        # surfaceTension = ConstSurfaceTension(0.07),
+        # leeModel = LeeModel(evap_coeff=30.0, condens_coeff=30.0)
     ),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
@@ -102,7 +116,7 @@ schemes = (
 
 solvers = (
     U = SolverSetup(
-        solver      = Bicgstab(), # Bicgstab(), Gmres()
+        solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # ILU0GPU, Jacobi, DILU
         convergence = 1e-7,
         relax       = 0.8,

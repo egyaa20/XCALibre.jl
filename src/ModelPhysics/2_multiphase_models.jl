@@ -3,7 +3,7 @@ export Gravity
 export ConstEos, PerfectGas, HelmholtzEnergy, ConstMu, Sutherland, Andrade
 export Phase, physicsProperties
 
-export ConstSurfaceTension, SurfaceTensionModel, LeeModel, NucleateBoilingModel
+export ConstSurfaceTension, SurfaceTensionModel, LeeModel, NucleateBoilingModel, DriftVelocity, Drag_SchillerNaumann
 
 
 abstract type AbstractModel end
@@ -30,9 +30,16 @@ Base.@kwdef struct PengRobinson{T<:AbstractFloat} <: AbstractEosModel # edit
     R::T
 end
 
-Base.@kwdef struct HelmholtzEnergy <: AbstractEosModel
-    name::Symbol
+
+abstract type HelmholtzEnergyFluid end
+struct N2 <: HelmholtzEnergyFluid end
+struct H2 <: HelmholtzEnergyFluid end
+
+Base.@kwdef struct HelmholtzEnergy{F<:HelmholtzEnergyFluid} <: AbstractEosModel
+    name::F
 end
+
+
 
 Base.@kwdef struct ConstMu{T<:AbstractFloat} <: AbstractViscosityModel
     mu::T
@@ -63,65 +70,21 @@ end
 
 Base.@kwdef struct SurfaceTensionModel <: AbstractPhysicsProperty end
 Base.@kwdef struct NucleateBoilingModel <: AbstractPhysicsProperty end
+Base.@kwdef struct Drag_SchillerNaumann <: AbstractPhysicsProperty end
 
-
-# ConstEos(rho::AbstractFloat) = begin
-#     println("Const EoS is loaded")
-#     ConstEos(rho)
-# end
-
-# PerfectGas(; rho::AbstractFloat, R::AbstractFloat) = begin
-#     println("PerfectGas is loaded")
-#     PerfectGas(rho, R)
-# end
-
-# ConstMu(mu::AbstractFloat) = begin
-#     println("Const mu is loaded")
-#     ConstMu(mu)
-# end
-
-
-# Gravity(g::AbstractVector{<:AbstractFloat}) = begin
-#     println("Gravity is loaded")
-#     Gravity(g)
-# end
-# ConstSurfaceTension(s::AbstractFloat) = begin
-#     println("Constant Surface Tension is loaded")
-#     ConstSurfaceTension(s)
-# end
-# LeeModel(; evap_coeff::T, condens_coeff::T) = begin
-#     println("Lee Model is loaded")
-#     LeeModel(evap_coeff, condens_coeff)
-# end
-
-
-# ConstEos(rho::AbstractFloat) = ConstEos(rho)
-# PerfectGas(; rho::AbstractFloat, R::AbstractFloat) = PerfectGas(rho, R)
-
-# HelmholtzEnergy(name::Symbol) = HelmholtzEnergy(name)
-
-# ConstMu(mu::AbstractFloat) = ConstMu(mu)
-# Sutherland(; mu_ref::AbstractFloat, S::AbstractFloat) = Sutherland(mu_ref, S)
-# Andrade(; B::AbstractFloat, C::AbstractFloat) = Andrade(B, C)
-
-# Gravity(g::AbstractVector{<:AbstractFloat}) = Gravity(g)
-# ConstSurfaceTension(s::T) where {T<:AbstractFloat} = ConstSurfaceTension(s)
-# SurfaceTensionModel() = SurfaceTensionModel()
-# LeeModel(; evap_coeff::T, condens_coeff::T) where {T<:AbstractFloat} = LeeModel(evap_coeff, condens_coeff)
-# NucleatBoilingModel() = NucleateBoilingModel()
 
 
 Base.@kwdef struct Phase{E<:AbstractEosModel, M<:AbstractViscosityModel} <: AbstractPhase
     eos::E
     mu::M
 end
-# Phase(; eos::AbstractEosModel, mu::AbstractViscosityModel) = Phase(eos, mu)
 
 
-# phase_1(; eos::AbstractEosModel, mu::AbstractViscosityModel) = Phase(eos, mu)
-# phase_2(; eos::AbstractEosModel, mu::AbstractViscosityModel) = Phase(eos, mu)
-
-
+# to be changed later I suppose.... needs to be coupled with subgrid models!
+Base.@kwdef struct DriftVelocity{G<:Gravity, T<:AbstractFloat} <: AbstractPhysicsProperty
+    gravity::G # required for acceleration field computation
+    d_p::T #d_p, either computed from subgrid model or defined as const
+end
 
 
 
