@@ -26,8 +26,10 @@ Base.@kwdef struct PerfectGas{T<:AbstractFloat} <: AbstractEosModel
     R::T
 end
 Base.@kwdef struct PengRobinson{T<:AbstractFloat} <: AbstractEosModel # edit
-    rho_ref::T
-    R::T
+    T_crit::T
+    p_crit::T
+    omega::T
+    M::T # Molar mass in g/mol
 end
 
 
@@ -54,6 +56,8 @@ Base.@kwdef struct Andrade{T<:AbstractFloat} <: AbstractViscosityModel
     B::T
     C::T
 end
+Base.@kwdef struct HydrogenViscosity <: AbstractPhysicsProperty end
+Base.@kwdef struct NitrogenViscosity <: AbstractPhysicsProperty end
 
 Base.@kwdef struct Gravity{V<:AbstractVector{<:AbstractFloat}} <: AbstractPhysicsProperty
     g::V
@@ -118,7 +122,6 @@ end
 
 function build_multiphase(phases::Tuple{<:AbstractPhase, <:AbstractPhase}, physics_properties::NamedTuple, mesh)
     phase_1, phase_2 = phases
-    println("Phases Dispatch")
     
     alpha  = ScalarField(mesh)
     alphaf = FaceScalarField(mesh)

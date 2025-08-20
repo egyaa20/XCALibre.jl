@@ -24,6 +24,10 @@ mesh_dev = adapt(backend, mesh)
 noSlipVelocity = [0.0, 0.0, 0.0]
 
 
+# eos = PengRobinson(T_crit=33.145, p_crit=1.2964e6, omega=-0.216, M=2.016) # values for H2
+# eos = PengRobinson(T_crit=126.192, p_crit=3.3958e6, omega=0.037, M=28.02) # values for N2
+
+
 # mu=Sutherland(mu_ref=1.8e-5, S=110.4)
 # mu=Andrade(B = 1.732e-6, C = 1863.0)
 gravity = Gravity([0.0, 0.0, -9.81])
@@ -45,9 +49,9 @@ model = Physics(
         gravity = gravity,
         driftVelocity = DriftVelocity(
             gravity = gravity,
-            d_p = 1.0e-9
-            #maybe define drag here?
-        ),
+            d_p = 1.0e-5
+            #maybe define drag here? - YES
+        ),  
         drag = Drag_SchillerNaumann(),
         # surfaceTension = ConstSurfaceTension(0.07),
         leeModel = LeeModel(evap_coeff=30.0, condens_coeff=30.0)

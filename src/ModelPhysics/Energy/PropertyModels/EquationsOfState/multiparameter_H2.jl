@@ -803,6 +803,7 @@ function EOS_wrapper_H2(T::AbstractFloat, pressure::AbstractFloat, alpha::Abstra
 
             m_vl = c_τ_cond * (1.0-alpha) * rho_vapour * ( (T_sat - T)/T_sat )# ASSUME alpha=0 is liquid vapour
         end
+        
 
         if isnan(rho_mol)
             error("Failed to find a valid density for the given single-phase state.")
@@ -875,11 +876,11 @@ end
 
 
 
-function u_into_T(u_target::AbstractFloat, P_target::AbstractFloat, T_guess::AbstractFloat, constants::constants_EoS_H2;
+function h_into_T(h_target::AbstractFloat, P_target::AbstractFloat, T_guess::AbstractFloat, constants::constants_EoS_H2;
                     max_iter=20, tol=1.0e-7)
 
     (; T_c, rho_c, R_univ, M_H2, T_ref, a_para, k_para, N, t, d, p, α, β, γ, D) = constants
-    # u_target is u_n+1
+    # h_target is h_n+1
     # p_target is p_n+1
     # T_guess is T_n
 
@@ -896,22 +897,22 @@ function u_into_T(u_target::AbstractFloat, P_target::AbstractFloat, T_guess::Abs
         τ = T_c / T
         δ = rho_current / rho_c #mol value!
 
-        u_calc = internal_energy_calc(T, δ, τ, constants) #WARNING : need to check units!!!
+        h_calc = enthalpy_calc(T, δ, τ, constants) #WARNING : need to check units!!!
 
         # Calculate the residual
-        f = u_calc - u_target
-        if abs(f / u_target) < tol
+        f = h_calc - h_target
+        if abs(f / h_target) < tol
             return T # Converged
         end
 
         # Calculate the derivative (cv)
-        cv_val = c_v(T, rho_current, constants)
-        if abs(cv_val) < 1e-9
+        cp_val = c_p(T, rho_current, constants)
+        if abs(cp_val) < 1e-9
             error("Derivative (cv) is near zero.")
         end
 
         # Newton's step
-        T = T - f / cv_val
+        T = T - f / cp_val
     end
 
     error("Temperature inversion failed to converge.")

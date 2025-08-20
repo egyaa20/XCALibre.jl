@@ -2,20 +2,6 @@ export mu_high_fidelity_H2
 
 ###Refer to "Correlation for the Viscosity of Normal Hydrogen Obtained from Symbolic Regression", 2013
 
-# Constants for Hydrogen (H2)
-# M = 2.01588          # Molar mass (g/mol)
-# sigma = 0.297          # Length scale (nm)
-# epsilon_div_kb = 30.41 # Energy scale (K)
-# T_c = 33.145           # Critical temperature (K)
-# rho_sc = 90.5          # Symbolic-regression scaling rho (kg/m^3)
-#
-# a = (0.209630, -0.455274, 0.143602, -0.0335325, 0.00276981)
-#
-# b = (-0.1870, 2.4871, 3.7151, -11.0972, 9.0965, -3.8292, 0.5166)
-#
-# c = (6.43449673, 4.56334068e-2, 0.232797868, 0.958326120,
-#      0.127941189, 0.363576595)
-
 struct constants_mu_H2
     M::Float64
     sigma::Float64

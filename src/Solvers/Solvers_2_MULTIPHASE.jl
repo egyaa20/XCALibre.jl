@@ -66,7 +66,12 @@ function setup_multiphase_solvers(
     interpolate!(alphaf, alpha, config)
 
     flux!(phif, Uf, config)
-    
+
+
+
+    # Umprev = VectorField(mesh)
+    # initialise!(Umprev, [0.0, 0.0, 3.0])
+    # a_test = construct_acceleration_field(U, Umprev, model.fluid.physics_properties, 0.5, config.hardware.workgroup, mesh)
 
 
 
@@ -88,6 +93,41 @@ function setup_multiphase_solvers(
     else
         update_properties!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, phases, model, config)
     end
+
+
+    # DRIFT VELOCITY LOOP (check if driftVelocity is activated in sources)
+
+    U_prev = VectorField(mesh)
+    U_prev = U
+
+    ∇U = Grad{schemes.U.gradient}(U)
+    grad!(∇U, Uf, U, boundaries.U, time, config)
+    limit_gradient!(schemes.U.limiter, ∇U, U, config)
+
+    a_field = construct_acceleration_field(U, ∇U, U_prev, dt)
+    isInitialisation = true
+
+    v_pq = VectorField(mesh)
+    v_pq_prev = VectorField(mesh)
+
+    v_dr_p = VectorField(mesh)
+    v_dr_q = VectorField(mesh)
+    v_p = VectorField(mesh)
+    v_q = VectorField(mesh)
+
+    d_p = ScalarField(mesh)
+    initialise!(d_p, model.fluid.physics_properties.driftVelocity.d_p)
+
+
+    # LOOK UP U FIELD AND RETURN MAX VALUE IN EACH AXIS THEN USE IT IN HERE
+    # LOOK UP VELOCITY BCs AND RETURN MAX VALUE
+    
+    find_Vpq!(rho_fractions[2], rho_fractions[1], rho, nu_fractions[2], nu_fractions[1], d_p, a_field, v_pq_prev, isInitialisation, SVector(1.0e-9, 1.0e-9, 1.0e-9), SVector(10.0, 10.0, 10.0), v_pq, mesh)
+
+    update_velocities!(U, v_pq, v_dr_p, v_dr_q, v_p, v_q, rho, rho_fractions[2], rho_fractions[1], alpha, mesh) # liquid <> p ; vapour <> q
+
+
+    # DRIFT VELOCITY LOOP
 
 
 
@@ -148,6 +188,7 @@ function setup_multiphase_solvers(
     alpha_eqn = ( # Volume Fraction Transport Eqn
         Time{schemes.alpha.time}(alpha)
         + Divergence{schemes.alpha.divergence}(phif, alpha) #phif is U * n * alpha 
+        # divergence multiplied by rho_l ????
         ==
         - Source(zero_field) #zero_field
         # Lee Source
@@ -356,8 +397,9 @@ function MULTIPHASE(
 
     # DUMMY FIELD
 
+    #update_thermo_properties!(phase1 phase2 etc)
     
-    if typeof(model.fluid.phases[1].eos) <: HelmholtzEnergy
+    if typeof(model.fluid.phases[1].eos) <: HelmholtzEnergy #HelmholtzEnergyEOS
         helmholtz_energy!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, model, config)
     else
         update_properties!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, phases, model, config)
@@ -488,9 +530,8 @@ function update_properties!(rho_fractions, nu_fractions, nuf_fractions, nueff, T
 end
 
 
-function perfectGas!(density_field, T_ref, R, pressure_field) 
-    p_ref = 101_325.0 # for conversion to absolute pressure, avoid rho=0 
-    @. density_field.values = (pressure_field.values+p_ref) / (R * T_ref) # NOT SURE ABOUT THIS
+function perfectGas!(density_field, T_ref, R, pressure_field)
+    @. density_field.values = (pressure_field.values) / (R * T_ref) # CAREFUL WITH p=0 initialisation
     nothing
 end
 
@@ -505,9 +546,14 @@ function andrade!(mu_field, T_field, B, C) # maybe do it in Phase(mu=(...)) inst
     nothing
 end
 
-function construct_acceleration_field(U_m, U_m_prev, props, dt) #, workgroup
+
+
+function construct_acceleration_field(U_m, ∇U_m, U_m_prev, dt) #, workgroup
+    grad_U = ∇U_m.result
     a = VectorField(mesh)
+
     g = props.DriftVelocity.gravity
+    # g = [0.0, -9.81, 0.0] #test
 
     x0, y0, z0 = g[1], g[2], g[3]
 
@@ -520,21 +566,219 @@ function construct_acceleration_field(U_m, U_m_prev, props, dt) #, workgroup
     G = VectorField(x, y, z, mesh)
 
     dUdt = VectorField(mesh)
-    @. dUdt[i].values = ( U_m[i] - U_m_prev[i] ) / dt
-
-    @. a[i] = g[i] - (U[i] * ∇U.result[i]) - dUdt[i]
     
-    # AK.foreachindex(dUdt, min_elems=workgroup, block_size=workgroup) do i 
-    #     dUdt[i] = ( U_m[i] - U_m_prev[i] ) / dt
-    # end
+    for i in eachindex(U_m)
+        dUdt[i] = (U_m[i] - U_m_prev[i]) / dt
+        a[i] = G[i] - (grad_U[i] * U_m[i]) - dUdt[i]
+    end
+    
     return a
 end
 
-function construct_drag_field(rho_q, mu_q, props) # here q = vapour (from kassemi paper)
-    if ( hasproperty(props, :drag) ) && ( props.drag isa Drag_SchillerNaumann )
-        d_p = props.DriftVelocity.d_p
-        # Re = compute
+
+function get_E!(E, rho_p, d_p, mu_p, rho, a_field)
+    rho_p = rho_p.values
+    d_p = d_p.values
+    mu_p = mu_p.values
+    rho = rho.values
+
+    for i in eachindex(E)
+        E[i] = (rho_p[i]*((d_p[i])^2))/(18*mu_p[i]) * ((rho_p[i]-rho[i])/rho_p[i]) * a_field[i]
     end
+
+    return nothing
+end
+
+function compute_RE!(RE, rho_q, v_pq, d_p, mu_q)
+    rho_q = rho_q.values
+    d_p = d_p.values
+    mu_q = mu_q.values
+    RE = RE.values
+    
+    for i in eachindex(RE)
+        RE[i] = (rho_q[i] * d_p[i] * norm(v_pq[i]))/mu_q[i]
+    end
+
+    return nothing
+end
+
+function find_Vpq!(rho_q, rho_p, rho, mu_q, mu_p, d_p, a_field, v_pq_prev, isInitialisation, v_low, v_high, v_pq, mesh)
+    @. mu_q.values = mu_q.values * rho_q.values #conversion again..... NU -> MU
+    @. mu_p.values = mu_p.values * rho_p.values #conversion again.....
+    
+    E = VectorField(mesh)
+    expr = ScalarField(mesh)
+    v_pq_trial = VectorField(mesh)
+    RE_trial = ScalarField(mesh)
+
+    get_E!(E, rho_p, d_p, mu_p, rho, a_field)
+
+    @. expr.values = mu_q.values/(0.0183 * rho_q.values * d_p.values)
+    
+    for i in eachindex(v_pq_trial)
+        v_pq_trial[i] = sqrt.(E[i]*expr.values[i])
+    end
+
+    compute_RE!(RE_trial, rho_q, v_pq_trial, d_p, mu_q)
+
+    K = ScalarField(mesh)
+    @. K.values = 0.15 * ((rho_q.values * d_p.values)/mu_q.values)^0.687
+
+    for i in eachindex(RE_trial)
+        if RE_trial[i] > 1000
+            v_pq[i] = v_pq_trial[i]
+        else
+            if isInitialisation
+                v_pq[i] = Vpq_bisect(K[i], E[i], v_low, v_high)
+            else
+                v_pq[i] = Vpq_newton_raphson(E[i], K[i], v_pq_prev[i])
+            end
+        end
+    end
+end
+
+
+
+function Vpq_newton_raphson(E, K, v; max_iter=20, tol=1.0e-7)
+    for it in 1:max_iter # E IS A VECTOR FIELD
+        v_pow_0_687 = v .^ 0.687
+        f = v .+ K .* v_pow_0_687 .* v .- E
+        # f = v + K*(v^1.687) - E
+
+        f_prime = 1.0 .+ 1.687 .* K .* v_pow_0_687
+        # f_prime = 1 + 1.687 * K * (v^1.687)
+
+        v_new = v .- f ./ f_prime # division by zero in one direction is possible
+        # v_new = v - (f/f_prime)
+
+        err = abs.((v_new .- v) ./ (v_new .+ eps())) # Add eps to prevent division by zero
+        # err = abs((v_new - v) / v_new)
+
+        if maximum(err) < tol
+            v_pq = v_new
+            println(v_pq)
+
+            return v_pq
+        end
+
+        v = v_new
+    end
+end
+
+
+function bisect_f(v, K, E)
+    return v .+ K .* (v .^ 1.687) .- E
+end
+
+function Vpq_bisect(K, E, v_low, v_high; max_iter=50, tol=1.0e-7) #v_mid=SVector(0.0, 0.0, 0.0)
+    for it in 1:max_iter
+        v_mid = (v_low .+ v_high) ./ 2.0
+        
+        f_mid = bisect_f(v_mid, K, E)
+        f_low = bisect_f(v_low, K, E)
+
+        vectorised_check = sign.(f_mid) .== sign.(f_low)
+        v_low = ifelse.(vectorised_check, v_mid, v_low)
+        v_high = ifelse.(vectorised_check, v_high, v_mid)
+
+        # if sign.(f_mid) == sign.(f_low)
+        #     v_low = v_mid
+        # else
+        #     v_high = v_mid
+        # end
+
+        err = abs.(v_high .- v_low)
+
+        if maximum(err) < tol
+            v_pq = v_mid
+
+            return v_pq
+        end
+    end
+end
+
+function update_velocities!(U_m, v_pq, v_dr_p, v_dr_q, v_p, v_q, rho, rho_q, rho_p, alpha, mesh)
+    alpha = alpha.values
+    rho = rho.values
+    rho_q = rho_q.values
+    rho_p = rho_p.values
+
+    C_p = ScalarField(mesh)
+    C_q = ScalarField(mesh)
+
+    @. C_p.values = (alpha * rho_p) / rho          #liquid
+    @. C_q.values = ((1.0-alpha) * rho_q) / rho    #vapour
+
+    
+    for i in eachindex(U_m)
+        v_dr_p[i] = (1.0 + C_p.values[i]) * v_pq[i]
+        v_dr_q[i] = -(1.0 + C_q.values[i]) * v_pq[i]
+
+        v_p[i] = v_dr_p[i] - U_m[i]
+        v_q[i] = v_dr_q[i] - U_m[i]
+    end
+end
+
+
+
+
+
+
+function hydrogen_viscosity!() # maybe a functor?
+
+end
+
+function nitrogen_viscosity!() # maybe a functor?
+
+end
+
+function peng_robinson!(T, p, T_c, p_c, ω, M)
+    # using Polynomials
+    # ASK HUMBERTO !!!
+
+    # T_c = 33.145
+    # p_c = 1.2964e6
+    R_univ = 8.314
+    M = M * 1.0e-3
+    # ω = -0.216 # Acentric factor for H2
+
+    T_r = T / T_c
+
+    a_H2 = 0.45724 * (((R_univ^2)*(T_c^2))/p_c)
+    b_H2 = 0.07780 * ((R_univ*T_c)/p_c)
+
+    κ = 0.37464 + 1.54226*ω - 0.26992*(ω^2)
+    α = (1 + κ*(1 - sqrt(T_r)))^2
+    
+    A = ( a_H2 * α * p ) / ( (R_univ^2) * (T^2) )
+    B = ( b_H2 * p)  / (R_univ * T)
+    
+    coeffs = [
+        -(A*B - B^2 - B^3),   # constant term (c0)
+         A - 2B - 3B^2,       # Z term (c1)
+        -(1 - B),             # Z^2 term (c2)
+         1.0                  # Z^3 term
+    ]
+    
+    poly = Polynomial(coeffs)
+    Z_roots = roots(poly)
+
+    # Extract only real roots
+    Z_real = [z for z in Z_roots if isreal(z)]
+    Z_real = real.(Z_real)
+
+    Z_liq = minimum(Z_real)   # liquid root
+    Z_vap = maximum(Z_real)   # vapour root
+
+    # Convert to molar volumes
+    Vm_liq = Z_liq * R_univ * T / p
+    Vm_vap = Z_vap * R_univ * T / p
+
+    # Convert to densities [kg/m3]
+    rho_liq = M / Vm_liq
+    rho_vap = M / Vm_vap
+
+    return Z_liq, Z_vap # liq = vap for single phase so its handled by alpha I suppose....
 end
 
 
