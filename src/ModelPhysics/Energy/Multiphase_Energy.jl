@@ -31,27 +31,10 @@ end
 
 function initialise(
     energy::MultiphaseEnergy, model::Physics{T1,F,SO,M,Tu,E,D,BI}, 
-        alpha, p, rho_l, rho_v, u_l, u_v, U_m, ∇U, U_m_prev, dt, config
+        alpha, p, rho_p, rho_q, v_p, v_q, h_p, h_q, k_p, k_q, m_qp, m_pq, latentHeat, dt, config
     ) where {T1,F,SO,M,Tu,E,D,BI}
 
-    # (; h, T, dpdt) = energy
-
-    dUdt = VectorField(mesh)
-    # for i ∈ 1:dUdt
-    @. dUdt[i].values = ( U_m[i] - U_m_prev[i] ) / dt
-    # end
-
-
-    g = VectorField(mesh)
-    @. g[2].values = -9.81 # y direction, hard-coded
-
-    a = VectorField(mesh)
-
-    # for i ∈ 1:a
-    @. a[i] = g[i] - (U[i] * ∇U.result[i]) - dUdt[i]
-    # end
-
-    # return MultiphaseEnergyModel()
+    
 
 end
 

@@ -12,6 +12,9 @@ abstract type AbstractViscosityModel <: AbstractModel end
 abstract type AbstractPhysicsProperty end
 
 
+abstract type AbstractDrag <: AbstractPhysicsProperty end
+
+
 abstract type AbstractPhase <: AbstractMultiphase end
 
 # abstract type AbstractMultiphaseModel end
@@ -37,8 +40,9 @@ abstract type HelmholtzEnergyFluid end
 struct N2 <: HelmholtzEnergyFluid end
 struct H2 <: HelmholtzEnergyFluid end
 
-Base.@kwdef struct HelmholtzEnergy{F<:HelmholtzEnergyFluid} <: AbstractEosModel
+Base.@kwdef struct HelmholtzEnergy{F<:HelmholtzEnergyFluid, I<:Bool} <: AbstractEosModel
     name::F
+    interpolationMode::I
 end
 
 
@@ -67,15 +71,16 @@ Base.@kwdef struct ConstSurfaceTension{T<:AbstractFloat} <: AbstractPhysicsPrope
     s::T
 end
 
+
 Base.@kwdef struct LeeModel{T<:AbstractFloat} <: AbstractPhysicsProperty
     evap_coeff::T
     condens_coeff::T
 end
 
+
+
 Base.@kwdef struct SurfaceTensionModel <: AbstractPhysicsProperty end
 Base.@kwdef struct NucleateBoilingModel <: AbstractPhysicsProperty end
-Base.@kwdef struct Drag_SchillerNaumann <: AbstractPhysicsProperty end
-
 
 
 Base.@kwdef struct Phase{E<:AbstractEosModel, M<:AbstractViscosityModel} <: AbstractPhase
@@ -83,11 +88,13 @@ Base.@kwdef struct Phase{E<:AbstractEosModel, M<:AbstractViscosityModel} <: Abst
     mu::M
 end
 
+Base.@kwdef struct Drag_SchillerNaumann <: AbstractDrag end
 
 # to be changed later I suppose.... needs to be coupled with subgrid models!
-Base.@kwdef struct DriftVelocity{G<:Gravity, T<:AbstractFloat} <: AbstractPhysicsProperty
+Base.@kwdef struct DriftVelocity{G<:Gravity, T<:AbstractFloat, D<:AbstractDrag} <: AbstractPhysicsProperty
     gravity::G # required for acceleration field computation
     d_p::T #d_p, either computed from subgrid model or defined as const
+    drag::D
 end
 
 

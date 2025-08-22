@@ -31,6 +31,7 @@ function setup_multiphase_solvers(
     (; rho, alpha, alphaf) = model.fluid
 
     phases = model.fluid.phases
+    props = model.fluid.physics_properties
 
     mesh = model.domain
 
@@ -69,12 +70,6 @@ function setup_multiphase_solvers(
 
 
 
-    # Umprev = VectorField(mesh)
-    # initialise!(Umprev, [0.0, 0.0, 3.0])
-    # a_test = construct_acceleration_field(U, Umprev, model.fluid.physics_properties, 0.5, config.hardware.workgroup, mesh)
-
-
-
     rho_fractions = [ScalarField(mesh) for _ in phases]
     nu_fractions  = [ScalarField(mesh) for _ in phases]
     nuf_fractions  = [FaceScalarField(mesh) for _ in phases]
@@ -87,6 +82,9 @@ function setup_multiphase_solvers(
     
     # DUMMY FIELD
 
+    m_qp = ScalarField(mesh)
+    m_pq = ScalarField(mesh)
+
     
     if typeof(model.fluid.phases[1].eos) <: HelmholtzEnergy
         helmholtz_energy!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, model, config)
@@ -98,14 +96,16 @@ function setup_multiphase_solvers(
     # DRIFT VELOCITY LOOP (check if driftVelocity is activated in sources)
 
     U_prev = VectorField(mesh)
-    U_prev = U
+    U_prev = U # maybe perturb e.g. * 0.9
+
+    println("Enter drift V loop")
 
     ∇U = Grad{schemes.U.gradient}(U)
     grad!(∇U, Uf, U, boundaries.U, time, config)
     limit_gradient!(schemes.U.limiter, ∇U, U, config)
 
-    a_field = construct_acceleration_field(U, ∇U, U_prev, dt)
-    isInitialisation = true
+    a_field = construct_acceleration_field(U, ∇U, U_prev, 1.0, mesh, props)
+    println("a field constructed")
 
     v_pq = VectorField(mesh)
     v_pq_prev = VectorField(mesh)
@@ -119,10 +119,14 @@ function setup_multiphase_solvers(
     initialise!(d_p, model.fluid.physics_properties.driftVelocity.d_p)
 
 
-    # LOOK UP U FIELD AND RETURN MAX VALUE IN EACH AXIS THEN USE IT IN HERE
-    # LOOK UP VELOCITY BCs AND RETURN MAX VALUE
+    isInitialisation = true
+    # max_U = max_field_value(U)
+    max_U = max_BC_value(config.boundaries.U)
+
+    println("find pq")
+    println(max_U)
     
-    find_Vpq!(rho_fractions[2], rho_fractions[1], rho, nu_fractions[2], nu_fractions[1], d_p, a_field, v_pq_prev, isInitialisation, SVector(1.0e-9, 1.0e-9, 1.0e-9), SVector(10.0, 10.0, 10.0), v_pq, mesh)
+    find_Vpq!(rho_fractions[2], rho_fractions[1], rho, nu_fractions[2], nu_fractions[1], d_p, a_field, v_pq_prev, isInitialisation, SVector(1.0e-9, 1.0e-9, 1.0e-9), max_U, v_pq, mesh)
 
     update_velocities!(U, v_pq, v_dr_p, v_dr_q, v_p, v_q, rho, rho_fractions[2], rho_fractions[1], alpha, mesh) # liquid <> p ; vapour <> q
 
@@ -139,32 +143,6 @@ function setup_multiphase_solvers(
     interpolate!(n_f, ∇alpha.result, config)
 
 
-    println(∇alpha.result) # vector field 
-    println(n_f) #face vector field
-    # correct_boundaries!(n_f, ∇alpha.result, boundaries.alpha, time, config) # PROBLEMATIC LINE!
-
-
-
-    cAlpha = 1.0
-
-    initialise!(U_c_f, 1.0)
-    initialise!(phiC, 1.0)
-    # @. U_c_f.values *= n_f.values
-    @. U_c_f.values *= cAlpha
-
-    flux!(U_c_f, Uf, config)
-
-    alphaf_minus = FaceScalarField(mesh)
-    initialise!(alphaf_minus, 1.0)
-    @. alphaf_minus.values -= alphaf.values
-
-    @. phiC.values *= U_c_f.values
-    @. phiC.values *= alphaf.values
-    @. phiC.values *= alphaf_minus.values
-
-    div!(alpha_source, phiC, config)
-
-    # update_nueff!(nueff, nu, model.turbulence, config) #need to work with nu
 
 
 
@@ -183,24 +161,20 @@ function setup_multiphase_solvers(
 
     zero_field = ScalarField(mesh)
 
-    
-    # Alpha_p... ? rho_p ?
+    alpha_rhs = - Source(zero_field)
+    alpha_rhs = alpha_eqn_sources(props, alpha_rhs, rho, rho_fractions[1], alpha, v_dr_p, m_qp, m_pq, mesh, config) #mqp and mpq
+
     alpha_eqn = ( # Volume Fraction Transport Eqn
         Time{schemes.alpha.time}(alpha)
         + Divergence{schemes.alpha.divergence}(phif, alpha) #phif is U * n * alpha 
         # divergence multiplied by rho_l ????
-        ==
-        - Source(zero_field) #zero_field
-        # Lee Source
-        # Subgrid source
+        == alpha_rhs
     ) → ScalarEquation(alpha, boundaries.alpha)
 
-    # println(phif.values)
-
-    props = model.fluid.physics_properties
+    
 
     momentum_rhs = - Source(∇p.result)
-    momentum_rhs = momentum_eqn_sources(props, momentum_rhs, rho, mesh)
+    momentum_rhs = momentum_eqn_sources(props, momentum_rhs, rho, rho_fractions[1], rho_fractions[2], alpha, v_dr_p, v_dr_q, mesh, config)
 
 
 
@@ -209,17 +183,9 @@ function setup_multiphase_solvers(
         + Divergence{schemes.U.divergence}(mdotf, U)  #mdotf is rho*U*n
         - Laplacian{schemes.U.laplacian}(nueff, U) # nu_mixture; nu needs update!!!
         == momentum_rhs
-        # - Source(∇p.result) # -∇p
-        # + Source(rhoG) # (0, -9.81 * rho, 0)
-        # + Source(Su) # nucleate boiling subgrid model
-        # - Source(slipVelocity) # slip velocity term
     ) → VectorEquation(U, boundaries.U)
 
     
-    g = -9.81
-    prgh = ScalarField(mesh)
-    ∇prgh = Grad{schemes.p.gradient}(prgh)
-
     p_eqn = (
        Time{schemes.p.time}(psi, p)
       - Laplacian{schemes.p.laplacian}(rDf, prgh)
@@ -227,9 +193,6 @@ function setup_multiphase_solvers(
       - Source(divHv)
     ) → ScalarEquation(p, boundaries.p)
 
-    # @. prgh.values = p.values - rho.values * g # * yCoords
-    # grad!(∇prgh, pf, prgh, boundaries.p, time, config)
-    # limit_gradient!(schemes.p.limiter, ∇prgh, prgh, config)
 
 
     @info "Initialising preconditioners..."
@@ -445,8 +408,7 @@ end
 
 
 
-
-function momentum_eqn_sources(props, rhs, rho, mesh)
+function momentum_eqn_sources(props, rhs, rho, rho_p, rho_q, alpha, vdr_p, vdr_q, mesh, config)
     if ( hasproperty(props, :gravity) ) && ( props.gravity isa Gravity )
         g = props.gravity.g
 
@@ -455,6 +417,7 @@ function momentum_eqn_sources(props, rhs, rho, mesh)
         # y = ConstantScalar(y0)
         # z = ConstantScalar(z0)
         # CAN VECTOR FIELD BE DISPATCHED TO INCLUDE CONSTANT SCALARS ???
+        # JUST USE CONSTANT VECTOR LOL!
 
         x = ScalarField(mesh)
         y = ScalarField(mesh)
@@ -470,12 +433,69 @@ function momentum_eqn_sources(props, rhs, rho, mesh)
 
         rhoG = VectorField(x, y, z, mesh)
 
-        @info "Adding Gravity term..."
+        @info "Adding Gravity term in Momentum Equation..."
         rhs -= Source(rhoG)
+    end
+
+    if ( hasproperty(props, :driftVelocity) ) && ( props.driftVelocity isa DriftVelocity )
+        schemes = config.schemes
+
+        alpha = alpha.values
+        rho_p = rho_p.values
+        rho_q = rho_q.values
+        # prob would make sense to put drift velocities inside DriftVelocity() object
+
+        # slipVelocity = VectorField(mesh)
+        slipVelocity = TensorField(mesh)
+
+        for i in eachindex(slipVelocity)
+            cross_p = vdr_p[i] * vdr_p[i]'
+            cross_q = vdr_q[i] * vdr_q[i]'
+            slipVelocity[i] = (alpha[i] * rho_p[i] * cross_p) + ((1.0-alpha[i]) * rho_q[i] * cross_q) #must be cross products
+        end
+
+        # ∇slipVelocity = Grad{schemes.U.divergence}(slipVelocity)
+        # prob incorrect - we need to do divergence, not gradient?
+
+
+        @info "Adding Slip Velocity term in Momentum Equation..."
+        # println(∇slipVelocity.result)
+        # rhs -= Source(∇slipVelocity.result)
     end
 
     return rhs
 end
+
+
+function alpha_eqn_sources(props, rhs, rho, rho_p, alpha, vdr_p, m_qp, m_pq, mesh, config)
+    if ( hasproperty(props, :driftVelocity) ) && ( props.driftVelocity isa DriftVelocity )
+        schemes = config.schemes
+
+        alpha = alpha.values
+        rho_p = rho_p.values
+
+        source_field = VectorField(mesh)
+        source_fieldF = FaceVectorField(mesh)
+        # interpolate!()
+        div!(source_field, source_fieldF, config)
+        # divergence of.....
+
+        @info "Adding Slip Velocity term in Alpha Equation..."
+        
+        rhs -= Source(source_fieldF)
+    end
+    if ( hasproperty(props, :leeModel) ) && ( props.leeModel isa LeeModel )
+        
+        @info "Adding Lee Model in Alpha Equation..."
+        
+        rhs += Source(m_qp)
+        rhs -= Source(m_pq)
+    end
+    
+    return rhs
+end
+
+
 
 function blend_properties!(property_field, alpha_field, property_0, property_1)
     @. property_field.values = (property_0.values * alpha_field.values) + (property_1.values * (1.0 - alpha_field.values))
@@ -548,11 +568,11 @@ end
 
 
 
-function construct_acceleration_field(U_m, ∇U_m, U_m_prev, dt) #, workgroup
+function construct_acceleration_field(U_m, ∇U_m, U_m_prev, dt, mesh, props) #, workgroup
     grad_U = ∇U_m.result
     a = VectorField(mesh)
 
-    g = props.DriftVelocity.gravity
+    g = props.driftVelocity.gravity.g
     # g = [0.0, -9.81, 0.0] #test
 
     x0, y0, z0 = g[1], g[2], g[3]
@@ -576,6 +596,21 @@ function construct_acceleration_field(U_m, ∇U_m, U_m_prev, dt) #, workgroup
 end
 
 
+
+# function get_E!(E, rho_p, d_p, mu_p, rho, a_field)
+#     ndrang = length(E)
+#     kernel = _get_E!(_setup()...)
+#     kernel(rho_p, d_p, ...)
+ 
+#     return nothing
+# end
+ 
+# @kernel inbounds=true function _get_E!()
+#     i = @index(Global)
+ 
+#     E[i] = (rho_p[i]*((d_p[i])^2))/(18*mu_p[i]) * ((rho_p[i]-rho[i])/rho_p[i]) * a_field[i] #try @. again
+# end
+
 function get_E!(E, rho_p, d_p, mu_p, rho, a_field)
     rho_p = rho_p.values
     d_p = d_p.values
@@ -583,7 +618,7 @@ function get_E!(E, rho_p, d_p, mu_p, rho, a_field)
     rho = rho.values
 
     for i in eachindex(E)
-        E[i] = (rho_p[i]*((d_p[i])^2))/(18*mu_p[i]) * ((rho_p[i]-rho[i])/rho_p[i]) * a_field[i]
+        E[i] = (rho_p[i]*((d_p[i])^2))/(18*mu_p[i]) * ((rho_p[i]-rho[i])/rho_p[i]) * a_field[i] #try @. again
     end
 
     return nothing
@@ -603,8 +638,8 @@ function compute_RE!(RE, rho_q, v_pq, d_p, mu_q)
 end
 
 function find_Vpq!(rho_q, rho_p, rho, mu_q, mu_p, d_p, a_field, v_pq_prev, isInitialisation, v_low, v_high, v_pq, mesh)
-    @. mu_q.values = mu_q.values * rho_q.values #conversion again..... NU -> MU
-    @. mu_p.values = mu_p.values * rho_p.values #conversion again.....
+    # @. mu_q.values = mu_q.values * rho_q.values #conversion again..... NU -> MU
+    # @. mu_p.values = mu_p.values * rho_p.values #conversion again..... DONT STORE IT!
     
     E = VectorField(mesh)
     expr = ScalarField(mesh)
@@ -613,7 +648,7 @@ function find_Vpq!(rho_q, rho_p, rho, mu_q, mu_p, d_p, a_field, v_pq_prev, isIni
 
     get_E!(E, rho_p, d_p, mu_p, rho, a_field)
 
-    @. expr.values = mu_q.values/(0.0183 * rho_q.values * d_p.values)
+    @. expr.values = (mu_q.values*rho_q.values)/(0.0183 * rho_q.values * d_p.values)
     
     for i in eachindex(v_pq_trial)
         v_pq_trial[i] = sqrt.(E[i]*expr.values[i])
@@ -734,13 +769,12 @@ end
 
 function peng_robinson!(T, p, T_c, p_c, ω, M)
     # using Polynomials
-    # ASK HUMBERTO !!!
 
-    # T_c = 33.145
-    # p_c = 1.2964e6
+    # T_c = 33.145 # H2
+    # p_c = 1.2964e6 # H2
     R_univ = 8.314
     M = M * 1.0e-3
-    # ω = -0.216 # Acentric factor for H2
+    # ω = -0.216 # H2
 
     T_r = T / T_c
 
@@ -799,11 +833,44 @@ function helmholtz_energy!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_
 
     @. nu_fractions[1].values *= nu_fractions[1].values/rho_fractions[1].values # conversion
     @. nu_fractions[2].values *= nu_fractions[2].values/rho_fractions[2].values # conversion
-    interpolate!(nuf_fractions[1], nu_fractions[1], config)
+
+    @. interpolate!.(nuf_fractions[1]/rho_fractions[1], nu_fractions[1], config)
     interpolate!(nuf_fractions[2], nu_fractions[2], config)
     
     blend_properties!(rho, alpha, rho_fractions[1], rho_fractions[2]) # 1 is alpha=0,   2 is alpha=1
     blend_properties!(nueff, alphaf, nuf_fractions[1], nuf_fractions[2]) # weird mu <-> nu conversion
 
     interpolate!(rhof, rho, config)
+end
+
+
+
+
+function max_BC_value(BC) # only for vector fields r
+    # example: BC = config.boundaries.U
+    output = SVector(0.0, 0.0, 0.0)
+
+    for i in eachindex(BC)
+        current_mag = norm(BC[i].value)
+        output_mag = norm(output)
+
+        if current_mag > output_mag
+            output = BC[i].value
+        end
+    end
+
+    return output
+end
+
+
+function max_field_value(field::ScalarField)
+    return maximum(field.values)
+end
+
+function max_field_value(field::VectorField)
+    max_x = maximum(field.x.values)
+    max_y = maximum(field.y.values)
+    max_z = maximum(field.z.values)
+
+    return SVector(max_x, max_y, max_z)
 end

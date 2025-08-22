@@ -36,10 +36,10 @@ model = Physics(
     time = Transient(),
     fluid = Fluid{Multiphase}(
         phases = ( #first phase is liquid, second if vapour - common assumption
-            # Phase(eos=ConstEos(1.0), mu=ConstMu(1.8e-5)),       #air
-            # Phase(eos=ConstEos(1000.0), mu=ConstMu(1.0e-3))     #water
-            Phase(eos=HelmholtzEnergy(N2()), mu=ConstMu(1.8e-5)),      
-            Phase(eos=HelmholtzEnergy(N2()), mu=ConstMu(1.0e-3))    
+            Phase(eos=ConstEos(1.0), mu=ConstMu(1.8e-5)),       #air
+            Phase(eos=ConstEos(1000.0), mu=ConstMu(1.0e-3))     #water
+            # Phase(eos=HelmholtzEnergy(N2()), mu=ConstMu(1.8e-5)),      
+            # Phase(eos=HelmholtzEnergy(N2()), mu=ConstMu(1.0e-3))    
             # Phase(eos=ConstEos(1.225), mu=Sutherland(mu_ref=1.8e-5, S=110.4)),
             # Phase(eos=ConstEos(1.0), mu=ConstMu(1.8e-5)),       #air
             # Phase(eos=PerfectGas(rho=1.225, R=287.0), mu=ConstMu(1.8e-5)),       #air
@@ -49,10 +49,10 @@ model = Physics(
         gravity = gravity,
         driftVelocity = DriftVelocity(
             gravity = gravity,
-            d_p = 1.0e-5
-            #maybe define drag here? - YES
+            d_p = 1.0e-5,
+            drag = Drag_SchillerNaumann()
         ),  
-        drag = Drag_SchillerNaumann(),
+        # drag = Drag_SchillerNaumann(),
         # surfaceTension = ConstSurfaceTension(0.07),
         leeModel = LeeModel(evap_coeff=30.0, condens_coeff=30.0)
     ),

@@ -3,6 +3,8 @@ using LinearAlgebra
 
 
 function setField_Box!(mesh, field, value::Float64, region::String)
+# example of region: region_to_initialize = "(0 0 -1) (0.05 0.1 1)"
+
     coords = map(s -> parse(Float64, s), split(replace(region, r"[()]" => ""))) #split input region into array of coords
     p1 = coords[1:3] #min corner of the box
     p2 = coords[4:6] #max corner of the box
