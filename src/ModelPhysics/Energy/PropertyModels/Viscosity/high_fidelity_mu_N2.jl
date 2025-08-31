@@ -22,20 +22,20 @@ export mu_high_fidelity_N2
 # l_coeffs = (0, 1, 1, 2, 3)
 
 struct constants_mu_N2
-    M::Float64
-    sigma::Float64
-    epsilon_div_kb::Float64
-    T_c::Float64
-    rho_c::Float64
-    b::NTuple{5, Float64}
-    N_coeffs::NTuple{5, Float64}
-    t_coeffs::NTuple{5, Float64}
-    d_coeffs::NTuple{5, Float64}
-    l_coeffs::NTuple{5, Float64}
+    M::AbstractFloat
+    sigma::AbstractFloat
+    epsilon_div_kb::AbstractFloat
+    T_c::AbstractFloat
+    rho_c::AbstractFloat
+    b::NTuple{5, AbstractFloat}
+    N_coeffs::NTuple{5, AbstractFloat}
+    t_coeffs::NTuple{5, AbstractFloat}
+    d_coeffs::NTuple{5, AbstractFloat}
+    l_coeffs::NTuple{5, AbstractFloat}
 end
 
 
-function mu_0_N2(T::Float64, constants::constants_mu_N2)
+function mu_0_N2(T::AbstractFloat, constants::constants_mu_N2)
     (; M, sigma, epsilon_div_kb, b) = constants
     Tstar = T / epsilon_div_kb
     ln_Tstar = log(Tstar)
@@ -46,7 +46,7 @@ function mu_0_N2(T::Float64, constants::constants_mu_N2)
     return ( 0.0266958 * sqrt(M * T) ) / ( (sigma)^2 * omega )
 end
 
-function mu_r(δ::Float64, τ::Float64, constants::constants_mu_N2)
+function mu_r(δ::AbstractFloat, τ::AbstractFloat, constants::constants_mu_N2)
     (; N_coeffs, t_coeffs, d_coeffs, l_coeffs) = constants
     residual_viscosity = 0.0
 
@@ -69,7 +69,7 @@ function mu_r(δ::Float64, τ::Float64, constants::constants_mu_N2)
     return residual_viscosity
 end
 
-function mu_high_fidelity_N2(T::Float64, rho::Float64)
+function mu_high_fidelity_N2(T::AbstractFloat, rho::AbstractFloat)
 
     constants = constants_mu_N2(
         28.01348, # M

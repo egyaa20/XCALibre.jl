@@ -168,10 +168,6 @@ function SIMPLE(
     for iteration ∈ 1:iterations
         time = iteration
 
-        saveUf = FaceVectorField(mesh)
-        @. saveUf.x.values = Uf.x.values
-        @. saveUf.y.values = Uf.y.values
-        @. saveUf.z.values = Uf.z.values
 
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         
@@ -182,24 +178,10 @@ function SIMPLE(
         remove_pressure_source!(U_eqn, ∇p, config)
         H!(Hv, U, U_eqn, config)
         
-        if (Uf.y.values == saveUf.y.values) && ((Uf.x.values == saveUf.x.values)) && (Uf.z.values == saveUf.z.values)
-            println("!!!NO UPDATE UF!!!")
-        else
-            print("Yes update UF")
-        end
-
-        break
+        
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
 
-        
-        if (Uf.y.values == saveUf.y.values) && ((Uf.x.values == saveUf.x.values)) && (Uf.z.values == saveUf.z.values)
-            println("!!!NO UPDATE UF!!!")
-        else
-            print("Yes update UF")
-        end
-
-        break
 
         correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
@@ -260,13 +242,6 @@ function SIMPLE(
         R_p[iteration] = rp
 
         
-        # if (Uf.y.values == saveUf.y.values) && ((Uf.x.values == saveUf.x.values)) && (Uf.z.values == saveUf.z.values)
-        #     println("!!!NO UPDATE UF!!!")
-        # else
-        #     print("Yes update UF")
-        # end
-
-        # break
 
         Uz_convergence = true
         if typeof(mesh) <: Mesh3

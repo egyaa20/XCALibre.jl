@@ -32,12 +32,17 @@ noSlipVelocity = [0.0, 0.0, 0.0]
 # mu=Andrade(B = 1.732e-6, C = 1863.0)
 gravity = Gravity([0.0, 0.0, -9.81])
 
+
+
+# ConstMu <> 1.0e-3
+
+
 model = Physics(
     time = Transient(),
     fluid = Fluid{Multiphase}(
         phases = ( #first phase is liquid, second if vapour - common assumption
-            Phase(eos=ConstEos(1.0), mu=ConstMu(1.8e-5)),       #air
-            Phase(eos=ConstEos(1000.0), mu=ConstMu(1.0e-3))     #water
+            Phase(eosModel=ConstEos(5.0), viscosityModel=ConstMu(1.8e-5)),       #air
+            Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3))     #water
             # Phase(eos=HelmholtzEnergy(N2()), mu=ConstMu(1.8e-5)),      
             # Phase(eos=HelmholtzEnergy(N2()), mu=ConstMu(1.0e-3))    
             # Phase(eos=ConstEos(1.225), mu=Sutherland(mu_ref=1.8e-5, S=110.4)),
@@ -51,9 +56,7 @@ model = Physics(
             gravity = gravity,
             d_p = 1.0e-5,
             drag = Drag_SchillerNaumann()
-        ),  
-        # drag = Drag_SchillerNaumann(),
-        # surfaceTension = ConstSurfaceTension(0.07),
+        ),
         leeModel = LeeModel(evap_coeff=30.0, condens_coeff=30.0)
     ),
     turbulence = RANS{Laminar}(),
@@ -71,7 +74,6 @@ inner_alpha = 1.0
 outer_alpha = 0.0
 
 operating_pressure = 3.0e4
-
 
 BCs = assign(
     region = mesh_dev,
@@ -113,10 +115,6 @@ schemes = (
 )
 
 
-
-
-
-
 solvers = (
     U = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
@@ -153,5 +151,6 @@ GC.gc()
 initialise!(model.momentum.p, operating_pressure) # GAUGE vs ABSOLUTE ?
 # initialise!(model.momentum.p, 0.1e6)
 initialise!(model.fluid.alpha, 1.0)
+
 
 residuals = run!(model, config) 

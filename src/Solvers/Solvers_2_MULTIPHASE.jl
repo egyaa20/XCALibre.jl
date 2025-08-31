@@ -1,5 +1,7 @@
 export multiphase!
 
+export blend_properties!
+
 
 function multiphase!(
     model, config; 
@@ -28,12 +30,17 @@ function setup_multiphase_solvers(
     @info "Extracting configuration and input fields..."
 
     (; U, p, Uf, pf) = model.momentum
-    (; rho, alpha, alphaf) = model.fluid
+    (; alpha, alphaf, rho, rhof) = model.fluid
 
     phases = model.fluid.phases
     props = model.fluid.physics_properties
 
+    backend = hardware.backend
+    workgroup = hardware.workgroup
+
     mesh = model.domain
+    isInit = true
+    
 
     @info "Pre-allocating fields..."
     
@@ -41,111 +48,47 @@ function setup_multiphase_solvers(
     time = zero(TF) # assuming time=0
 
 
-    @info "Computing Fluid Properties..."
-
-
-    ∇alpha = Grad{schemes.alpha.gradient}(alpha)  
-    n_f = FaceVectorField(mesh)
-
-
-
     ∇p = Grad{schemes.p.gradient}(p)
     grad!(∇p, pf, p, boundaries.p, time, config)
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
-
-    phif = FaceScalarField(mesh)
-    phiC = FaceScalarField(mesh)
-    U_c_f = FaceScalarField(mesh)
-
-    rhof = FaceScalarField(mesh)
-    mdotf = FaceScalarField(mesh)
-    nueff = FaceScalarField(mesh)
-
-    alpha_source = ScalarField(mesh)
-
-
-    interpolate!(alphaf, alpha, config)
-
-    flux!(phif, Uf, config)
-
-
-
-    rho_fractions = [ScalarField(mesh) for _ in phases]
-    nu_fractions  = [ScalarField(mesh) for _ in phases]
-    nuf_fractions  = [FaceScalarField(mesh) for _ in phases]
-
-    
-    # DUMMY FIELD
-
-    T_temp = ScalarField(mesh)
-    initialise!(T_temp, 70.0)
-    
-    # DUMMY FIELD
-
-    m_qp = ScalarField(mesh)
-    m_pq = ScalarField(mesh)
-
-    
-    if typeof(model.fluid.phases[1].eos) <: HelmholtzEnergy
-        helmholtz_energy!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, model, config)
-    else
-        update_properties!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, phases, model, config)
-    end
-
-
-    # DRIFT VELOCITY LOOP (check if driftVelocity is activated in sources)
-
-    U_prev = VectorField(mesh)
-    U_prev = U # maybe perturb e.g. * 0.9
-
-    println("Enter drift V loop")
 
     ∇U = Grad{schemes.U.gradient}(U)
     grad!(∇U, Uf, U, boundaries.U, time, config)
     limit_gradient!(schemes.U.limiter, ∇U, U, config)
 
-    a_field = construct_acceleration_field(U, ∇U, U_prev, 1.0, mesh, props)
-    println("a field constructed")
+    phif = FaceScalarField(mesh)
+    mdotf = FaceScalarField(mesh)
+    nueff = FaceScalarField(mesh)
 
-    v_pq = VectorField(mesh)
-    v_pq_prev = VectorField(mesh)
+    interpolate!(alphaf, alpha, config)
 
-    v_dr_p = VectorField(mesh)
-    v_dr_q = VectorField(mesh)
-    v_p = VectorField(mesh)
-    v_q = VectorField(mesh)
-
-    d_p = ScalarField(mesh)
-    initialise!(d_p, model.fluid.physics_properties.driftVelocity.d_p)
+    rho_l = phases[1].rho
+    rhof_l = FaceScalarField(mesh)
+    interpolate!(rhof_l, rho_l, config)
 
 
-    isInitialisation = true
-    # max_U = max_field_value(U)
-    max_U = max_BC_value(config.boundaries.U)
-
-    println("find pq")
-    println(max_U)
-    
-    find_Vpq!(rho_fractions[2], rho_fractions[1], rho, nu_fractions[2], nu_fractions[1], d_p, a_field, v_pq_prev, isInitialisation, SVector(1.0e-9, 1.0e-9, 1.0e-9), max_U, v_pq, mesh)
-
-    update_velocities!(U, v_pq, v_dr_p, v_dr_q, v_p, v_q, rho, rho_fractions[2], rho_fractions[1], alpha, mesh) # liquid <> p ; vapour <> q
+    flux!(phif, Uf, rhof_l, config)
 
 
-    # DRIFT VELOCITY LOOP
+    @info "Computing Fluid Properties..."
 
+    phase_eos = [phases[1].eosModel, phases[2].eosModel]
 
+    if typeof(model.energy) <: Nothing # Isothermal
+        T = ScalarField(mesh)
+        initialise!(T, 273.0) # THIS PROBABLY NEEDS TO BE DEFINED BY USER! Redesign Isothermal Energy ?
+    end
+
+    update_phase_thermodynamics!(phase_eos[1], phases[1], nueff, T, model, config) # For 3+ phases can just wrap in a for loop
+    update_phase_thermodynamics!(phase_eos[2], phases[2], nueff, T, model, config)
+
+    blend_properties!(rho, alpha, phases[1].rho, phases[2].rho)
+
+    for property in props
+        update_extra_physics!(property, ∇U, model, config, isInit, 1.0, mesh) # currently computes v_pq and updates velocities in drift model
+    end
 
     flux!(mdotf, Uf, rhof, config)
-
-
-    grad!(∇alpha, alphaf, alpha, boundaries.alpha, time, config)
-
-    interpolate!(n_f, ∇alpha.result, config)
-
-
-
-
-
 
     psi = ScalarField(mesh)
     initialise!(psi, 1.0)
@@ -159,36 +102,43 @@ function setup_multiphase_solvers(
 
     @info "Defining models..."
 
-    zero_field = ScalarField(mesh)
+    zero_field = ConstantScalar(0.0)
+
 
     alpha_rhs = - Source(zero_field)
-    alpha_rhs = alpha_eqn_sources(props, alpha_rhs, rho, rho_fractions[1], alpha, v_dr_p, m_qp, m_pq, mesh, config) #mqp and mpq
 
     alpha_eqn = ( # Volume Fraction Transport Eqn
-        Time{schemes.alpha.time}(alpha)
-        + Divergence{schemes.alpha.divergence}(phif, alpha) #phif is U * n * alpha 
-        # divergence multiplied by rho_l ????
+        Time{schemes.alpha.time}(rho_l, alpha)
+        + Divergence{schemes.alpha.divergence}(phif, alpha)
         == alpha_rhs
     ) → ScalarEquation(alpha, boundaries.alpha)
 
+    update_alpha_sources!(props, alpha_rhs, alpha_eqn, alpha, rho, mesh, config, phases, isInit)
+
+    # sub Source <: Src
+
+    # alpha_rhs = - Source(zero_field) - Source(1) + Source(2) - Source(4)
     
 
-    momentum_rhs = - Source(∇p.result)
-    momentum_rhs = momentum_eqn_sources(props, momentum_rhs, rho, rho_fractions[1], rho_fractions[2], alpha, v_dr_p, v_dr_q, mesh, config)
+   momentum_rhs = - Source(∇p.result)
 
-
-
-    U_eqn = ( # Momentum Eqn
-        Time{schemes.U.time}(rho, U) # rho * U
-        + Divergence{schemes.U.divergence}(mdotf, U)  #mdotf is rho*U*n
-        - Laplacian{schemes.U.laplacian}(nueff, U) # nu_mixture; nu needs update!!!
+   U_eqn = ( # Momentum Eqn
+        Time{schemes.U.time}(rho, U)
+        + Divergence{schemes.U.divergence}(mdotf, U)
+        - Laplacian{schemes.U.laplacian}(nueff, U) #turbulence VS laminar ?
         == momentum_rhs
     ) → VectorEquation(U, boundaries.U)
 
-    
+    momentum_rhs = update_momentum_sources!(props, momentum_rhs, U_eqn, alpha, rho, mesh, config, phases, isInit)
+
+    println("CHECKING ON SOURCES")
+    println(momentum_rhs)
+
+
+
     p_eqn = (
-       Time{schemes.p.time}(psi, p)
-      - Laplacian{schemes.p.laplacian}(rDf, prgh)
+       Time{schemes.p.time}(psi, p) # take psi (compressibility) from Helmholtz EoS if possible?
+      - Laplacian{schemes.p.laplacian}(rDf, p) # something to do with momentum - figure this out!
       ==
       - Source(divHv)
     ) → ScalarEquation(p, boundaries.p)
@@ -208,17 +158,24 @@ function setup_multiphase_solvers(
     @reset alpha_eqn.solver = _workspace(solvers.alpha.solver, _b(alpha_eqn))
 
 
-    
-    if typeof(model.energy) <: MultiphaseEnergy
-        @info "Initialising energy model..."
-        energyModel = initialise(model.energy, model, mdotf, rho, p_eqn, config) #change
-    end
-
     @info "Initialising turbulence model..."
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
+    if typeof(model.energy) <: MultiphaseEnergy
+        @info "Initialising energy model..."
+
+        m_qp = props.leeModel.m_qp
+        m_pq = props.leeModel.m_pq
+        latentHeat = props.leeModel.latentHeat
+
+        nut = model.turbulence.nut
+
+        # k_eff? dt ?
+        energyModel = initialise(model.energy, model, nut, latentHeat, m_pq, m_qp, ∇p, config, mesh, 1.0) #ASSUME LEE MODEL IS TURNED ON
+    end
+
     residuals  = solver_variant(
-        model, turbulenceModel, alpha_eqn, ∇p, U_eqn, p_eqn, config;
+        model, turbulenceModel, alpha_eqn, ∇p, ∇U, U_eqn, p_eqn, config;
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
@@ -233,33 +190,31 @@ end # end function
 
 
 
-
-# It might make sense to just dispatch HelmholtzEnergy case
 function MULTIPHASE(
-    model, turbulenceModel, alpha_eqn, ∇p, U_eqn, p_eqn, config; 
+    model, turbulenceModel, alpha_eqn, ∇p, ∇U, U_eqn, p_eqn, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2,
     time, rDf, nueff, phif, prgh, ∇prgh, mdotf, divHv
     )
 
-    inner_loops = 2
+    # inner_loops = 2 DOUBLE CHECK IF THIS IS FINE
     
-
-    g = 9.81
-
     (; U, p, Uf, pf) = model.momentum
-    # (; nu) = model.fluid
-    (; rho, rhof, alpha, alphaf) = model.fluid
+    (; alpha, alphaf, rho, rhof) = model.fluid
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
 
     phases = model.fluid.phases
+    props = model.fluid.physics_properties
 
-    rho_fractions = [ScalarField(mesh) for _ in phases] #need to pass them in args
-    nu_fractions  = [ScalarField(mesh) for _ in phases]
-    nuf_fractions = [FaceScalarField(mesh) for _ in phases]
+    backend = hardware.backend
+    workgroup = hardware.workgroup
+    
+    isInit = false
+    phase_eos = [phases[1].eosModel, phases[2].eosModel]
 
+    mesh = model.domain
 
     Hv = VectorField(mesh)
 
@@ -280,16 +235,39 @@ function MULTIPHASE(
     R_alpha = ones(TF, iterations)
     cellsCourant =adapt(backend, zeros(TF, length(mesh.cells)))
     
+    #REWORK THIS BIT OF CODE!!!
+    if typeof(model.energy) <: Nothing # Isothermal
+        T = ScalarField(mesh)
+        initialise!(T, 273.0) # THIS PROBABLY NEEDS TO BE DEFINED BY USER! Redesign Isothermal Energy ?
+    end
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
-    @info "Starting PISO loops..."
+    @info "Starting Multiphase Solver..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     @time for iteration ∈ 1:iterations
         time = iteration *dt
+
+        # BEFORE PISO LOOPS
+
+        update_phase_thermodynamics!(phase_eos[1], phases[1], nueff, T, model, config) # For 3+ phases can just wrap in a for loop
+        update_phase_thermodynamics!(phase_eos[2], phases[2], nueff, T, model, config)
+
+        blend_properties!(rho, alpha, phases[1].rho, phases[2].rho)
+
+        for property in props
+            update_extra_physics!(property, ∇U, model, config, isInit, 1.0, mesh) # currently computes v_pq and updates velocities in drift model
+        end
+
         
+        update_momentum_sources!(props, 0.0, U_eqn, alpha, rho, mesh, config, phases, isInit)
+        update_alpha_sources!(props, 0.0, alpha_eqn, alpha, rho, mesh, config, phases, isInit)
+        
+        # BEFORE PISO LOOPS
+
+        @info "Starting PISO loops..."
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
 
@@ -299,7 +277,6 @@ function MULTIPHASE(
         remove_pressure_source!(U_eqn, ∇p, config)
         
         rp = 0.0
-        # println(inner_loops)
         for i ∈ 1:inner_loops
             H!(Hv, U, U_eqn, config)
             
@@ -334,71 +311,74 @@ function MULTIPHASE(
         end
 
         
-    if !(typeof(model.turbulence) <: Laminar) #isa
-        println("TURBULENCE ON")
-        turbulence!(turbulenceModel, model, S, prev, time, config) 
-    end
+        if !(typeof(model.turbulence) <: Laminar) #isa
+            println("TURBULENCE ON")
+            turbulence!(turbulenceModel, model, S, prev, time, config) 
+        end
 
 
-    update_nueff!(nueff, nueff, model.turbulence, config)
-    
-
-    flux!(phif, Uf, config)
-    
-    ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
-
-    @. alpha.values = clamp(alpha.values, 0.0, 1.0)
-
-    interpolate!(alphaf, alpha, config)
-    # flux!(phif, Uf, config)
-
-
-    # DUMMY FIELD
-
-    T_temp = ScalarField(mesh)
-    initialise!(T_temp, 70.0)
-
-    # DUMMY FIELD
-
-    #update_thermo_properties!(phase1 phase2 etc)
-    
-    if typeof(model.fluid.phases[1].eos) <: HelmholtzEnergy #HelmholtzEnergyEOS
-        helmholtz_energy!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, model, config)
-    else
-        update_properties!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, phases, model, config)
-    end
-
-
-    if typeof(model.energy) <: MultiphaseEnergy
-        println("ENERGY ON")
-        energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
-    end
-
-    maxCourant = max_courant_number!(cellsCourant, model, config)
-
-    R_ux[iteration] = rx
-    R_uy[iteration] = ry
-    R_uz[iteration] = rz
-    R_p[iteration] = rp
-    R_alpha[iteration] = ralpha
-
-    ProgressMeter.next!(
-        progress, showvalues = [
-            (:time, iteration*runtime.dt),
-            (:Courant, maxCourant),
-            (:Ux, R_ux[iteration]),
-            (:Uy, R_uy[iteration]),
-            (:Uz, R_uz[iteration]),
-            (:p, R_p[iteration]),
-            (:alpha, R_alpha[iteration]),
-            turbulenceModel.state.residuals...
-            ]
-        )
-
-    if iteration%write_interval + signbit(write_interval) == 0
+        update_nueff!(nueff, nueff, model.turbulence, config)
         
-        save_output(model, outputWriter, iteration, time, config)
-    end
+
+        flux!(phif, Uf, config)
+        
+        ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
+
+        @. alpha.values = clamp(alpha.values, 0.0, 1.0)
+
+        interpolate!(alphaf, alpha, config)
+        # flux!(phif, Uf, config)
+
+
+        # DUMMY FIELD
+
+        # T_temp = ScalarField(mesh)
+        # initialise!(T_temp, 70.0)
+
+        # DUMMY FIELD
+
+        #update_thermo_properties!(phase1 phase2 etc)
+        
+        # if typeof(model.fluid.phases[1].eos) <: HelmholtzEnergy #HelmholtzEnergyEOS
+        #     helmholtz_energy!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, model, config)
+        # else
+        #     update_properties!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, phases, model, config)
+        # end
+
+
+        if typeof(model.energy) <: MultiphaseEnergy
+            println("ENERGY ON")
+            energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
+        end
+
+
+
+
+        maxCourant = max_courant_number!(cellsCourant, model, config)
+
+        R_ux[iteration] = rx
+        R_uy[iteration] = ry
+        R_uz[iteration] = rz
+        R_p[iteration] = rp
+        R_alpha[iteration] = ralpha
+
+        ProgressMeter.next!(
+            progress, showvalues = [
+                (:time, iteration*runtime.dt),
+                (:Courant, maxCourant),
+                (:Ux, R_ux[iteration]),
+                (:Uy, R_uy[iteration]),
+                (:Uz, R_uz[iteration]),
+                (:p, R_p[iteration]),
+                (:alpha, R_alpha[iteration]),
+                turbulenceModel.state.residuals...
+                ]
+            )
+
+        if iteration%write_interval + signbit(write_interval) == 0
+            
+            save_output(model, outputWriter, iteration, time, config)
+        end
 
     end # end for loop
 
@@ -408,92 +388,392 @@ end
 
 
 
-function momentum_eqn_sources(props, rhs, rho, rho_p, rho_q, alpha, vdr_p, vdr_q, mesh, config)
-    if ( hasproperty(props, :gravity) ) && ( props.gravity isa Gravity )
-        g = props.gravity.g
-
-        x0, y0, z0 = g[1], g[2], g[3]
-        # x = ConstantScalar(x0)
-        # y = ConstantScalar(y0)
-        # z = ConstantScalar(z0)
-        # CAN VECTOR FIELD BE DISPATCHED TO INCLUDE CONSTANT SCALARS ???
-        # JUST USE CONSTANT VECTOR LOL!
-
-        x = ScalarField(mesh)
-        y = ScalarField(mesh)
-        z = ScalarField(mesh)
-        initialise!(x, x0)
-        initialise!(y, y0)
-        initialise!(z, z0)
-
-        @. x.values = x.values * rho.values
-        @. y.values = y.values * rho.values
-        @. z.values = z.values * rho.values
 
 
-        rhoG = VectorField(x, y, z, mesh)
-
-        @info "Adding Gravity term in Momentum Equation..."
-        rhs -= Source(rhoG)
-    end
-
-    if ( hasproperty(props, :driftVelocity) ) && ( props.driftVelocity isa DriftVelocity )
-        schemes = config.schemes
-
-        alpha = alpha.values
-        rho_p = rho_p.values
-        rho_q = rho_q.values
-        # prob would make sense to put drift velocities inside DriftVelocity() object
-
-        # slipVelocity = VectorField(mesh)
-        slipVelocity = TensorField(mesh)
-
-        for i in eachindex(slipVelocity)
-            cross_p = vdr_p[i] * vdr_p[i]'
-            cross_q = vdr_q[i] * vdr_q[i]'
-            slipVelocity[i] = (alpha[i] * rho_p[i] * cross_p) + ((1.0-alpha[i]) * rho_q[i] * cross_q) #must be cross products
-        end
-
-        # ∇slipVelocity = Grad{schemes.U.divergence}(slipVelocity)
-        # prob incorrect - we need to do divergence, not gradient?
 
 
-        @info "Adding Slip Velocity term in Momentum Equation..."
-        # println(∇slipVelocity.result)
-        # rhs -= Source(∇slipVelocity.result)
-    end
+# function update_momentum_sources!(props, rhs, alpha, rho, mesh, config, phases)
+#     if ( hasproperty(props, :gravity) ) && ( props.gravity isa Gravity )
+#         g = props.gravity.g
+#         rho_p = phases[1].rho
+#         rho_q = phases[2].rho
 
-    return rhs
+#         # rho = ScalarField(mesh)
+#         # blend_properties!(rho, alpha, rho_p, rho_q)
+
+#         x0, y0, z0 = g[1], g[2], g[3]
+        
+#         x = ScalarField(mesh)
+#         y = ScalarField(mesh)
+#         z = ScalarField(mesh)
+#         initialise!(x, x0)
+#         initialise!(y, y0)
+#         initialise!(z, z0)
+
+#         @. x.values = x.values * rho.values
+#         @. y.values = y.values * rho.values
+#         @. z.values = z.values * rho.values
+
+#         rhoG = VectorField(x, y, z, mesh)
+
+#         @info "Adding Gravity term in Momentum Equation..."
+#         rhs -= Source(rhoG)
+#     end
+
+#     if ( hasproperty(props, :driftVelocity) ) && ( props.driftVelocity isa DriftVelocity )
+#         schemes = config.schemes
+#         backend = config.hardware.backend
+#         workgroup = config.hardware.workgroup
+
+#         (vdr_p, vdr_q) = (props.driftVelocity.v_dr_p, props.driftVelocity.v_dr_q)
+
+#         rho_p = phases[1].rho
+#         rho_q = phases[2].rho
+
+#         alpha = alpha.values
+#         rho_p = rho_p.values
+#         rho_q = rho_q.values
+#         # prob would make sense to put drift velocities inside DriftVelocity() object
+
+#         slipVelocity = VectorField(mesh)
+#         slipVelocityTensor = TensorField(mesh)
+
+#         ndrange = length(slipVelocityTensor)
+#         kernel! = _momentum_driftVelocity!(_setup(backend, workgroup, ndrange)...)
+#         kernel!(slipVelocityTensor, vdr_p, vdr_q, alpha, rho_p, rho_q)
+
+#         div_tensor!(slipVelocityTensor, slipVelocity, mesh, config)
+
+#         @info "Adding Slip Velocity term in Momentum Equation..."
+
+#         rhs -= Source(slipVelocity)
+#     end
+
+#     # return rhs
+# end
+@kernel inbounds=true function _momentum_driftVelocity!(slipVelocityTensor, vdr_p, vdr_q, alpha, rho_p, rho_q)
+    i = @index(Global)
+
+    cross_p = vdr_p[i] * vdr_p[i]'
+    cross_q = vdr_q[i] * vdr_q[i]'
+    slipVelocityTensor[i] = (alpha[i] * rho_p[i] * cross_p) + ((1.0-alpha[i]) * rho_q[i] * cross_q) #must be cross products
 end
 
 
-function alpha_eqn_sources(props, rhs, rho, rho_p, alpha, vdr_p, m_qp, m_pq, mesh, config)
-    if ( hasproperty(props, :driftVelocity) ) && ( props.driftVelocity isa DriftVelocity )
-        schemes = config.schemes
 
-        alpha = alpha.values
-        rho_p = rho_p.values
 
-        source_field = VectorField(mesh)
-        source_fieldF = FaceVectorField(mesh)
-        # interpolate!()
-        div!(source_field, source_fieldF, config)
-        # divergence of.....
+function update_extra_physics!(property, ∇U, model, config, isInit, dt, mesh)
+    return nothing
+end
+function update_extra_physics!(property::DriftVelocityState, ∇U, model, config, isInit, dt, mesh)
+    (; U) = model.momentum
+    (; alpha) = model.fluid
+    (; hardware) = config
 
-        @info "Adding Slip Velocity term in Alpha Equation..."
-        
-        rhs -= Source(source_fieldF)
-    end
-    if ( hasproperty(props, :leeModel) ) && ( props.leeModel isa LeeModel )
-        
-        @info "Adding Lee Model in Alpha Equation..."
-        
-        rhs += Source(m_qp)
-        rhs -= Source(m_pq)
+    phases = model.fluid.phases
+    props = model.fluid.physics_properties
+
+    backend = hardware.backend
+    workgroup = hardware.workgroup
+
+    U_prev      = property.U_prev
+    v_pq        = property.v_pq
+    v_pq_prev   =  property.v_pq_prev
+
+    if isInit
+        U_prev = U # maybe perturb e.g. * 0.9
+    else
+        U_prev = U
     end
     
+    a_field = construct_acceleration_field(U, ∇U, U_prev, dt, mesh, props, backend, workgroup)
+    slip_velocity!(alpha, a_field, v_pq, v_pq_prev, mesh, model, phases, config, isInit)
+
+end
+
+
+
+struct InitialisationMode end
+struct UpdateMode end
+
+function compute_alpha_source(model::DriftVelocityState, alpha, rho, phases, config, mesh)
+
+    schemes = config.schemes
+    backend = config.hardware.backend
+    workgroup = config.hardware.workgroup
+
+    vdr_p = model.v_dr_p
+    rho_p = phases[1].rho
+    rho_q = phases[2].rho
+
+    # rho = ScalarField(mesh)
+    # blend_properties!(rho, alpha, rho_p, rho_q)
+
+    alpha = alpha.values
+    rho_p = rho_p.values
+
+    div_term = ScalarField(mesh)
+
+    inside_divergence = VectorField(mesh)
+
+    ndrange = length(inside_divergence)
+    kernel! = _alpha_driftVelocity!(_setup(backend, workgroup, ndrange)...)
+    kernel!(inside_divergence, vdr_p, alpha, rho_p)
+    
+    div_interpolated = FaceVectorField(mesh)
+    interpolate!(div_interpolated, inside_divergence, config)
+    div!(div_term, div_interpolated, config)
+
+    return [div_term, 1.0] # Source, sign
+end
+
+function compute_alpha_source(model::LeeModelState, alpha, rho, phases, config, mesh)
+    return nothing
+    # Special case - do nothing
+end
+
+
+function process_alpha_source!(::InitialisationMode, model::LeeModelState, alpha_eqn, rhs, source, pointerID) ## SPECIAL CASE FOR LEE MODEL
+    
+    m_qp = model.m_qp
+    m_pq = model.m_pq
+    
+    @info "Adding Lee Model in Alpha Equation..."
+    
+    rhs += Source(m_qp)
+    rhs -= Source(m_pq)
+end
+function process_alpha_source!(::InitialisationMode, model, alpha_eqn, rhs, source, pointerID) ## DURING INITIALISATION
+    @info "Adding source for $(nameof(typeof(model))) in Alpha Equation..."
+
+    source_field    = source[1]
+    source_sign     = source[2]
+
+    if source_sign > 0
+        rhs += Source(source_field)
+    else
+        rhs -= Source(source_field)
+    end
+
+    model.alpha_source_pointer[] = pointerID
+end
+
+function process_alpha_source!(::UpdateMode, model, alpha_eqn, rhs, source_object, pointerID) ## DURING SOLVING
+    source_field = source_object[1]
+
+    pointer = model.alpha_source_pointer[]
+    temp_source = get_source(alpha_eqn, pointer)
+    temp_source = source_field # Check if this is not a Source() object
+end
+
+function update_alpha_sources!(props, rhs, eqn, alpha, rho, mesh, config, phases, is_init::Bool)
+    
+    if is_init
+        mode = InitialisationMode()
+    else
+        mode = UpdateMode()
+    end
+
+    filtered_models = (m for m in props if hasproperty(m, :alpha_source_pointer)) # sort properties that are only relevant to momentum eqn.
+
+    for (i, model) in enumerate(filtered_models)
+        source_object = compute_alpha_source(model, alpha, rho, phases, config, mesh)
+        process_alpha_source!(mode, model, eqn, rhs, source_object, i+1) #i+1 because first source is always defined
+    end
+end
+
+
+
+
+function compute_momentum_source(model::DriftVelocityState, alpha, rho, phases, config, mesh)
+    schemes = config.schemes
+    backend = config.hardware.backend
+    workgroup = config.hardware.workgroup
+
+    (vdr_p, vdr_q) = (model.v_dr_p, model.v_dr_q)
+
+    rho_p = phases[1].rho
+    rho_q = phases[2].rho
+
+    alpha = alpha.values
+    rho_p = rho_p.values
+    rho_q = rho_q.values
+    # prob would make sense to put drift velocities inside DriftVelocity() object
+
+    slipVelocity = VectorField(mesh)
+    slipVelocityTensor = TensorField(mesh)
+
+    ndrange = length(slipVelocityTensor)
+    kernel! = _momentum_driftVelocity!(_setup(backend, workgroup, ndrange)...)
+    kernel!(slipVelocityTensor, vdr_p, vdr_q, alpha, rho_p, rho_q)
+
+    div_tensor!(slipVelocityTensor, slipVelocity, mesh, config)
+
+    return [slipVelocity, -1.0] # Source, sign
+end
+
+function compute_momentum_source(model::GravityState, alpha, rho, phases, config, mesh)
+    g = model.g
+    rho_p = phases[1].rho
+    rho_q = phases[2].rho
+
+    # rho = ScalarField(mesh)
+    # blend_properties!(rho, alpha, rho_p, rho_q)
+
+    x0, y0, z0 = g[1], g[2], g[3]
+    
+    x = ScalarField(mesh)
+    y = ScalarField(mesh)
+    z = ScalarField(mesh)
+    initialise!(x, x0)
+    initialise!(y, y0)
+    initialise!(z, z0)
+
+    @. x.values = x.values * rho.values
+    @. y.values = y.values * rho.values
+    @. z.values = z.values * rho.values
+
+    rhoG = VectorField(x, y, z, mesh)
+
+    return [rhoG, 1.0] # Source, sign
+end
+
+function process_momentum_source(::InitialisationMode, model, config, U_eqn, rhs, source, pointerID) ## DURING INITIALISATION
+    @info "Adding source for $(nameof(typeof(model))) in Momentum Equation..."
+
+    source_field    = source[1]
+    source_sign     = source[2]
+
+    println(rhs)    
+
+    if source_sign > 0
+        rhs += Source(source_field)
+    else
+        rhs -= Source(source_field)
+    end
+    # push_to_RHS!(source_field, source_sign, rhs, config)
+    
+    println("AFTER ADDING")
+    println(rhs)
+    model.momentum_source_pointer[] = pointerID
+
     return rhs
 end
+function process_momentum_source(::UpdateMode, model, config, U_eqn, rhs, source_object, pointerID) ## DURING SOLVING
+    source_field = source_object[1]
+
+    pointer = model.momentum_source_pointer[]
+    println("Pointer from the model: ", pointer)
+    println("Pointer ID: ", pointerID)
+    temp_source = get_source(U_eqn, pointer)
+    temp_source = source_field # Check if this is not a Source() object
+
+    return nothing
+end
+
+function update_momentum_sources!(props, rhs, eqn, alpha, rho, mesh, config, phases, is_init::Bool)
+    
+    if is_init
+        mode = InitialisationMode()
+    else
+        mode = UpdateMode()
+    end
+
+    filtered_models = (m for m in props if hasproperty(m, :momentum_source_pointer)) # sort properties that are only relevant to momentum eqn.
+
+    for (i, model) in enumerate(filtered_models)
+        println("INSIDE THE LOOP, MODE : $mode")
+        source_object = compute_momentum_source(model, alpha, rho, phases, config, mesh)
+        rhs = process_momentum_source(mode, model, config, eqn, rhs, source_object, i+1) #i+1 because first source is always defined
+    end
+
+    return rhs
+end
+
+
+
+function push_to_RHS!(source_field::ScalarField, source_sign, RHS, config)
+    @. source_field.values = source_field.values * source_sign
+
+    push!(RHS, Source(source_field))
+end
+function push_to_RHS!(source_field::VectorField, source_sign, RHS, config)
+    backend = config.hardware.backend
+    workgroup = config.hardware.workgroup
+
+    ndrange = length(source_field)
+    kernel! = _push_to_RHS!(_setup(backend, workgroup, ndrange)...)
+    kernel!(source_field, source_sign)
+    
+    push!(RHS, Source(source_field))
+end
+@kernel inbounds=true function _push_to_RHS!(source_field, source_sign)
+    i = @index(Global)
+
+    source_field[i] = source_field[i] * source_sign
+end
+
+
+# function update_alpha_sources!(props, rhs, alpha, rho, mesh, config, phases)
+#     if ( hasproperty(props, :driftVelocity) ) && ( props.driftVelocity isa DriftVelocity )
+#         schemes = config.schemes
+#         backend = config.hardware.backend
+#         workgroup = config.hardware.workgroup
+
+#         vdr_p = props.driftVelocity.v_dr_p
+#         rho_p = phases[1].rho
+#         rho_q = phases[2].rho
+
+#         # rho = ScalarField(mesh)
+#         # blend_properties!(rho, alpha, rho_p, rho_q)
+
+#         alpha = alpha.values
+#         rho_p = rho_p.values
+
+#         div_term = ScalarField(mesh)
+
+#         inside_divergence = VectorField(mesh)
+
+#         ndrange = length(inside_divergence)
+#         kernel! = _alpha_driftVelocity!(_setup(backend, workgroup, ndrange)...)
+#         kernel!(inside_divergence, vdr_p, alpha, rho_p)
+        
+#         div_interpolated = FaceVectorField(mesh)
+#         interpolate!(div_interpolated, inside_divergence, config)
+#         div!(div_term, div_interpolated, config)
+
+#         # EITHER DO THIS
+#         @info "Adding Slip Velocity term in Alpha Equation..."
+        
+#         rhs -= Source(div_term)
+
+#         #OR JUST GET THE FIELD AND UPDATE IT
+#     end
+#     if ( hasproperty(props, :leeModel) ) && ( props.leeModel isa LeeModel )
+#         m_qp = props.leeModel.m_qp
+#         m_pq = props.leeModel.m_pq
+        
+#         @info "Adding Lee Model in Alpha Equation..."
+        
+#         rhs += Source(m_qp)
+#         rhs -= Source(m_pq)
+#     end
+    
+#     # return rhs
+# end
+@kernel inbounds=true function _alpha_driftVelocity!(inside_divergence, vdr_p, alpha, rho_p)
+    i = @index(Global)
+
+    inside_divergence[i] = vdr_p[i] * alpha[i] * rho_p[i]
+end
+
+
+
+
+
+
+
+
 
 
 
@@ -505,75 +785,73 @@ end
 
 
 
-function update_properties!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, phases, model, config)
-    (; p) = model.momentum
-    (; rho, rhof, alpha, alphaf) = model.fluid
+function div_tensor!(tensor_field, output_vector, mesh, config)
+    resX = ScalarField(mesh)
+    resY = ScalarField(mesh)
+    resZ = ScalarField(mesh)
 
-    for phase in eachindex(phases)
-        current_phase = phases[phase]
-        rho_ = rho_fractions[phase]
-        nu_ = nu_fractions[phase]
-        nuf_ = nuf_fractions[phase]
+    r1 = VectorField(mesh)
+    r2 = VectorField(mesh)
+    r3 = VectorField(mesh)
 
-        if current_phase.eos isa ConstEos
-            initialise!(rho_, current_phase.eos.rho)
-        else current_phase.eos isa PerfectGas
-            R = current_phase.eos.R
-            perfectGas!(rho_, 273.0, R, p)
-        end
+    r1f = FaceVectorField(mesh)
+    r2f = FaceVectorField(mesh)
+    r3f = FaceVectorField(mesh)
 
-        
-        if current_phase.mu isa ConstMu
-            mu0 = current_phase.mu.mu
-            @. nu_.values = mu0 / rho_.values
-        elseif current_phase.mu isa Sutherland # CHECK FOR ENERGY MODEL!!! T FIELD IS REQUIRED
-            mu_ref = current_phase.mu.mu_ref
-            S = current_phase.mu.S
-            sutherland!(nu_, T_temp, mu_ref, S) # mu is computed
-            @. nu_.values *= 1.0/rho_.values # conversion
-        elseif current_phase.mu isa Andrade # CHECK FOR ENERGY MODEL!!! T FIELD IS REQUIRED
-            B = current_phase.mu.B
-            C = current_phase.mu.C
-            andrade!(nu_, T_temp, B, C) # mu is computed
-            @. nu_.values *= 1.0/rho_.values # conversion
-        end
+    r1.x.values .= tensor_field.xx.values
+    r1.y.values .= tensor_field.xy.values
+    r1.z.values .= tensor_field.xz.values
 
-        interpolate!(nuf_, nu_, config)
-    end
+    r2.x.values .= tensor_field.yx.values
+    r2.y.values .= tensor_field.yy.values
+    r2.z.values .= tensor_field.yz.values
+
+    r3.x.values .= tensor_field.zx.values
+    r3.y.values .= tensor_field.zy.values
+    r3.z.values .= tensor_field.zz.values
     
+    interpolate!(r1f, r1, config)
+    interpolate!(r2f, r2, config)
+    interpolate!(r3f, r3, config)
 
-    blend_properties!(rho, alpha, rho_fractions[1], rho_fractions[2]) # 1 is alpha=0,   2 is alpha=1
-    blend_properties!(nueff, alphaf, nuf_fractions[1], nuf_fractions[2]) # weird mu <-> nu conversion
+    div!(resX, r1f, config)
+    div!(resY, r2f, config)
+    div!(resZ, r3f, config)
 
+    # println(output_vector)
+    # println(output_vector)
+    output_vector.x.values .= resX.values
+    output_vector.y.values .= resY.values
+    output_vector.z.values .= resZ.values
 
-    interpolate!(rhof, rho, config)
+    # nothing
 end
 
 
-function perfectGas!(density_field, T_ref, R, pressure_field)
-    @. density_field.values = (pressure_field.values) / (R * T_ref) # CAREFUL WITH p=0 initialisation
-    nothing
+function slip_velocity!(alpha, a_field, v_pq, v_pq_prev, mesh, model, phases, config, isInitialisation)
+    (; U) = model.momentum
+
+    rho = model.fluid.rho
+    props = model.fluid.physics_properties
+
+    d_p = ScalarField(mesh)
+    initialise!(d_p, props.driftVelocity.d_p)
+
+    # max_U = max_field_value(U)
+    max_U = max_BC_value(config.boundaries.U)
+
+
+    find_Vpq!(alpha, rho, d_p, a_field, v_pq_prev, isInitialisation, max_U, v_pq, mesh, phases, config)
+    
+    update_velocities!(U, props, alpha, mesh, phases, config, rho) # liquid <> p ; vapour <> q
 end
 
-function sutherland!(mu_field, T_field, mu_ref, S)
-    T_ref = 273.0
-    @. mu_field.values = (mu_ref * (T_field.values/T_ref)^1.5) * ((T_ref + S)/(T_field.values + S))
-    nothing
-end
 
-function andrade!(mu_field, T_field, B, C) # maybe do it in Phase(mu=(...)) instead?
-    @. mu_field.values = B * exp(C / T_field.values)
-    nothing
-end
-
-
-
-function construct_acceleration_field(U_m, ∇U_m, U_m_prev, dt, mesh, props) #, workgroup
+function construct_acceleration_field(U_m, ∇U_m, U_m_prev, dt, mesh, props, backend, workgroup) #, workgroup
     grad_U = ∇U_m.result
     a = VectorField(mesh)
 
     g = props.driftVelocity.gravity.g
-    # g = [0.0, -9.81, 0.0] #test
 
     x0, y0, z0 = g[1], g[2], g[3]
 
@@ -586,67 +864,79 @@ function construct_acceleration_field(U_m, ∇U_m, U_m_prev, dt, mesh, props) #,
     G = VectorField(x, y, z, mesh)
 
     dUdt = VectorField(mesh)
-    
-    for i in eachindex(U_m)
-        dUdt[i] = (U_m[i] - U_m_prev[i]) / dt
-        a[i] = G[i] - (grad_U[i] * U_m[i]) - dUdt[i]
-    end
+
+
+    ndrange = length(U_m)
+    kernel! = _construct_acceleration_field!(_setup(backend, workgroup, ndrange)...)
+    kernel!(U_m, dUdt, U_m_prev, dt, a, G, grad_U)
     
     return a
 end
+@kernel inbounds=true function _construct_acceleration_field!(U_m, dUdt, U_m_prev, dt, a, G, grad_U)
+    i = @index(Global)
+
+    dUdt[i] = (U_m[i] - U_m_prev[i]) / dt
+    a[i] = G[i] - (grad_U[i] * U_m[i]) - dUdt[i]
+end
 
 
 
-# function get_E!(E, rho_p, d_p, mu_p, rho, a_field)
-#     ndrang = length(E)
-#     kernel = _get_E!(_setup()...)
-#     kernel(rho_p, d_p, ...)
- 
-#     return nothing
-# end
- 
-# @kernel inbounds=true function _get_E!()
-#     i = @index(Global)
- 
-#     E[i] = (rho_p[i]*((d_p[i])^2))/(18*mu_p[i]) * ((rho_p[i]-rho[i])/rho_p[i]) * a_field[i] #try @. again
-# end
 
-function get_E!(E, rho_p, d_p, mu_p, rho, a_field)
-    rho_p = rho_p.values
-    d_p = d_p.values
-    mu_p = mu_p.values
-    rho = rho.values
 
-    for i in eachindex(E)
-        E[i] = (rho_p[i]*((d_p[i])^2))/(18*mu_p[i]) * ((rho_p[i]-rho[i])/rho_p[i]) * a_field[i] #try @. again
-    end
+
+
+
+function get_E!(E, alpha, rho, rho_p, rho_q, d_p, mu_p, a_field, backend, workgroup, mesh)
+    # rho = ScalarField(mesh)
+    # blend_properties!(rho, alpha, rho_p, rho_q)
+
+    ndrange = length(E)
+    kernel! = _get_E!(_setup(backend, workgroup, ndrange)...)
+    kernel!(E, rho_p, d_p, mu_p, rho, a_field)
+
 
     return nothing
 end
+@kernel inbounds=true function _get_E!(E, rho_p, d_p, mu_p, rho, a_field)
+    i = @index(Global)
+ 
+    E[i] = (rho_p[i]*((d_p[i])^2))/(18*mu_p[i]) * ((rho_p[i]-rho[i])/rho_p[i]) * a_field[i]
+end
 
-function compute_RE!(RE, rho_q, v_pq, d_p, mu_q)
-    rho_q = rho_q.values
-    d_p = d_p.values
-    mu_q = mu_q.values
-    RE = RE.values
+
+function compute_RE!(RE, rho_q, v_pq, d_p, mu_q, backend, workgroup)
+    ndrange = length(RE)
+    kernel! = _compute_RE!(_setup(backend, workgroup, ndrange)...)
+    kernel!(RE, rho_q, v_pq, d_p, mu_q)
     
-    for i in eachindex(RE)
-        RE[i] = (rho_q[i] * d_p[i] * norm(v_pq[i]))/mu_q[i]
-    end
 
     return nothing
 end
+@kernel inbounds=true function _compute_RE!(RE, rho_q, v_pq, d_p, mu_q)
+    i = @index(Global)
+ 
+    RE[i] = (rho_q[i] * d_p[i] * norm(v_pq[i]))/mu_q[i]
+end
 
-function find_Vpq!(rho_q, rho_p, rho, mu_q, mu_p, d_p, a_field, v_pq_prev, isInitialisation, v_low, v_high, v_pq, mesh)
-    # @. mu_q.values = mu_q.values * rho_q.values #conversion again..... NU -> MU
-    # @. mu_p.values = mu_p.values * rho_p.values #conversion again..... DONT STORE IT!
-    
+
+function find_Vpq!(alpha, rho, d_p, a_field, v_pq_prev, isInitialisation, v_high, v_pq, mesh, phases, config)
+    v_low = SVector(1.0e-9, 1.0e-9, 1.0e-9)
+    backend = config.hardware.backend
+    workgroup = config.hardware.workgroup
+
+    rho_p = phases[1].rho
+    rho_q = phases[2].rho
+
+    mu_p = phases[1].mu
+    mu_q = phases[2].mu
+
+
     E = VectorField(mesh)
     expr = ScalarField(mesh)
     v_pq_trial = VectorField(mesh)
     RE_trial = ScalarField(mesh)
 
-    get_E!(E, rho_p, d_p, mu_p, rho, a_field)
+    get_E!(E, alpha, rho, rho_p, rho_q, d_p, mu_p, a_field, backend, workgroup, mesh)
 
     @. expr.values = (mu_q.values*rho_q.values)/(0.0183 * rho_q.values * d_p.values)
     
@@ -654,20 +944,26 @@ function find_Vpq!(rho_q, rho_p, rho, mu_q, mu_p, d_p, a_field, v_pq_prev, isIni
         v_pq_trial[i] = sqrt.(E[i]*expr.values[i])
     end
 
-    compute_RE!(RE_trial, rho_q, v_pq_trial, d_p, mu_q)
+    compute_RE!(RE_trial, rho_q, v_pq_trial, d_p, mu_q, backend, workgroup)
 
     K = ScalarField(mesh)
     @. K.values = 0.15 * ((rho_q.values * d_p.values)/mu_q.values)^0.687
 
-    for i in eachindex(RE_trial)
-        if RE_trial[i] > 1000
+    
+    ndrange = length(RE_trial)
+    kernel! = _find_Vpq!(_setup(backend, workgroup, ndrange)...)
+    kernel!(RE_trial, v_pq, v_pq_trial, K, E, v_low, v_high, v_pq_prev, isInitialisation)
+end
+@kernel inbounds=true function _find_Vpq!(RE_trial, v_pq, v_pq_trial, K, E, v_low, v_high, v_pq_prev, isInitialisation)
+    i = @index(Global)
+ 
+    if RE_trial[i] > 1000
             v_pq[i] = v_pq_trial[i]
+    else
+        if isInitialisation
+            v_pq[i] = Vpq_bisect(K[i], E[i], v_low, v_high)
         else
-            if isInitialisation
-                v_pq[i] = Vpq_bisect(K[i], E[i], v_low, v_high)
-            else
-                v_pq[i] = Vpq_newton_raphson(E[i], K[i], v_pq_prev[i])
-            end
+            v_pq[i] = Vpq_newton_raphson(E[i], K[i], v_pq_prev[i])
         end
     end
 end
@@ -691,7 +987,7 @@ function Vpq_newton_raphson(E, K, v; max_iter=20, tol=1.0e-7)
 
         if maximum(err) < tol
             v_pq = v_new
-            println(v_pq)
+            # println(v_pq)
 
             return v_pq
         end
@@ -732,11 +1028,26 @@ function Vpq_bisect(K, E, v_low, v_high; max_iter=50, tol=1.0e-7) #v_mid=SVector
     end
 end
 
-function update_velocities!(U_m, v_pq, v_dr_p, v_dr_q, v_p, v_q, rho, rho_q, rho_p, alpha, mesh)
+function update_velocities!(U, props, alpha, mesh, phases, config, rho)
+    v_pq = props.driftVelocity.v_pq
+    
+    v_dr_p  = props.driftVelocity.v_dr_p
+    v_dr_q  = props.driftVelocity.v_dr_q
+    v_p     = props.driftVelocity.v_p
+    v_q     = props.driftVelocity.v_q
+
+    backend = config.hardware.backend
+    workgroup = config.hardware.workgroup
+    rho_p = phases[1].rho
+    rho_q = phases[2].rho
+
+    # rho = ScalarField(mesh)
+    # blend_properties!(rho, alpha, rho_p, rho_q)
+
     alpha = alpha.values
-    rho = rho.values
     rho_q = rho_q.values
     rho_p = rho_p.values
+    rho = rho.values
 
     C_p = ScalarField(mesh)
     C_q = ScalarField(mesh)
@@ -744,28 +1055,23 @@ function update_velocities!(U_m, v_pq, v_dr_p, v_dr_q, v_p, v_q, rho, rho_q, rho
     @. C_p.values = (alpha * rho_p) / rho          #liquid
     @. C_q.values = ((1.0-alpha) * rho_q) / rho    #vapour
 
-    
-    for i in eachindex(U_m)
-        v_dr_p[i] = (1.0 + C_p.values[i]) * v_pq[i]
-        v_dr_q[i] = -(1.0 + C_q.values[i]) * v_pq[i]
+    ndrange = length(U)
+    kernel! = _update_velocities!(_setup(backend, workgroup, ndrange)...)
+    kernel!(U, v_dr_p, v_dr_q, v_p, v_q, C_p, C_q, v_pq)
+end
+@kernel inbounds=true function _update_velocities!(U, v_dr_p, v_dr_q, v_p, v_q, C_p, C_q, v_pq)
+    i = @index(Global)
 
-        v_p[i] = v_dr_p[i] - U_m[i]
-        v_q[i] = v_dr_q[i] - U_m[i]
-    end
+    v_dr_p[i] = (1.0 + C_p[i]) * v_pq[i]
+    v_dr_q[i] = -(1.0 + C_q[i]) * v_pq[i]
+
+    v_p[i] = v_dr_p[i] - U[i]
+    v_q[i] = v_dr_q[i] - U[i]
 end
 
 
 
 
-
-
-function hydrogen_viscosity!() # maybe a functor?
-
-end
-
-function nitrogen_viscosity!() # maybe a functor?
-
-end
 
 function peng_robinson!(T, p, T_c, p_c, ω, M)
     # using Polynomials
@@ -812,35 +1118,87 @@ function peng_robinson!(T, p, T_c, p_c, ω, M)
     rho_liq = M / Vm_liq
     rho_vap = M / Vm_vap
 
-    return Z_liq, Z_vap # liq = vap for single phase so its handled by alpha I suppose....
+
+    # Rho 
+    # Cp 
+    # Beta
+    # m_qp, m_pq, latentHeat (Enthalpy?)
+
+    return rho_liq, rho_vap # liq = vap for single phase so its handled by alpha I suppose....
 end
 
 
-function helmholtz_energy!(rho_fractions, nu_fractions, nuf_fractions, nueff, T_temp, model, config)
-    (; p) = model.momentum
-    (; rho, rhof, alpha, alphaf) = model.fluid
-    HelmholtzEOS = model.fluid.phases[1].eos
 
-    # Horrible solution, replace later.....
-    for cell in eachindex(rho)
-        _, rho_temp, _, _, _, _, _, mu_temp, _, _, _, _, _, _ = HelmholtzEOS(T_temp[cell], p[cell], alpha[cell])
-        
-        for i in eachindex(rho_fractions)
-            rho_fractions[i][cell] = rho_temp[i]
-            nu_fractions[i][cell]  = mu_temp[i]
+function update_phase_thermodynamics!(EoS::Union{ConstEos, PerfectGas}, phase, nueff, T, model, config)
+    phase.eosModel(phase, model)
+    phase.viscosityModel(phase, T)
+end
+
+
+
+#SPECIALISE TO AVOID IF
+
+    # model::Physics{T,F,SO,M,Tu,E,D,BI}, config; 
+    # output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
+    # ) where{T,F<:Multiphase,SO,M,Tu,E,D,BI} =  #T<:Transient ???
+
+
+function update_phase_thermodynamics!(EoS::HelmholtzEnergy, phase, nueff, T, model, config)
+    if phase == model.fluid.phases[1] # IF IT IS SECOND HELMHOLTZ CALL WE JUST IGNORE IT
+        (; p) = model.momentum
+        alpha = model.fluid.alpha
+
+        HelmholtzModel = phase.eosModel
+        rho_field = phase.rho
+
+        backend = config.hardware.backend
+        workgroup = config.hardware.workgroup
+
+        lee_model_state = if hasproperty(model.fluid.physics_properties, :leeModel)
+            fluid.physics_properties.leeModel
+        else
+            nothing
         end
+        
+        ndrange = length(rho_field)
+        kernel! = _helmholtz_kernel!(_setup(backend, workgroup, ndrange)...)
+        kernel!(model.fluid, HelmholtzModel, T, p, alpha, lee_model_state)
     end
+end
+@kernel inbounds=true function _helmholtz_kernel!(fluid, HelmholtzModel, T, p, alpha, lee_model_state)
+    i = @index(Global)
 
-    @. nu_fractions[1].values *= nu_fractions[1].values/rho_fractions[1].values # conversion
-    @. nu_fractions[2].values *= nu_fractions[2].values/rho_fractions[2].values # conversion
+    _, rho_temp, _, cp_temp, _, _, _, beta_temp, mu_temp, k_temp, _, latentHeat_temp, _, m_lv_temp, m_vl_temp = HelmholtzModel(T[i], p[i], alpha[i])
+            
+    fluid.phases[1].rho[i] = rho_temp[1]
+    fluid.phases[2].rho[i] = rho_temp[2]
+            
+    fluid.phases[1].mu[i] = mu_temp[1]
+    fluid.phases[2].mu[i] = mu_temp[2]
+            
+    fluid.phases[1].cp[i] = cp_temp[1]
+    fluid.phases[2].cp[i] = cp_temp[2]
 
-    @. interpolate!.(nuf_fractions[1]/rho_fractions[1], nu_fractions[1], config)
-    interpolate!(nuf_fractions[2], nu_fractions[2], config)
+    fluid.phases[1].beta[i] = beta_temp[1]
+    fluid.phases[2].beta[i] = beta_temp[2]
+
+    fluid.phases[1].k[i] = k_temp[1]
+    fluid.phases[2].k[i] = k_temp[2]
+
+    _update_lee_model_fields!(lee_model_state, i, latentHeat_temp, m_lv_temp, m_vl_temp) #only works if lee model is there
+end
+
+# @inline should optimise it??
+@inline function _update_lee_model_fields!(::Nothing, i, latentHeat, m_lv, m_vl) 
+    return nothing
+end
+
+@inline function _update_lee_model_fields!(lee_model_state::LeeModelState, i, latentHeat, m_lv, m_vl)
+    lee_model_state.latentHeat[i] = latentHeat
+    lee_model_state.m_qp[i] = m_lv
+    lee_model_state.m_pq[i] = m_vl
     
-    blend_properties!(rho, alpha, rho_fractions[1], rho_fractions[2]) # 1 is alpha=0,   2 is alpha=1
-    blend_properties!(nueff, alphaf, nuf_fractions[1], nuf_fractions[2]) # weird mu <-> nu conversion
-
-    interpolate!(rhof, rho, config)
+    return nothing
 end
 
 

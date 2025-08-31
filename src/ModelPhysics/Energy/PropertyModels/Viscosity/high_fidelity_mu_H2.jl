@@ -3,18 +3,18 @@ export mu_high_fidelity_H2
 ###Refer to "Correlation for the Viscosity of Normal Hydrogen Obtained from Symbolic Regression", 2013
 
 struct constants_mu_H2
-    M::Float64
-    sigma::Float64
-    epsilon_div_kb::Float64
-    T_c::Float64
-    rho_sc::Float64
-    a::Vector{Float64}
-    b::Vector{Float64}
-    c::Vector{Float64}
+    M::AbstractFloat
+    sigma::AbstractFloat
+    epsilon_div_kb::AbstractFloat
+    T_c::AbstractFloat
+    rho_sc::AbstractFloat
+    a::Vector{AbstractFloat}
+    b::Vector{AbstractFloat}
+    c::Vector{AbstractFloat}
 end
 
 
-function mu_0(T::Float64, constants::constants_mu_H2) # so-called 'Zero-density Viscosity'
+function mu_0(T::AbstractFloat, constants::constants_mu_H2) # so-called 'Zero-density Viscosity'
     (; T_c, M, sigma, epsilon_div_kb, rho_sc, a, b) = constants
     
     Tstar = T / epsilon_div_kb
@@ -27,7 +27,7 @@ function mu_0(T::Float64, constants::constants_mu_H2) # so-called 'Zero-density 
 end
 
 
-function beta_mu(T::Float64, constants::constants_mu_H2) # 'Second viscosity viral coefficient'
+function beta_mu(T::AbstractFloat, constants::constants_mu_H2) # 'Second viscosity viral coefficient'
     (; T_c, M, sigma, epsilon_div_kb, rho_sc, a, b) = constants
 
     Tstar = T / epsilon_div_kb
@@ -41,14 +41,14 @@ function beta_mu(T::Float64, constants::constants_mu_H2) # 'Second viscosity vir
 end
 
 
-function mu_1(T::Float64, constants::constants_mu_H2) # 'The initial-density coefficient of viscosity'
+function mu_1(T::AbstractFloat, constants::constants_mu_H2) # 'The initial-density coefficient of viscosity'
     return mu_0(T, constants) * beta_mu(T, constants)
 end
 
 
 
 
-function mu_high_fidelity_H2(T::Float64, rho::Float64) # End result
+function mu_high_fidelity_H2(T::AbstractFloat, rho::AbstractFloat) # End result
         
     constants = constants_mu_H2(
         2.01588, # M

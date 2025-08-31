@@ -507,6 +507,13 @@ function entropy_calc(δ::AbstractFloat, τ::AbstractFloat, constants::constants
     return R_univ * (term1 - term2)
 end
 
+function beta_calc(T::AbstractFloat, δ::AbstractFloat, τ::AbstractFloat, constants::constants_EoS_N2)
+    numerator = 1.0 + lambda_r_01(δ, τ, constants) - lambda_r_11(δ, τ, constants)
+    denominator = 1.0 + 2.0*lambda_r_01(δ, τ, constants) + lambda_r_02(δ, τ, constants)
+    
+    return (1.0 / T) * (numerator / denominator)
+end
+
 
 
 
@@ -898,10 +905,10 @@ function EOS_wrapper_N2(T::AbstractFloat, pressure::AbstractFloat, alpha::Abstra
     if T >= T_c
         # DO NOT CARE ABOUT THIS FOR NOW. SHOULD BE SINGLE PHASE THOUGH!
         # rho_val, cp_val, cv_val, kT_val, kT_ref_val, 
-        # internal_energy_val, enthalpy_val, entropy_val = params_computation(rho_mol, T, constants)
+        # internal_energy_val, enthalpy_val, entropy_val, beta_val = params_computation(rho_mol, T, constants)
 
         # return rho_val, cp_val, cv_val, kT_val, kT_ref_val, 
-        #         internal_energy_val, enthalpy_val, entropy_val, latentHeat, T_sat
+        #         internal_energy_val, enthalpy_val, entropy_val, beta_val, latentHeat, T_sat
     else
         rho_vals = [0.0, 0.0]
         cv_vals = [0.0, 0.0]
@@ -911,17 +918,18 @@ function EOS_wrapper_N2(T::AbstractFloat, pressure::AbstractFloat, alpha::Abstra
         internal_energy_vals = [0.0, 0.0]
         enthalpy_vals = [0.0, 0.0]
         entropy_vals = [0.0, 0.0]
+        beta_vals = [0.0, 0.0]
 
         for i in eachindex(rho_list)
             rho_vals[i], cp_vals[i], cv_vals[i], kT_vals[i], kT_ref_vals[i], 
-            internal_energy_vals[i], enthalpy_vals[i], entropy_vals[i] = params_computation(rho_list[i], T, constants)
+            internal_energy_vals[i], enthalpy_vals[i], entropy_vals[i], beta_vals[i] = params_computation(rho_list[i], T, constants)
         end
 
         latentHeat = enthalpy_vals[2] - enthalpy_vals[1] #enthalpy_V - enthalpy_L
         
 
         return rho_vals, cp_vals, cv_vals, kT_vals, 
-                kT_ref_vals, internal_energy_vals, enthalpy_vals, entropy_vals, latentHeat, T_sat, m_lv, m_vl
+                kT_ref_vals, internal_energy_vals, enthalpy_vals, entropy_vals, beta_vals, latentHeat, T_sat, m_lv, m_vl
 
     end
 end
@@ -940,6 +948,8 @@ function params_computation(rho_mol::AbstractFloat, T::AbstractFloat, constants:
     internal_energy_mol = internal_energy_calc(T, δ, τ, constants)
     enthalpy_mol = enthalpy_calc(T, δ, τ, constants)
     entropy_mol = entropy_calc(δ, τ, constants)
+    
+    beta_mol = beta_calc(T, δ, τ, constants)
 
     conversion_factor = 1.0 / (M_N2*1.0e3)
 
@@ -950,8 +960,9 @@ function params_computation(rho_mol::AbstractFloat, T::AbstractFloat, constants:
     internal_energy = internal_energy_mol*conversion_factor
     enthalpy = enthalpy_mol*conversion_factor
     entropy = entropy_mol*conversion_factor
+    beta = beta_mol*conversion_factor # NOT TESTED!!!!!
 
-    return rho, cv, cp, kT, kT_ref, internal_energy, enthalpy, entropy
+    return rho, cv, cp, kT, kT_ref, internal_energy, enthalpy, entropy, beta
 end
 
 

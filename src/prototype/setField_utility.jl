@@ -42,6 +42,7 @@ function setField_Sphere!(mesh, field, value::Float64, region::String)
     # THUS we need to check if we have 3 or 4 elements in our region string
 
 
+    # SIMPLIFY
     coords = parse.(Float64, split(replace(region, r"[()]" => "")))
 
 

@@ -11,9 +11,9 @@ _thermal_conductivity(fluid::H2, args...) = XCALibre.ModelPhysics.thermal_conduc
 _thermal_conductivity(fluid::N2, args...) = XCALibre.ModelPhysics.thermal_conductivity_N2(args...)
 
 
-function (eos::HelmholtzEnergy)(T_input, P_input, alpha_input)
+function (eos::HelmholtzEnergy)(T_input, P_input, alpha_input) # BETA NOT TESTED!!!
     rho0, cv0, cp0, kT0, kT_ref, internal_energy0, 
-            enthalpy0, entropy0, latentHeat0, T_sat0, m_lv, m_vl = _eos_wrapper(eos.name, T_input, P_input, alpha_input)
+            enthalpy0, entropy0, beta0, latentHeat0, T_sat0, m_lv, m_vl = _eos_wrapper(eos.name, T_input, P_input, alpha_input)
         
     is_mp = true
     # !is_mp should be T > T_crit; to be added later
@@ -24,7 +24,7 @@ function (eos::HelmholtzEnergy)(T_input, P_input, alpha_input)
 
         nu_bar = nu_bar * 1.0e-6 # convert to SI
 
-        return (is_mp=is_mp, rho=rho0, cv=cv0, cp=cp0, u=internal_energy0, h=enthalpy0, s=entropy0, 
+        return (is_mp=is_mp, rho=rho0, cv=cv0, cp=cp0, u=internal_energy0, h=enthalpy0, s=entropy0, beta=beta0,
                 mu=nu_bar, k=k0, sigma=surface_tension, L_vap=latentHeat0, T_sat=T_sat0, m_lv=m_lv, m_vl=m_vl)
     else
         nu_bar_vals = [0.0, 0.0]
@@ -39,7 +39,7 @@ function (eos::HelmholtzEnergy)(T_input, P_input, alpha_input)
 
         @. nu_bar_vals = nu_bar_vals * 1.0e-6 # convert to SI
 
-        return (is_mp=is_mp, rho=rho0, cv=cv0, cp=cp0, u=internal_energy0, h=enthalpy0, s=entropy0, 
+        return (is_mp=is_mp, rho=rho0, cv=cv0, cp=cp0, u=internal_energy0, h=enthalpy0, s=entropy0, beta=beta0,
                 mu=nu_bar_vals, k=k0_vals, sigma=surface_tension, L_vap=latentHeat0, T_sat=T_sat0, m_lv=m_lv, m_vl=m_vl)
     end
 end

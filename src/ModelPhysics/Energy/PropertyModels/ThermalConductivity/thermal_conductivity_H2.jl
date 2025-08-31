@@ -36,27 +36,27 @@ using XCALibre
     # k_B   = 1.380649e-23
 
 struct constants_k_H2
-    T_c::Float64
-    rho_c::Float64
-    P_CRIT::Float64
-    A1::Vector{Float64}
-    A2::Vector{Float64}
-    B1::Vector{Float64}
-    B2::Vector{Float64}
-    C1::Float64
-    C2::Float64
-    C3::Float64
-    R_D::Float64
-    ν::Float64
-    γ_crit::Float64
-    xi_0::Float64
-    GAMMA_0::Float64
-    qD::Float64
-    T_ref::Float64
-    k_B::Float64
+    T_c::AbstractFloat
+    rho_c::AbstractFloat
+    P_CRIT::AbstractFloat
+    A1::Vector{AbstractFloat}
+    A2::Vector{AbstractFloat}
+    B1::Vector{AbstractFloat}
+    B2::Vector{AbstractFloat}
+    C1::AbstractFloat
+    C2::AbstractFloat
+    C3::AbstractFloat
+    R_D::AbstractFloat
+    ν::AbstractFloat
+    γ_crit::AbstractFloat
+    xi_0::AbstractFloat
+    GAMMA_0::AbstractFloat
+    qD::AbstractFloat
+    T_ref::AbstractFloat
+    k_B::AbstractFloat
 end
 
-function lambda0(T::Float64, constants::constants_k_H2)
+function lambda0(T::AbstractFloat, constants::constants_k_H2)
     (; T_c, A1, A2) = constants
 
     T_r = T / T_c
@@ -66,7 +66,7 @@ function lambda0(T::Float64, constants::constants_k_H2)
 end
 
 
-function delta_lambda(rho::Float64, T::Float64, constants::constants_k_H2)
+function delta_lambda(rho::AbstractFloat, T::AbstractFloat, constants::constants_k_H2)
     (; T_c, rho_c, B1, B2) = constants
 
     T_r = T / T_c
@@ -80,7 +80,7 @@ function delta_lambda(rho::Float64, T::Float64, constants::constants_k_H2)
 end
 
 
-function delta_lambda_c_empirical(rho::Float64, T::Float64, constants::constants_k_H2) #The easy version
+function delta_lambda_c_empirical(rho::AbstractFloat, T::AbstractFloat, constants::constants_k_H2) #The easy version
     (; T_c, rho_c, C1, C2, C3) = constants
 
     delta_T_c   = (T / T_c) - 1
@@ -94,7 +94,7 @@ function delta_lambda_c_empirical(rho::Float64, T::Float64, constants::constants
     end
 end
 
-function xi(rho::Float64, T::Float64, kT::Float64, kT_ref::Float64, constants::constants_k_H2)
+function xi(rho::AbstractFloat, T::AbstractFloat, kT::AbstractFloat, kT_ref::AbstractFloat, constants::constants_k_H2)
     (; T_c, rho_c, P_CRIT, A1, A2, B1, B2, C1, C2, C3, R_D, ν, γ_crit, xi_0, GAMMA_0, qD, T_ref, k_B) = constants
     # kT = (1/rho) * (d rho / d p) at constant T
     # kT is evaluated at T passed into delta_lambda_c, while kT_ref evaluated at T_ref
@@ -112,7 +112,7 @@ function xi(rho::Float64, T::Float64, kT::Float64, kT_ref::Float64, constants::c
     return term1 * term2
 end
 
-function omega_0(rho::Float64, T::Float64, xi::Float64, constants::constants_k_H2)
+function omega_0(rho::AbstractFloat, T::AbstractFloat, xi::AbstractFloat, constants::constants_k_H2)
     (; T_c, rho_c, P_CRIT, A1, A2, B1, B2, C1, C2, C3, R_D, ν, γ_crit, xi_0, GAMMA_0, qD, T_ref, k_B) = constants
 
     rhoc_div_rho = rho_c / rho
@@ -122,7 +122,7 @@ function omega_0(rho::Float64, T::Float64, xi::Float64, constants::constants_k_H
     return (2.0/pi) * (1.0 - exp(exponent_term))
 end
 
-function omega(rho::Float64, T::Float64, xi::Float64, cp::Float64, cv::Float64, constants::constants_k_H2)
+function omega(rho::AbstractFloat, T::AbstractFloat, xi::AbstractFloat, cp::AbstractFloat, cv::AbstractFloat, constants::constants_k_H2)
     (; T_c, rho_c, P_CRIT, A1, A2, B1, B2, C1, C2, C3, R_D, ν, γ_crit, xi_0, GAMMA_0, qD, T_ref, k_B) = constants
 
     term1 = ( (cp-cv)/cp ) * atan(qD*xi)
@@ -135,8 +135,8 @@ function omega(rho::Float64, T::Float64, xi::Float64, cp::Float64, cv::Float64, 
 end
 
 #The tricky one!
-function delta_lambda_c(rho::Float64, T::Float64, cp::Float64, cv::Float64, kT::Float64, 
-    kT_ref::Float64, nu_bar::Float64, constants::constants_k_H2)
+function delta_lambda_c(rho::AbstractFloat, T::AbstractFloat, cp::AbstractFloat, cv::AbstractFloat, kT::AbstractFloat, 
+    kT_ref::AbstractFloat, nu_bar::AbstractFloat, constants::constants_k_H2)
 
     (; T_c, rho_c, P_CRIT, A1, A2, B1, B2, C1, C2, C3, R_D, ν, γ_crit, xi_0, GAMMA_0, qD, T_ref, k_B) = constants
 
@@ -158,8 +158,8 @@ function delta_lambda_c(rho::Float64, T::Float64, cp::Float64, cv::Float64, kT::
 end
 
 
-function thermal_conductivity_H2(rho::Float64, T::Float64, cp::Float64, cv::Float64, kT::Float64, 
-    kT_ref::Float64, nu_bar::Float64)
+function thermal_conductivity_H2(rho::AbstractFloat, T::AbstractFloat, cp::AbstractFloat, cv::AbstractFloat, kT::AbstractFloat, 
+    kT_ref::AbstractFloat, nu_bar::AbstractFloat)
 
     constants = constants_k_H2(
         32.938, #T_c

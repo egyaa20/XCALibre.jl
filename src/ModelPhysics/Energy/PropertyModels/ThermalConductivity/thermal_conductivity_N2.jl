@@ -4,8 +4,8 @@
 using XCALibre
 using Printf
 
-struct constants_k_N2
-    T_c::Float64
+struct constants_k_N2 # 
+    T_c::T
     rho_c::Float64
     P_CRIT::Float64
     M::Float64
@@ -68,7 +68,7 @@ function lambda_r_N2(rho::Float64, T::Float64, constants::constants_k_N2)
     tau = T_c / T
     delta = rho / rho_c
 
-    term_sum = 0.0
+    term_sum = zero(F) #  F <: AbstractFloat
     for i in eachindex(N_LR)
         term = N_LR[i] * (tau^t_LR[i]) * (delta^d_LR[i])
 
