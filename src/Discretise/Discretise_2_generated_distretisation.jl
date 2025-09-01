@@ -254,9 +254,9 @@ end
         for s in 1:SN
             expression_call_sources = quote
                 (; field, sign) = sources[$s]
-                Bx += sign*field.x[cID]*volume
-                By += sign*field.y[cID]*volume
-                Bz += sign*field.z[cID]*volume
+                Bx += sign*field.x[cID]*volume # CANNOT INTAKE ConstantVector!!!! as it checks for [cID]
+                By += sign*field.y[cID]*volume # CANNOT INTAKE ConstantVector!!!! as it checks for [cID]
+                Bz += sign*field.z[cID]*volume # CANNOT INTAKE ConstantVector!!!! as it checks for [cID]
             end
             push!(out.args, expression_call_sources)
         end

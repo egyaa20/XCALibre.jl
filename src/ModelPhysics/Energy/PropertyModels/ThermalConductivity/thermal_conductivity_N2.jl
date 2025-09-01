@@ -5,37 +5,37 @@ using XCALibre
 using Printf
 
 struct constants_k_N2 # 
-    T_c::T
-    rho_c::Float64
-    P_CRIT::Float64
-    M::Float64
+    T_c::AbstractFloat
+    rho_c::AbstractFloat
+    P_CRIT::AbstractFloat
+    M::AbstractFloat
 
-    epsilon_k::Float64 # epsilon/k
-    sigma::Float64
+    epsilon_k::AbstractFloat # epsilon/k
+    sigma::AbstractFloat
 
-    b::Vector{Float64}
+    b::Vector{AbstractFloat}
 
-    N_L0::Vector{Float64}
-    t_L0::Vector{Float64}
+    N_L0::Vector{AbstractFloat}
+    t_L0::Vector{AbstractFloat}
 
-    N_LR::Vector{Float64}
-    t_LR::Vector{Float64}
-    d_LR::Vector{Float64}
-    l_LR::Vector{Float64}
+    N_LR::Vector{AbstractFloat}
+    t_LR::Vector{AbstractFloat}
+    d_LR::Vector{AbstractFloat}
+    l_LR::Vector{AbstractFloat}
 
-    R_D::Float64
-    ν::Float64
-    γ_crit::Float64
-    xi_0::Float64
-    GAMMA_0::Float64
-    qD::Float64
-    T_ref::Float64
-    k_B::Float64
+    R_D::AbstractFloat
+    ν::AbstractFloat
+    γ_crit::AbstractFloat
+    xi_0::AbstractFloat
+    GAMMA_0::AbstractFloat
+    qD::AbstractFloat
+    T_ref::AbstractFloat
+    k_B::AbstractFloat
 end
 
 
 
-function mu_0_N2_supplementary(T::Float64, constants::constants_k_N2)
+function mu_0_N2_supplementary(T::AbstractFloat, constants::constants_k_N2)
     (; M, sigma, epsilon_k, b) = constants
     
     Tstar = T / epsilon_k
@@ -48,7 +48,7 @@ function mu_0_N2_supplementary(T::Float64, constants::constants_k_N2)
 end
 
 
-function lambda0_N2(T::Float64, constants::constants_k_N2)
+function lambda0_N2(T::AbstractFloat, constants::constants_k_N2)
     (; T_c, N_L0, t_L0) = constants
     
     tau = T_c / T
@@ -62,13 +62,13 @@ function lambda0_N2(T::Float64, constants::constants_k_N2)
     return term1 + term2 + term3
 end
 
-function lambda_r_N2(rho::Float64, T::Float64, constants::constants_k_N2)
+function lambda_r_N2(rho::AbstractFloat, T::AbstractFloat, constants::constants_k_N2)
     (; T_c, rho_c, N_LR, t_LR, d_LR, l_LR) = constants
 
     tau = T_c / T
     delta = rho / rho_c
 
-    term_sum = zero(F) #  F <: AbstractFloat
+    term_sum = 0.0 #  F <: AbstractFloat
     for i in eachindex(N_LR)
         term = N_LR[i] * (tau^t_LR[i]) * (delta^d_LR[i])
 
@@ -88,7 +88,7 @@ end
 
 
 
-function xi(rho::Float64, T::Float64, kT::Float64, kT_ref::Float64, constants::constants_k_N2)
+function xi(rho::AbstractFloat, T::AbstractFloat, kT::AbstractFloat, kT_ref::AbstractFloat, constants::constants_k_N2)
     (; T_c, rho_c, P_CRIT, R_D, ν, γ_crit, xi_0, GAMMA_0, qD, T_ref, k_B, M) = constants
     # This piece of code is copied from Hydrogen file, it is just rearranged differently in the paper
 
@@ -110,7 +110,7 @@ function xi(rho::Float64, T::Float64, kT::Float64, kT_ref::Float64, constants::c
     return term1 * term2
 end
 
-function omega_0(rho::Float64, T::Float64, xi::Float64, constants::constants_k_N2)
+function omega_0(rho::AbstractFloat, T::AbstractFloat, xi::AbstractFloat, constants::constants_k_N2)
     (; T_c, rho_c, P_CRIT, R_D, ν, γ_crit, xi_0, GAMMA_0, qD, T_ref, k_B, M) = constants
 
     rho_c = rho_c * M
@@ -126,7 +126,7 @@ function omega_0(rho::Float64, T::Float64, xi::Float64, constants::constants_k_N
     return (2.0/pi) * (1.0 - exp(exponent_term))
 end
 
-function omega(rho::Float64, T::Float64, xi::Float64, cp::Float64, cv::Float64, constants::constants_k_N2)
+function omega(rho::AbstractFloat, T::AbstractFloat, xi::AbstractFloat, cp::AbstractFloat, cv::AbstractFloat, constants::constants_k_N2)
     (; T_c, rho_c, P_CRIT, R_D, ν, γ_crit, xi_0, GAMMA_0, qD, T_ref, k_B) = constants
 
     xi_div_qD = xi / qD
@@ -140,8 +140,8 @@ function omega(rho::Float64, T::Float64, xi::Float64, cp::Float64, cv::Float64, 
     return (2.0/pi) * (exponent_term)
 end
 
-function lambda_c_N2(rho::Float64, T::Float64, cp::Float64, cv::Float64, kT::Float64, 
-    kT_ref::Float64, nu_bar::Float64, constants::constants_k_N2)
+function lambda_c_N2(rho::AbstractFloat, T::AbstractFloat, cp::AbstractFloat, cv::AbstractFloat, kT::AbstractFloat, 
+    kT_ref::AbstractFloat, nu_bar::AbstractFloat, constants::constants_k_N2)
 
     cp = cp * 1.0e3
     cv = cv * 1.0e3
@@ -172,8 +172,8 @@ end
 
 
 
-function thermal_conductivity_N2(rho::Float64, T::Float64, cp::Float64, cv::Float64, kT::Float64, 
-    kT_ref::Float64, nu_bar::Float64)
+function thermal_conductivity_N2(rho::AbstractFloat, T::AbstractFloat, cp::AbstractFloat, cv::AbstractFloat, kT::AbstractFloat, 
+    kT_ref::AbstractFloat, nu_bar::AbstractFloat)
 
     constants = constants_k_N2(
         126.192,     # T_c (K)

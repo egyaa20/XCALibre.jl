@@ -83,6 +83,23 @@ struct Source end
 Adapt.@adapt_structure Source
 Source(f::T) where T = Src(f, 1)
 
+
+
+# How do we dispatch to construct sources based on equation type
+# How do we form RHS without +=
+
+# How do we 
+
+
+# struct MomentumSource end
+# MomentumSource(f::T, s::S) where {T,S} = Src(f, s)
+
+# momentum_RHS = construct_RHS(::MomentumSource)
+
+# ()
+
+
+
 # MODEL TYPE
 struct Model{TN,SN,T,S}
     terms::T

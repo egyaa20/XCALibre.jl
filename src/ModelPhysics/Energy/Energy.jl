@@ -32,8 +32,6 @@ include("PropertyModels/EquationsOfState/multiparameter_H2.jl")
 include("PropertyModels/EquationsOfState/multiparameter_N2.jl")
 
 # Viscosity Models
-include("PropertyModels/Viscosity/andrade_model.jl")
-include("PropertyModels/Viscosity/sutherland_model.jl")
 include("PropertyModels/Viscosity/high_fidelity_mu_H2.jl")
 include("PropertyModels/Viscosity/high_fidelity_mu_N2.jl")
 

@@ -1,33 +1,23 @@
 export Phase, Fluid, Multiphase
 export Gravity
-export ConstEos, PerfectGas, HelmholtzEnergy, ConstMu, Sutherland, Andrade
+export ConstEos, PerfectGas, HelmholtzEnergy, PengRobinson, ConstMu, Sutherland, Andrade
 export Phase, physicsProperties
 
 export ConstSurfaceTension, SurfaceTensionModel, LeeModel, NucleateBoilingModel, DriftVelocity, Drag_SchillerNaumann
-export AbstractModel, AbstractEosModel, AbstractViscosityModel, AbstractPhysicsProperty
-
-export LeeModelState, DriftVelocityState, GravityState
-
+export AbstractModel, AbstractEosModel, AbstractViscosityModel
 
 
 abstract type AbstractModel end
 abstract type AbstractEosModel <: AbstractModel end
 abstract type AbstractViscosityModel <: AbstractModel end
-abstract type AbstractPhysicsProperty end
-
-
-abstract type AbstractDrag <: AbstractPhysicsProperty end
-
 
 abstract type AbstractPhase <: AbstractMultiphase end
-
-# abstract type AbstractMultiphaseModel end
 
 
 Base.@kwdef struct ConstEos{T<:AbstractFloat} <: AbstractEosModel
     rho::T
 end
-(eos::ConstEos)(phase, model) = begin
+(eos::ConstEos)(phase, model, config) = begin
     rho_field = phase.rho
     initialise!(rho_field, eos.rho)
 end
@@ -37,7 +27,7 @@ Base.@kwdef struct PerfectGas{T<:AbstractFloat} <: AbstractEosModel
     rho::T
     R::T
 end
-(eos::PerfectGas)(phase, model) = begin
+(eos::PerfectGas)(phase, model, config) = begin
     (; p) = model.momentum
 
     T_ref = 273.0
@@ -48,12 +38,110 @@ end
 end
 
 
-Base.@kwdef struct PengRobinson{T<:AbstractFloat} <: AbstractEosModel # edit
+Base.@kwdef struct PengRobinson{T<:AbstractFloat} <: AbstractEosModel
     T_crit::T
     p_crit::T
     omega::T
     M::T # Molar mass in g/mol
 end
+(eos::PengRobinson)(phase, model, config) = begin
+    backend = config.hardware.backend
+    workgroup = config.hardware.workgroup
+
+    p = model.momentum.p
+
+    if typeof(model.energy) <: Nothing # Isothermal
+        T = ConstantScalar(273.0) # THIS PROBABLY NEEDS TO BE DEFINED BY USER! Redesign Isothermal Energy ?
+    else
+        T = model.energy.T
+    end
+    
+    rho_l_field = model.fluid.phases[1].rho
+    rho_p_field = model.fluid.phases[2].rho
+
+    T_c = eos.T_crit
+    p_c = eos.p_crit
+    ω = eos.omega
+    M = eos.M
+
+    M = M * 1.0e-3
+
+    ndrange = length(rho_l_field)
+    kernel! = _peng_robinson(_setup(backend, workgroup, ndrange)...)
+    kernel!(T, p, T_c, p_c, ω, M, rho_l_field, rho_p_field)
+end
+
+
+@kernel inbounds=true function _peng_robinson(T, p, T_c, p_c, ω, M, rho_l_field, rho_p_field)
+    i = @index(Global)
+
+    R_univ = 8.314
+
+    T_r = T[i] / T_c
+
+    a_H2 = 0.45724 * (((R_univ^2)*(T_c^2))/p_c)
+    b_H2 = 0.07780 * ((R_univ*T_c)/p_c)
+
+    κ = 0.37464 + 1.54226*ω - 0.26992*(ω^2)
+    α = (1 + κ*(1 - sqrt(T_r)))^2
+    
+    A = ( a_H2 * α * p[i] ) / ( (R_univ^2) * (T[i]^2) )
+    B = ( b_H2 * p[i])  / (R_univ * T[i])
+    
+    coeffs = [
+        -(A*B - B^2 - B^3),   # constant term (c0)
+        A - 2B - 3B^2,       # Z term (c1)
+        -(1 - B),             # Z^2 term (c2)
+        1.0                  # Z^3 term
+    ]
+    
+    Z_roots = solve_cubic_eqn(coeffs[3], coeffs[2], coeffs[1]) # no need to take care of Z^3 because it is = 1.0
+
+    # Extract only real roots
+    Z_real = [z for z in Z_roots if isreal(z)]
+    Z_real = real.(Z_real)                          # DO WE NEED THE DOT IN KERNEL ????
+
+    Z_liq = minimum(Z_real)   # liquid root
+    Z_vap = maximum(Z_real)   # vapour root
+
+    # Convert to molar volumes
+    Vm_liq = Z_liq * R_univ * T[i] / p[i]
+    Vm_vap = Z_vap * R_univ * T[i] / p[i]
+
+    # Convert to densities [kg/m3]
+    rho_liq = M / Vm_liq
+    rho_vap = M / Vm_vap
+
+    rho_l_field[i] = rho_liq
+    rho_p_field[i] = rho_vap
+end
+
+
+function solve_cubic_eqn(a::T, b::T, c::T) where {T<:AbstractFloat}
+    p = b - a^2 / (T(3))
+    q = (T(2) * a^3) / T(27) - (a * b) / T(3) + c
+
+    Δ = (q / T(2))^2 + (p / T(3))^3
+
+    if Δ > 0
+        # One real root
+        u = cbrt(-q / T(2) + sqrt(Δ))
+        v = cbrt(-q / T(2) - sqrt(Δ))
+        return (u + v) - a / T(3)
+    else
+        # Three real roots
+        r = sqrt(-p / T(3))
+        θ = acos(-q / (T(2) * r^3))
+        twopi = T(2) * T(π)
+        roots = (
+            T(2) * r * cos(θ / T(3)) - a / T(3),
+            T(2) * r * cos((θ + twopi / T(3))) - a / T(3),
+            T(2) * r * cos((θ + T(2)*twopi / T(3))) - a / T(3),
+        )
+        return roots
+    end
+end
+
 
 
 abstract type HelmholtzEnergyFluid end
@@ -109,66 +197,14 @@ Base.@kwdef struct HydrogenViscosity <: AbstractPhysicsProperty end
 Base.@kwdef struct NitrogenViscosity <: AbstractPhysicsProperty end
 
 
-Base.@kwdef struct Gravity{V<:AbstractVector{<:AbstractFloat}} <: AbstractPhysicsProperty
-    g::V
-end
-@kwdef struct GravityState{V<:AbstractVector{<:AbstractFloat}} <: AbstractPhysicsProperty
-    g::V
-    momentum_source_pointer::Ref{Int}
-end
-Adapt.@adapt_structure GravityState
-
-function build_gravityModel(setup::Gravity, mesh)
-    return GravityState(
-        g=setup.g,
-        momentum_source_pointer=Ref(0)
-    )
-end
-
 
 Base.@kwdef struct ConstSurfaceTension{T<:AbstractFloat} <: AbstractPhysicsProperty
     s::T
 end
 
 
-Base.@kwdef struct LeeModel{T<:AbstractFloat} <: AbstractPhysicsProperty
-    evap_coeff::T
-    condens_coeff::T
-end
-@kwdef struct LeeModelState{T<:AbstractFloat, M1,M2,LH} <: AbstractPhysicsProperty
-    evap_coeff::T
-    condens_coeff::T
-    m_qp::M1
-    m_pq::M2
-    latentHeat::LH
-    alpha_source_pointer::Ref{Int}
-    energy_source_pointer::Ref{Int}
-end
-Adapt.@adapt_structure LeeModelState
-
-function build_leeModel(setup::LeeModel, mesh)
-    m_qp        = ScalarField(mesh)
-    m_pq        = ScalarField(mesh)
-    latentHeat  = ScalarField(mesh)
-
-    return LeeModelState(
-        evap_coeff=setup.evap_coeff,
-        condens_coeff=setup.condens_coeff,
-        m_qp=m_qp,
-        m_pq=m_pq,
-        latentHeat=latentHeat,
-        alpha_source_pointer=Ref(0),
-        energy_source_pointer=Ref(0)
-    )
-end
-
-
-
 Base.@kwdef struct SurfaceTensionModel <: AbstractPhysicsProperty end
 Base.@kwdef struct NucleateBoilingModel <: AbstractPhysicsProperty end
-
-
-
 
 
 
@@ -205,65 +241,6 @@ function build_phase(phase_setup::Phase, mesh)
         beta=beta
     )
 end
-
-
-
-
-Base.@kwdef struct Drag_SchillerNaumann <: AbstractDrag end
-
-
-Base.@kwdef struct DriftVelocity{G<:Gravity, T<:AbstractFloat, D<:AbstractDrag} <: AbstractPhysicsProperty
-    gravity::G      # required for acceleration field computation
-    d_p::T          # d_p, either computed from subgrid model or defined as const
-    drag::D         # Drag_SchillerNaumann for now
-end
-@kwdef struct DriftVelocityState{G<:Gravity, T<:AbstractFloat, D<:AbstractDrag, V1,V2,V3,V4,V5,V6,V7} <: AbstractPhysicsProperty
-    gravity::G 
-    d_p::T
-    drag::D
-
-    v_dr_p::V1
-    v_dr_q::V2
-    v_p::V3
-    v_q::V4
-
-    v_pq::V5
-    v_pq_prev::V6
-    U_prev::V7
-
-    momentum_source_pointer::Ref{Int}
-    alpha_source_pointer::Ref{Int}
-    energy_source_pointer::Ref{Int}
-end
-Adapt.@adapt_structure DriftVelocityState
-
-function build_driftVelocity(setup::DriftVelocity, mesh)
-    v_dr_p  = VectorField(mesh)
-    v_dr_q  = VectorField(mesh)
-    v_p     = VectorField(mesh)
-    v_q     = VectorField(mesh)
-
-    v_pq      = VectorField(mesh)
-    v_pq_prev = VectorField(mesh)
-    U_prev    = VectorField(mesh)
-
-    return DriftVelocityState(
-        gravity=setup.gravity,
-        d_p=setup.d_p,
-        drag=setup.drag,
-        v_dr_p=v_dr_p,
-        v_dr_q=v_dr_q,
-        v_pq=v_pq,
-        v_pq_prev=v_pq_prev,
-        U_prev=U_prev,
-        v_p=v_p,
-        v_q=v_q,
-        momentum_source_pointer=Ref(0),
-        alpha_source_pointer=Ref(0),
-        energy_source_pointer=Ref(0)
-    )
-end
-
 
 
 

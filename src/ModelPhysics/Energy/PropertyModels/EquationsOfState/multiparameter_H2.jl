@@ -618,7 +618,7 @@ function find_density_advanced(T::AbstractFloat, P_target::AbstractFloat, rho_gu
         rho = rho_new
     end
 
-    error("Did not converge in $max_iter iterations!")
+    error("Did not converge in $max_iter iterations! T: $T, p: $P_target")
 end
 
 
@@ -746,9 +746,12 @@ function EOS_wrapper_H2(T::AbstractFloat, pressure::AbstractFloat, alpha::Abstra
 
     m_lv = 0.0
     m_vl = 0.0
+    
+    # Critical pressure for parahydrogen
+    p_crit = 1.2858e6
 
     # Firstly, account for supercritical fluid state
-    if T >= T_c # Maybe add fancier check "within tolerance"
+    if (T >= T_c) && (pressure >= p_crit) # Maybe add fancier check "within tolerance"
         rho_guess = pressure / (R_univ * T) # Ideal gas guess
         rho_mol = find_density_advanced(T, pressure, rho_guess, constants)
 

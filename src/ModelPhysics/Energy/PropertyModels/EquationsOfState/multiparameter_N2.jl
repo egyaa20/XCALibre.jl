@@ -821,6 +821,8 @@ function EOS_wrapper_N2(T::AbstractFloat, pressure::AbstractFloat, alpha::Abstra
         ]  # D
     )
     
+    # println("We have managed to arrive right here! T:$T, alpha:$alpha, p:$pressure")
+
     (; T_c, rho_c, R_univ, M_N2, T_ref) = constants
 
     pressure_tol = 1e-4
@@ -835,9 +837,11 @@ function EOS_wrapper_N2(T::AbstractFloat, pressure::AbstractFloat, alpha::Abstra
     m_lv = 0.0
     m_vl = 0.0
     
+    # Critical pressure for Nitrogen
+    p_crit = 3.3958e6 
     
     # Firstly, account for supercritical fluid state
-    if T >= T_c # Maybe add fancier check "within tolerance"
+    if (T >= T_c) && (pressure >= p_crit) # Maybe add fancier check "within tolerance"
         rho_guess = pressure / (R_univ * T) # Ideal gas guess
         rho_mol = find_density_advanced(T, pressure, rho_guess, constants)
 
