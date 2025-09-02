@@ -24,14 +24,14 @@ mesh_dev = adapt(backend, mesh)
 noSlipVelocity = [0.0, 0.0, 0.0]
 
 
-eos = PengRobinson(T_crit=33.145, p_crit=1.2964e6, omega=-0.216, M=2.016) # values for H2
-# eos = PengRobinson(T_crit=126.192, p_crit=3.3958e6, omega=0.037, M=28.02) # values for N2
+# eos = PengRobinson(T_crit=33.145, p_crit=1.2964e6, omega=-0.216, M=2.016) # values for H2
+eos = PengRobinson(T_crit=126.192, p_crit=3.3958e6, omega=0.037, M=28.02) # values for N2
 
 
 # mu=Sutherland(mu_ref=1.8e-5, S=110.4)
 # mu=Andrade(B = 1.732e-6, C = 1863.0)
-# gravity = Gravity([0.0, 0.0, -9.81])
 
+# gravity = Gravity([0.0, 0.0, -9.81])
 
 gravity = Gravity([0.0, 0.0, -0.98])
 driftVelocity = DriftVelocity(
@@ -49,11 +49,13 @@ model = Physics(
     fluid = Fluid{Multiphase}(
         phases = ( #first phase is liquid, second if vapour - common assumption
             # Phase(eosModel=eos, viscosityModel=ConstMu(1.8e-5)),       #air
-            Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.8e-5)),       #air
-            Phase(eosModel=ConstEos(1.225), viscosityModel=ConstMu(1.0e-3)),       #water
+            Phase(eosModel=ConstEos(1.225), viscosityModel=ConstMu(1.8e-5)),       #air
+            Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3)),       #water
             # Phase(eosModel=eos, viscosityModel=ConstMu(1.0e-3))     #water
-            # Phase(eosModel=HelmholtzEnergy(name=H2(), interpolationMode=false), viscosityModel=ConstMu(1.8e-5)),     #N2 solver is flawed
-            # Phase(eosModel=HelmholtzEnergy(name=H2(), interpolationMode=false), viscosityModel=ConstMu(1.0e-3))    
+            # Phase(eosModel=HelmholtzEnergy(name=N2(), interpolationMode=false), viscosityModel=ConstMu(1.8e-5)),     #N2 solver is flawed
+            # Phase(eosModel=HelmholtzEnergy(name=N2(), interpolationMode=false), viscosityModel=ConstMu(1.0e-3))    
+            # Phase(eosModel=PerfectGas(rho=1.225, R=287.0), viscosityModel=Sutherland(mu_ref=1.8e-5, S=110.4)),       #air
+            # Phase(eosModel=ConstEos(1000.0), viscosityModel=Andrade(B = 1.732e-6, C = 1863.0)),       #water
             # Phase(eos=ConstEos(1.225), mu=Sutherland(mu_ref=1.8e-5, S=110.4)),
             # Phase(eos=ConstEos(1.0), mu=ConstMu(1.8e-5)),       #air
             # Phase(eos=PerfectGas(rho=1.225, R=287.0), mu=ConstMu(1.8e-5)),       #air
@@ -77,6 +79,8 @@ outer_velocity = 2.0
 
 inner_alpha = 1.0
 outer_alpha = 0.0
+
+Temp = 250.0
 
 # model.fluid.phases[1].eosModel = HelmholtzEnergy(name=H2(), interpolationMode=true)
 
@@ -114,9 +118,9 @@ BCs = assign(
         ],
 
         T = [
-            Dirichlet(:wall, 250.0),
-            Extrapolated(:inlet_inner),
-            Extrapolated(:inlet_outer),
+            Dirichlet(:wall, Temp),
+            Dirichlet(:inlet_inner, Temp),
+            Dirichlet(:inlet_outer, Temp),
             Extrapolated(:outlet_inner),
             Extrapolated(:outlet_outer),
             Symmetry(:sym_1),
@@ -126,11 +130,11 @@ BCs = assign(
 )
 
 schemes = (
-    U = Schemes(time=Euler, divergence = Upwind),
+    U = Schemes(time=Euler, divergence=Upwind),
     p = Schemes(time=Euler),
-    alpha = Schemes(time=Euler, divergence = Upwind),
+    alpha = Schemes(time=Euler, divergence=Upwind),
 
-    T = Schemes(time=Euler, divergence = Linear, laplacian = Linear)
+    T = Schemes(time=Euler, divergence=Upwind, laplacian=Linear)
 )
 
 
@@ -168,7 +172,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=10, time_step=0.1, write_interval=1)
+    iterations=100, time_step=0.0001, write_interval=25)
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
@@ -182,7 +186,7 @@ initialise!(model.fluid.alpha, 1.0)
 
 
 
-initialise!(model.energy.T, 25.0)
+initialise!(model.energy.T, Temp)
 
 
 residuals = run!(model, config) 

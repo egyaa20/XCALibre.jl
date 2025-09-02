@@ -95,8 +95,8 @@ function setup_multiphase_solvers(
     psi = ScalarField(mesh)
     initialise!(psi, 1.0)
 
-    rDf = FaceScalarField(mesh)
-    initialise!(rDf, 1.0)
+    rhorDf = FaceScalarField(mesh)
+    initialise!(rhorDf, 1.0)
 
     divHv = ScalarField(mesh)
     div!(divHv, mdotf, config)
@@ -129,7 +129,7 @@ function setup_multiphase_solvers(
 
     p_eqn = (
        Time{schemes.p.time}(psi, p) # take psi (compressibility) from Helmholtz EoS if possible?
-      - Laplacian{schemes.p.laplacian}(rDf, p) # something to do with momentum - figure this out!
+      - Laplacian{schemes.p.laplacian}(rhorDf, p) # something to do with momentum - figure this out!
       ==
       - Source(divHv)
     ) → ScalarEquation(p, boundaries.p)
@@ -174,7 +174,7 @@ function setup_multiphase_solvers(
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops,
-        time, rDf, nueff, phif, mdotf, divHv
+        time, rhorDf, nueff, phif, mdotf, divHv
         )
 
     return residuals    
@@ -187,7 +187,7 @@ end # end function
 function MULTIPHASE(
     model, turbulenceModel, energyModel, alpha_eqn, ∇p, ∇U, U_eqn, p_eqn, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2,
-    time, rDf, nueff, phif, mdotf, divHv
+    time, rhorDf, nueff, phif, mdotf, divHv
     )
 
     # inner_loops = 2 DOUBLE CHECK IF THIS IS FINE
@@ -210,6 +210,9 @@ function MULTIPHASE(
 
     mesh = model.domain
 
+
+    # rhorDf = get_flux(p_eqn, 2)
+
     Hv = VectorField(mesh)
 
 
@@ -219,7 +222,10 @@ function MULTIPHASE(
     TF = _get_float(mesh)
 
     n_cells = length(mesh.cells)
+    n_faces = length(mesh.faces)
+
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
+    corr = KernelAbstractions.zeros(backend, TF, n_faces) 
 
     # Pre-allocate vectors to hold residuals 
     R_ux = ones(TF, iterations)
@@ -266,9 +272,13 @@ function MULTIPHASE(
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
 
+
+
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
-        interpolate!(rDf, rD, config)
+        interpolate!(rhorDf, rD, config)
+        @. rhorDf.values *= rhof.values
+
         remove_pressure_source!(U_eqn, ∇p, config)
         
         rp = 0.0
@@ -280,8 +290,13 @@ function MULTIPHASE(
             correct_boundaries!(Uf, Hv, boundaries.U, time, config)
             # div!(divHv, Uf, config)
 
-            # new approach
+            # old approach
+            @. corr = mdotf.values
             flux!(mdotf, Uf, config)
+            @. mdotf.values *= rhof.values
+            @. corr -= mdotf.values
+            @. corr *= 0.0/runtime.dt # ??? huh
+            @. mdotf.values += rhorDf.values*corr/rhof.values # ??????
             div!(divHv, mdotf, config)
             
             # Pressure calculations (previous implementation)
@@ -296,12 +311,17 @@ function MULTIPHASE(
             grad!(∇p, pf, p, boundaries.p, time, config) 
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
+            if !isnothing(solvers.p.limit)
+                pmin = solvers.p.limit[1]; pmax = solvers.p.limit[2]
+                clamp!(p.values, pmin, pmax)
+            end
+
             # new approach
             interpolate!(Uf, U, config) # velocity from momentum equation
 
             correct_boundaries!(Uf, U, boundaries.U, time, config)
             flux!(mdotf, Uf, config)
-            correct_mass_flux(mdotf, p, rDf, config)
+            correct_mass_flux(mdotf, p, rhorDf, config)
             correct_velocity!(U, Hv, ∇p, rD, config)
         end
 
@@ -317,13 +337,11 @@ function MULTIPHASE(
         
 
         ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
-        @. alpha.values = clamp(alpha.values, 0.0, 1.0)
+        # @. alpha.values = clamp(alpha.values, 0.0, 1.0)
         interpolate!(alphaf, alpha, config)
 
 
         if typeof(model.energy) <: MultiphaseEnergy
-            println("ENERGY ON")
-
             if typeof(model.turbulence) <: KOmega # DUMMY CHECK
                 nutf = model.turbulence.nutf
             else
@@ -556,8 +574,6 @@ function find_Vpq!(alpha, rho, d_p, a_field, v_pq_prev, isInitialisation, v_high
     @. expr.values = (mu_q.values*rho_q.values)/(0.0183 * rho_q.values * d_p.values)
 
     for i in eachindex(v_pq_trial)
-        arg = E[i] * expr.values[i]
-        
         v_pq_trial[i] = sqrt.(E[i]*expr.values[i])
     end
 
