@@ -1,19 +1,25 @@
 export MultiphaseEnergy
 
-struct MultiphaseEnergy{S1,S2,S3,S4,S5,F1,S6,S7,S8,S9,F2,F3,F4} <: AbstractEnergyModel
-    T::S1
-    cp_prev::S2
-    p_prev::S3
-    beta_mix::S4
-    cp_mix::S5
-    cpf_mix::F1
-    betaDpDt::S6
-    DcpDt::S7
-    time_term::S8
-    div_term::S9
-    vf_p::F2
-    vf_q::F3
-    k_eff::F4
+struct MultiphaseEnergy{S,SF,V,F} <: AbstractEnergyModel where {
+    S<:ScalarField,
+    SF<:FaceScalarField,
+    V<:AbstractVectorField,
+    F<:AbstractFloat
+}
+    T::S
+    cp_prev::S
+    p_prev::S
+    beta_mix::S
+    cp_mix::S
+    cpf_mix::SF
+    betaDpDt::S
+    DcpDt::S
+    time_term::S
+    div_term::SF
+    vf_p::V
+    vf_q::V
+    k_eff::SF
+    Pr_t::F
 end
 Adapt.@adapt_structure MultiphaseEnergy
 
@@ -27,14 +33,18 @@ Adapt.@adapt_structure MultiphaseEnergyModel
 
 
 # Model API constructor
-Energy{MultiphaseEnergy}() = begin
-    coeffs = (nothing)
+Energy{MultiphaseEnergy}(; Pr_t) = begin
+    coeffs = (; Pr_t)
     ARG = typeof(coeffs)
     Energy{MultiphaseEnergy,ARG}(coeffs)
 end
 
 # Functor as constructor
 (energy::Energy{EnergyModel, ARG})(mesh, fluid) where {EnergyModel<:MultiphaseEnergy,ARG} = begin
+
+    coeffs = energy.args
+    (; Pr_t) = coeffs
+
     T = ScalarField(mesh)
     cp_prev = ScalarField(mesh)
     p_prev = ScalarField(mesh)
@@ -53,7 +63,7 @@ end
     vf_p = FaceVectorField(mesh)
     vf_q = FaceVectorField(mesh)
     
-    MultiphaseEnergy(T, cp_prev, p_prev, beta_mix, cp_mix, cpf_mix, betaDpDt, DcpDt, time_term, div_term, vf_p, vf_q, k_eff)
+    MultiphaseEnergy(T, cp_prev, p_prev, beta_mix, cp_mix, cpf_mix, betaDpDt, DcpDt, time_term, div_term, vf_p, vf_q, k_eff, Pr_t)
 end
 
 
@@ -62,113 +72,11 @@ function initialise(
     ) where {T1,F,SO,M,Tu,E,D,BI}
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
-    props = model.fluid.physics_properties
-    phases = model.fluid.phases
-    Pr_t = 0.9 # Prob better to be defined by user via API - turbulent Pr number
 
     backend = config.hardware.backend
     workgroup = config.hardware.workgroup
 
-    T = model.energy.T
-    beta_mix = model.energy.beta_mix
-    cp_mix = model.energy.cp_mix
-    cpf_mix = model.energy.cpf_mix
-
-    betaDpDt = model.energy.betaDpDt
-    DcpDt = model.energy.DcpDt
-
-    alpha = model.fluid.alpha
-    alphaf = model.fluid.alphaf
-    rho = model.fluid.rho
-    rhof = model.fluid.rhof
-
-    U = model.momentum.U
-    Uf = model.momentum.Uf
-
-    p = model.momentum.p
-    
-    rho_p = model.fluid.phases[1].rho
-    rho_q = model.fluid.phases[2].rho
-    
-    rhof_p = FaceScalarField(mesh)
-    rhof_q = FaceScalarField(mesh)
-
-    interpolate!(rhof_p, rho_p, config)
-    interpolate!(rhof_q, rho_q, config)
-
-    cp_p = model.fluid.phases[1].cp
-    cp_q = model.fluid.phases[2].cp
-    
-    cpf_p = FaceScalarField(mesh)
-    cpf_q = FaceScalarField(mesh)
-
-    interpolate!(cpf_p, cp_p, config)
-    interpolate!(cpf_q, cp_q, config)
-
-    beta_p = model.fluid.phases[1].cp
-    beta_q = model.fluid.phases[2].cp
-
-    blend_properties!(beta_mix, alpha, beta_p, beta_q)
-    blend_properties!(cp_mix, alpha, cp_p, cp_q)
-    
-    interpolate!(cpf_mix, cp_mix, config)
-    
-    v_p = model.fluid.physics_properties.driftVelocity.v_p
-    v_q = model.fluid.physics_properties.driftVelocity.v_q
-
-    vf_p = model.energy.vf_p
-    vf_q = model.energy.vf_q
-
-    cp_prev = model.energy.cp_prev # perturb ?
-    p_prev = model.energy.p_prev   # perturb ?
-
-
-    time_term = model.energy.time_term
-
-    div_term = model.energy.div_term
-    div_term_adition = FaceScalarField(mesh)
-
-    @. time_term.values = ( (alpha.values * (rho_p.values*cp_p.values)) + ((1.0-alpha.values) * (rho_q.values*cp_q.values)) ) # * T
-
-    @. div_term.values = (alphaf.values * (rhof_p.values*cpf_p.values)) # * T
-    @. div_term_adition.values = ((1.0-alphaf.values) * (rhof_q.values*cpf_q.values)) # * T
-
-    flux!(div_term, vf_p, config) # MUST BE vf_p INSTEAD
-    flux!(div_term_adition, vf_q, config) # MUST BE vf_p INSTEAD
-
-    @. div_term.values = div_term.values + div_term_adition.values
-
-
-
-    # ∇cp = Grad{schemes.p.gradient}(cp)
-    # grad!(∇cp, cpf_mix, cp_mix, boundaries.p, time, config) # WHAT TO PASS IN BCs ????
-    # limit_gradient!(schemes.p.limiter, ∇cp, cp, config)
-
-    ∇cp = VectorField(mesh)
-    initialise!(∇cp, [1.0, 1.0, 1.0])
-
-
-    
-    ndrange = length(betaDpDt)
-    kernel! = _compute_betaDpDt!(_setup(backend, workgroup, ndrange)...)
-    kernel!(betaDpDt, beta_mix, p, p_prev, dt, U, ∇p)
-    
-    ndrange = length(DcpDt)
-    kernel! = _compute_DcpDt!(_setup(backend, workgroup, ndrange)...)
-    kernel!(DcpDt, rho, cp_mix, cp_prev, dt, U, ∇cp)
-
-    k_mix = ScalarField(mesh)
-    kf_mix = FaceScalarField(mesh)
-
-    k_p = model.fluid.phases[1].k
-    k_q = model.fluid.phases[2].k
-    blend_properties!(k_mix, alpha, k_p, k_q)
-    interpolate!(kf_mix, k_mix, config)
-
-    k_eff = model.energy.k_eff
-    @. k_eff.values = (rhof.values * nutf.values * cpf_mix.values) / Pr_t
-
-    @. k_eff.values = kf_mix.values + k_eff.values # when laminar, nut is a scalar field of 0 thus k_t = 0
+    compute_energy_properties!(model, mesh, config)
 
 
     @. cp_prev.values = cp_mix.values
@@ -178,11 +86,12 @@ function initialise(
     energy_rhs = - Src(betaDpDt, 1) # If we make this a pre created field and update it then it should be just fine?
     energy_rhs = construct_RHS(model.energy, energy_rhs, model, props, alpha, rho, phases, config, mesh)
 
+
     energy_eqn = (
         Time{schemes.T.time}(time_term, T)
-        + Divergence{schemes.T.divergence}(div_term, T)
-        - Laplacian{schemes.T.laplacian}(k_eff, T) # how does this term definition actually work? does it take divergence and grad on its own?
-        - Si(DcpDt, T) # SEMI IMPLICIT
+        + Divergence{schemes.T.divergence}(div_term, T) #this is not mdotf times cp!
+        - Laplacian{schemes.T.laplacian}(k_eff, T)  #cell centre of faces???
+        - Si(DcpDt, T)
         == energy_rhs
     ) → ScalarEquation(T, boundaries.T)
 
@@ -200,6 +109,8 @@ function initialise(
     return MultiphaseEnergyModel(energy_eqn, state)
 end
 
+# Cannot simplify div term towards mixture values - maths is not working...
+# Computing from face values would imply another HelmholtzE call.....
 
 function energy!(
     energy::MultiphaseEnergyModel, model::Physics{T1,F,SO,M,Tu,E,D,BI}, energy_eqn, nutf, ∇p, config, mesh, dt, time
@@ -209,17 +120,57 @@ function energy!(
 
     (; state) = energy
 
+    compute_energy_properties!(model, mesh, config)
+
+    update_sources!(model.energy, model, model.fluid.physics_properties, energy_eqn, alpha, rho, model.fluid.phases, config, mesh)
+
+    # Set up and solve energy equation
+    
+    @. cp_prev.values = cp_mix.values
+    @. p_prev.values = p.values
+    
+    T_res = solve_equation!(energy_eqn, T, boundaries.T, solvers.T, config; time=time)
+
+    residuals = (:T, T_res)
+    converged = T_res <= solvers.T.convergence
+    state.residuals = residuals
+    state.converged = converged
+
+
+    return nothing
+end
+
+
+
+
+@kernel inbounds=true function _compute_betaDpDt!(betaDpDt, beta_mix, p, p_prev, dt, U, ∇p)
+    i = @index(Global)
+
+    betaDpDt[i] = beta_mix[i] * ( ( (p[i]-p_prev[i])/dt ) + (U[i] ⋅ ∇p[i]) )
+end
+
+
+@kernel inbounds=true function _compute_DcpDt!(DcpDt, rho, cp_mix, cp_prev, dt, U, ∇cp)
+    i = @index(Global)
+
+    DcpDt[i] = rho[i] * ( ( (cp_mix[i]-cp_prev[i])/dt ) + (U[i] ⋅ ∇cp[i]) )
+end
+
+
+
+
+
+
+function compute_energy_properties!(model, mesh, config)
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
-    props = model.fluid.physics_properties
-    phases = model.fluid.phases
-
-
-    Pr_t = 0.9 # Prob better to be defined by user via API - turbulent Pr number
 
     backend = config.hardware.backend
     workgroup = config.hardware.workgroup
+    props = model.fluid.physics_properties
+    phases = model.fluid.phases
 
+    Pr_t = model.energy.Pr_t
     T = model.energy.T
     beta_mix = model.energy.beta_mix
     cp_mix = model.energy.cp_mix
@@ -270,8 +221,11 @@ function energy!(
     vf_p = model.energy.vf_p
     vf_q = model.energy.vf_q
 
-    cp_prev = model.energy.cp_prev # perturb ?
-    p_prev = model.energy.p_prev   # perturb ?
+    interpolate!(vf_p, v_p, config)
+    interpolate!(vf_q, v_q, config)
+
+    cp_prev = model.energy.cp_prev
+    p_prev = model.energy.p_prev
 
 
     time_term = model.energy.time_term
@@ -284,20 +238,17 @@ function energy!(
     @. div_term.values = (alphaf.values * (rhof_p.values*cpf_p.values)) # * T
     @. div_term_adition.values = ((1.0-alphaf.values) * (rhof_q.values*cpf_q.values)) # * T
 
-    flux!(div_term, vf_p, config) # MUST BE vf_p INSTEAD
-    flux!(div_term_adition, vf_q, config) # MUST BE vf_p INSTEAD
+    flux!(div_term, vf_p, config)
+    flux!(div_term_adition, vf_q, config)
 
     @. div_term.values = div_term.values + div_term_adition.values
 
 
+    #Calculate cpf from the face values (T, p)
 
-    # ∇cp = Grad{schemes.p.gradient}(cp)
-    # grad!(∇cp, cpf_mix, cp_mix, boundaries.p, time, config) # WHAT TO PASS IN BCs ????
-    # limit_gradient!(schemes.p.limiter, ∇cp, cp, config)
-
-    ∇cp = VectorField(mesh)
-    initialise!(∇cp, [1.0, 1.0, 1.0])
-
+    ∇cp = Grad{schemes.p.gradient}(cp)
+    grad!(∇cp, cpf_mix, cp_mix, time, config)
+    limit_gradient!(schemes.p.limiter, ∇cp, cp, config)
 
     
     ndrange = length(betaDpDt)
@@ -320,49 +271,4 @@ function energy!(
     @. k_eff.values = (rhof.values * nutf.values * cpf_mix.values) / Pr_t
 
     @. k_eff.values = kf_mix.values + k_eff.values # when laminar, nut is a scalar field of 0 thus k_t = 0
-
-
-    update_sources!(model.energy, model, model.fluid.physics_properties, energy_eqn, alpha, rho, model.fluid.phases, config, mesh)
-
-    
-    # Set up and solve energy equation
-    
-    @. cp_prev.values = cp_mix.values
-    @. p_prev.values = p.values
-
-    
-    T_res = solve_equation!(energy_eqn, T, boundaries.T, solvers.T, config; time=time)
-
-
-
-    residuals = (:T, T_res)
-    converged = T_res <= solvers.T.convergence
-    state.residuals = residuals
-    state.converged = converged
-
-
-    return nothing
-end
-
-
-
-
-@kernel inbounds=true function _compute_betaDpDt!(betaDpDt, beta_mix, p, p_prev, dt, U, ∇p)
-    i = @index(Global)
-
-    betaDpDt[i] = beta_mix[i] * ( ( (p[i]-p_prev[i])/dt ) + (U[i] ⋅ ∇p[i]) ) # is it the dot or not actually?
-end
-
-
-@kernel inbounds=true function _compute_DcpDt!(DcpDt, rho, cp_mix, cp_prev, dt, U, ∇cp)
-    i = @index(Global)
-
-    DcpDt[i] = rho[i] * ( ( (cp_mix[i]-cp_prev[i])/dt ) + (U[i] ⋅ ∇cp[i]) ) # is it the dot or not actually?
-end
-
-
-
-
-function compute_energy_properties!()
-
 end
