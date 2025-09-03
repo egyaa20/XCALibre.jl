@@ -2,6 +2,8 @@ export LeeModelState, DriftVelocityState, GravityState
 export build_gravityModel, build_leeModel, build_driftVelocity
 export AbstractPhysicsProperty
 
+export update_source
+
 
 abstract type AbstractPhysicsProperty end
 
@@ -23,13 +25,13 @@ function build_gravityModel(setup::Gravity, mesh)
         g=setup.g
     )
 end
-(source::GravityState)(model_specific::AbstractFluid, model, alpha, rho, phases, config, mesh) = begin # alpha eqn
+function update_source(model_specific::AbstractFluid, source::GravityState, model, alpha, rho, phases, config, mesh) # alpha eqn
     return ConstantScalar(0.0), 1
 end
-(source::GravityState)(model_specific::AbstractEnergyModel, model, alpha, rho, phases, config, mesh) = begin # energy eqn
+function update_source(model_specific::AbstractEnergyModel, source::GravityState, model, alpha, rho, phases, config, mesh) # energy eqn
     return ConstantScalar(0.0), 1
 end
-(source::GravityState)(model_specific::AbstractMomentumModel, model, alpha, rho, phases, config, mesh) = begin # momentum eqn
+function update_source(model_specific::AbstractMomentumModel, source::GravityState, model, alpha, rho, phases, config, mesh) # momentum eqn
     g = source.g
 
     x0, y0, z0 = g[1], g[2], g[3]
@@ -78,7 +80,9 @@ function build_leeModel(setup::LeeModel, mesh)
         latentHeat=latentHeat
     )
 end
-(source::LeeModelState)(model_specific::AbstractFluid, model, alpha, rho, phases, config, mesh) = begin # alpha eqn
+
+
+function update_source(model_specific::AbstractFluid, source::LeeModelState, model, alpha, rho, phases, config, mesh) # alpha eqn
     m_qp = source.m_qp
     m_pq = source.m_pq
 
@@ -88,7 +92,7 @@ end
 
     return leeField, 1
 end
-(source::LeeModelState)(model_specific::AbstractEnergyModel, model, alpha, rho, phases, config, mesh) = begin # energy eqn
+function update_source(model_specific::AbstractEnergyModel, source::LeeModelState, model, alpha, rho, phases, config, mesh) # energy eqn
     m_qp = source.m_qp
     m_pq = source.m_pq
     latentHeat = source.latentHeat
@@ -98,7 +102,7 @@ end
 
     return S_h, 1
 end
-(source::LeeModelState)(model_specific::AbstractMomentumModel, model, alpha, rho, phases, config, mesh) = begin # momentum eqn
+function update_source(model_specific::AbstractMomentumModel, source::LeeModelState, model, alpha, rho, phases, config, mesh) # momentum eqn
     dummy_field = VectorField(mesh) # Poor solution, bad constantVector is not possible currently
     return dummy_field, 1
 end
@@ -151,7 +155,7 @@ function build_driftVelocity(setup::DriftVelocity, mesh)
         v_q=v_q
     )
 end
-(source::DriftVelocityState)(model_specific::AbstractFluid, model, alpha, rho, phases, config, mesh) = begin # alpha eqn
+function update_source(model_specific::AbstractFluid, source::DriftVelocityState, model, alpha, rho, phases, config, mesh) # alpha eqn
     backend = config.hardware.backend
     workgroup = config.hardware.workgroup
 
@@ -178,10 +182,10 @@ end
 
     return div_term, 1
 end
-(source::DriftVelocityState)(model_specific::AbstractEnergyModel, model, alpha, rho, phases, config, mesh) = begin # energy eqn
+function update_source(model_specific::AbstractEnergyModel, source::DriftVelocityState, model, alpha, rho, phases, config, mesh) # energy eqn
     return ConstantScalar(0.0), 1
 end
-(source::DriftVelocityState)(model_specific::AbstractMomentumModel, model, alpha, rho, phases, config, mesh) = begin # momentum eqn
+function update_source(model_specific::AbstractMomentumModel, source::DriftVelocityState, model, alpha, rho, phases, config, mesh) # momentum eqn
     backend = config.hardware.backend
     workgroup = config.hardware.workgroup
 
