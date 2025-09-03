@@ -1,5 +1,5 @@
 export multiphase!
-export construct_RHS, update_sources!
+export construct_sources, update_sources!
 export blend_properties!
 
 
@@ -30,7 +30,7 @@ function setup_multiphase_solvers(
     @info "Extracting configuration and input fields..."
 
     (; U, p, Uf, pf) = model.momentum
-    (; alpha, alphaf, rho, rhof) = model.fluid
+    (; alpha, alphaf, rho, rhof, nu, nuf) = model.fluid
 
     phases = model.fluid.phases
     props = model.fluid.physics_properties
@@ -84,7 +84,9 @@ function setup_multiphase_solvers(
     update_phase_thermodynamics!(phase_eos[2], Val(2), nueff, T, model, config)
 
     blend_properties!(rho, alpha, phases[1].rho, phases[2].rho)
+    blend_viscosity!(alpha, phases, nu)
     interpolate!(rhof, rho, config)
+    interpolate!(nuf, nu, config)
 
     for property in props
         update_extra_physics!(property, ∇U, model, config, isInit, 1.0, mesh) # currently computes v_pq and updates velocities in drift model
@@ -107,7 +109,7 @@ function setup_multiphase_solvers(
     zero_field = ConstantScalar(0.0)
 
     alpha_rhs = - Src(zero_field, 1)
-    alpha_rhs = construct_RHS(model.fluid, alpha_rhs, model, props, alpha, rho, phases, config, mesh)
+    alpha_rhs = construct_sources(model.fluid, alpha_rhs, model, props, alpha, rho, phases, config, mesh)
     
     alpha_eqn = ( # Volume Fraction Transport Eqn
         Time{schemes.alpha.time}(rho_l, alpha)
@@ -117,7 +119,7 @@ function setup_multiphase_solvers(
     
 
     momentum_rhs = - Src(∇p.result, 1) # how do we update this term?
-    momentum_rhs = construct_RHS(model.momentum, momentum_rhs, model, props, alpha, rho, phases, config, mesh)
+    momentum_rhs = construct_sources(model.momentum, momentum_rhs, model, props, alpha, rho, phases, config, mesh)
 
     U_eqn = ( # Momentum Eqn
             Time{schemes.U.time}(rho, U)
@@ -166,6 +168,8 @@ function setup_multiphase_solvers(
     else
         energyModel = nothing
     end
+
+    update_nueff!(nueff, nuf, model.turbulence, config)
         
 
     residuals  = solver_variant(
@@ -189,11 +193,9 @@ function MULTIPHASE(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2,
     time, rhorDf, nueff, phif, mdotf, divHv
     )
-
-    # inner_loops = 2 DOUBLE CHECK IF THIS IS FINE
     
     (; U, p, Uf, pf) = model.momentum
-    (; alpha, alphaf, rho, rhof) = model.fluid
+    (; alpha, alphaf, rho, rhof, nu, nuf) = model.fluid
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries) = config
     (; iterations, write_interval, dt) = runtime
@@ -211,8 +213,11 @@ function MULTIPHASE(
     mesh = model.domain
 
 
-    # rhorDf = get_flux(p_eqn, 2)
-
+    # Define aux fields 
+    # gradU = Grad{schemes.U.gradient}(U)
+    # gradUT = T(gradU) # HAVE NO CLUE WHY BUT IT DOESNT LIKE THIS LINE!
+    # S = StrainRate(gradU, gradUT, U, Uf)
+    
     Hv = VectorField(mesh)
 
 
@@ -258,7 +263,10 @@ function MULTIPHASE(
         update_phase_thermodynamics!(phase_eos[2], Val(2), nueff, T, model, config)
 
         blend_properties!(rho, alpha, phases[1].rho, phases[2].rho)
+        blend_viscosity!(alpha, phases, nu)
+
         interpolate!(rhof, rho, config)
+        interpolate!(nuf, nu, config)
 
         for property in props
             update_extra_physics!(property, ∇U, model, config, isInit, 1.0, mesh) # currently computes v_pq and updates velocities in drift model
@@ -326,13 +334,9 @@ function MULTIPHASE(
         end
 
         
-        if !(typeof(model.turbulence) <: Laminar) #isa
-            println("TURBULENCE ON")
-            turbulence!(turbulenceModel, model, S, prev, time, config) 
-        end
+        # turbulence!(turbulenceModel, model, S, prev, time, config)
 
-
-        update_nueff!(nueff, nueff, model.turbulence, config)
+        update_nueff!(nueff, nuf, model.turbulence, config)
         flux!(phif, Uf, config)
         
 
@@ -351,8 +355,6 @@ function MULTIPHASE(
             # k_eff? dt ?
             energy!(energyModel, model, energyModel.energy_eqn, nutf, ∇p, config, mesh, dt, time) #ASSUME LEE MODEL IS TURNED ON
         end
-
-
 
 
         maxCourant = max_courant_number!(cellsCourant, model, config)
@@ -387,10 +389,10 @@ function MULTIPHASE(
 end
 
 
-function construct_RHS(model_specific, dummy_rhs, model, props, alpha, rho, phases, config, mesh)
+function construct_sources(model_specific, dummy_rhs, model, props, alpha, rho, phases, config, mesh)
 
     for (i, prop) in enumerate(props)
-        field, sign = prop(model_specific, model, alpha, rho, phases, config, mesh)
+        field, sign = update_source(model_specific, prop, model, alpha, rho, phases, config, mesh)
         dummy_rhs += Src(field, sign)
     end
 
@@ -399,7 +401,7 @@ end
 
 function update_sources!(model_specific, model, props, eqn, alpha, rho, phases, config, mesh)
     for (i, prop) in enumerate(props)
-        field, sign = prop(model_specific, model, alpha, rho, phases, config, mesh)
+        field, sign = update_source(model_specific, prop, model, alpha, rho, phases, config, mesh)
 
         temp_field = get_source(eqn, i+1)
         temp_field = field
@@ -451,6 +453,21 @@ end
 
 
 
+function blend_viscosity!(alpha, phases, nu)
+    mu_1 = phases[1].mu
+    mu_2 = phases[2].mu
+
+    rho_1 = phases[1].rho
+    rho_2 = phases[2].rho
+
+    @. mu_1.values = mu_1.values / rho_1.values # nu
+    @. mu_2.values = mu_2.values / rho_2.values # nu
+
+    blend_properties!(nu, alpha, mu_1, mu_2)
+
+    @. mu_1.values = mu_1.values * rho_1.values # mu
+    @. mu_2.values = mu_2.values * rho_2.values # mu
+end
 
 function blend_properties!(property_field, alpha_field, property_0, property_1)
     @. property_field.values = (property_0.values * alpha_field.values) + (property_1.values * (1.0 - alpha_field.values))

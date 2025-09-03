@@ -63,12 +63,12 @@ model = Physics(
             # Phase(eos=ConstEos(1000.0), mu=Andrade(B = 1.732e-6, C = 1863.0))     #water
         ),
         gravity = gravity,
-        driftVelocity = driftVelocity,
-        leeModel = LeeModel(evap_coeff=30.0, condens_coeff=30.0),
+        # driftVelocity = driftVelocity,
+        # leeModel = LeeModel(evap_coeff=30.0, condens_coeff=30.0),
     ),
     turbulence = RANS{Laminar}(),
-    # energy = Energy{Isothermal}(),
-    energy = Energy{MultiphaseEnergy}(),
+    energy = Energy{Isothermal}(),
+    # energy = Energy{MultiphaseEnergy}(Pr_t=0.85),
     domain = mesh_dev
     )
 
@@ -172,7 +172,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=100, time_step=0.0001, write_interval=25)
+    iterations=100, time_step=1.0e-5, write_interval=25)
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
@@ -186,7 +186,7 @@ initialise!(model.fluid.alpha, 1.0)
 
 
 
-initialise!(model.energy.T, Temp)
+# initialise!(model.energy.T, Temp)
 
 
 residuals = run!(model, config) 
