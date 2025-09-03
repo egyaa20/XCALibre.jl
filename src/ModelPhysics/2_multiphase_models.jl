@@ -116,7 +116,7 @@ end
     rho_p_field[i] = rho_vap
 end
 
-
+## COMMENT HERE
 function solve_cubic_eqn(a::T, b::T, c::T) where {T<:AbstractFloat}
     p = b - a^2 / (T(3))
     q = (T(2) * a^3) / T(27) - (a * b) / T(3) + c
@@ -245,13 +245,15 @@ end
 
 
 
-@kwdef struct Multiphase{P1,P2,S1,F1,S2,F2} <: AbstractMultiphase
+@kwdef struct Multiphase{P1,P2,S1,F1,S2,F2,S3,F3} <: AbstractMultiphase
     phases::P1
     physics_properties::P2
     alpha::S1
     alphaf::F1
     rho::S2
     rhof::F2
+    nu::S3
+    nuf::F3
 end
 Adapt.@adapt_structure Multiphase
 
@@ -286,6 +288,9 @@ function build_multiphase(phase_setups::Tuple{<:AbstractPhase, <:AbstractPhase},
 
     rho  = ScalarField(mesh)
     rhof = FaceScalarField(mesh)
+
+    nu  = ScalarField(mesh)
+    nuf = FaceScalarField(mesh)
     
-    Multiphase(phases=phases, physics_properties=built_properties, alpha=alpha, alphaf=alphaf, rho=rho, rhof=rhof)
+    Multiphase(phases=phases, physics_properties=built_properties, alpha=alpha, alphaf=alphaf, rho=rho, rhof=rhof, nu=nu, nuf=nuf)
 end
