@@ -40,6 +40,18 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         end
     end
 
+    @testset "Multiphase" begin
+
+        test_files = [
+            # to be filled
+        ]
+
+        for test ∈ test_files
+            test_path = joinpath(TEST_CASES_DIR, test)
+            include(test_path)
+        end
+    end
+
     @testset "Incompressible" begin
 
         test_files = [
