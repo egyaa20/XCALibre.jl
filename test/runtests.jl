@@ -43,7 +43,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
     @testset "Multiphase" begin
 
         test_files = [
-            # to be filled
+            "2d_multiphase_basic.jl",
         ]
 
         for test ∈ test_files
