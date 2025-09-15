@@ -1,28 +1,24 @@
 export multiphase!
-export construct_sources, update_sources!
-export blend_properties!
-
 
 function multiphase!(
     model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2)
-
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    )
 
     residuals = setup_multiphase_solvers(
         MULTIPHASE, model, config; 
         output=output,
-        pref=pref,
+        pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops
         )
-        
+
     return residuals
 end
 
-
 function setup_multiphase_solvers(
     solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) 
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -37,17 +33,14 @@ function setup_multiphase_solvers(
 
     backend = hardware.backend
     workgroup = hardware.workgroup
-
     mesh = model.domain
     isInit = true
-    
 
     @info "Pre-allocating fields..."
-    
+
     TF = _get_float(mesh)
     time = zero(TF) # assuming time=0
-
-
+    
     ∇p = Grad{schemes.p.gradient}(p)
     grad!(∇p, pf, p, boundaries.p, time, config)
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
@@ -55,19 +48,25 @@ function setup_multiphase_solvers(
     ∇U = Grad{schemes.U.gradient}(U)
     grad!(∇U, Uf, U, boundaries.U, time, config)
     limit_gradient!(schemes.U.limiter, ∇U, U, config)
+    
+    ∇alpha = Grad{schemes.alpha.gradient}(alpha)
+    grad!(∇alpha, alphaf, alpha, boundaries.alpha, time, config)
+    limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
 
-    phif = FaceScalarField(mesh)
     mdotf = FaceScalarField(mesh)
+    mdotf_VOF = FaceScalarField(mesh)
+    
+    rDf = FaceScalarField(mesh)
+    initialise!(rDf, 1.0)
     nueff = FaceScalarField(mesh)
+    divHv = ScalarField(mesh)
 
     interpolate!(alphaf, alpha, config)
 
     rho_l = phases[1].rho
+    rho_v = phases[2].rho
     rhof_l = FaceScalarField(mesh)
     interpolate!(rhof_l, rho_l, config)
-
-
-    flux!(phif, Uf, rhof_l, config)
 
 
     @info "Computing Fluid Properties..."
@@ -75,68 +74,47 @@ function setup_multiphase_solvers(
     phase_eos = [phases[1].eosModel, phases[2].eosModel]
 
     if typeof(model.energy) <: Nothing # Isothermal
-        T = ConstantScalar(273.0) # THIS PROBABLY NEEDS TO BE DEFINED BY USER! Redesign Isothermal Energy ?
+        Temp = ConstantScalar(298.0) # THIS PROBABLY NEEDS TO BE DEFINED BY USER! Redesign Isothermal Energy ?
     else
-        T = model.energy.T
+        Temp = model.energy.T
     end
 
-    update_phase_thermodynamics!(phase_eos[1], Val(1), nueff, T, model, config) # For 3+ phases can just wrap in a for loop
-    update_phase_thermodynamics!(phase_eos[2], Val(2), nueff, T, model, config)
+    update_phase_thermodynamics!(phase_eos[1], Val(1), nueff, Temp, model, config) # For 3+ phases can just wrap in a for loop
+    update_phase_thermodynamics!(phase_eos[2], Val(2), nueff, Temp, model, config)
 
     blend_properties!(rho, alpha, phases[1].rho, phases[2].rho)
     blend_viscosity!(alpha, phases, nu)
     interpolate!(rhof, rho, config)
     interpolate!(nuf, nu, config)
 
-    for property in props
-        update_extra_physics!(property, ∇U, model, config, isInit, 1.0, mesh) # currently computes v_pq and updates velocities in drift model
-    end
-
-    flux!(mdotf, Uf, rhof, config)
-
-    psi = ScalarField(mesh)
-    initialise!(psi, 1.0)
-
-    rhorDf = FaceScalarField(mesh)
-    initialise!(rhorDf, 1.0)
-
-    divHv = ScalarField(mesh)
-    div!(divHv, mdotf, config)
-
-
     @info "Defining models..."
+
+    for property in props
+        update_extra_physics!(property, ∇U, model, config, isInit, 1.0, mesh)
+    end
 
     zero_field = ConstantScalar(0.0)
 
+    momentum_rhs = - Src(∇p.result, 1)
+    momentum_rhs = construct_sources(model.momentum, momentum_rhs, model, props, alpha, rho, phases, config, mesh, time)
+    U_eqn = (
+        Time{schemes.U.time}(rho, U)
+        + Divergence{schemes.U.divergence}(mdotf, U) 
+        - Laplacian{schemes.U.laplacian}(nueff, U) 
+        == momentum_rhs
+    ) → VectorEquation(U, boundaries.U)
+
     alpha_rhs = - Src(zero_field, 1)
-    alpha_rhs = construct_sources(model.fluid, alpha_rhs, model, props, alpha, rho, phases, config, mesh)
-    
-    alpha_eqn = ( # Volume Fraction Transport Eqn
+    alpha_rhs = construct_sources(model.fluid, alpha_rhs, model, props, alpha, rho, phases, config, mesh, time)
+    alpha_eqn = (
         Time{schemes.alpha.time}(rho_l, alpha)
-        + Divergence{schemes.alpha.divergence}(phif, alpha)
+        + Divergence{schemes.alpha.divergence}(mdotf_VOF, alpha) 
         == alpha_rhs
     ) → ScalarEquation(alpha, boundaries.alpha)
-    
-
-    momentum_rhs = - Src(∇p.result, 1) # how do we update this term?
-    momentum_rhs = construct_sources(model.momentum, momentum_rhs, model, props, alpha, rho, phases, config, mesh)
-
-    U_eqn = ( # Momentum Eqn
-            Time{schemes.U.time}(rho, U)
-            + Divergence{schemes.U.divergence}(mdotf, U)
-            - Laplacian{schemes.U.laplacian}(nueff, U) #turbulence VS laminar ?
-            == momentum_rhs
-        ) → VectorEquation(U, boundaries.U)
-
 
     p_eqn = (
-       Time{schemes.p.time}(psi, p) # take psi (compressibility) from Helmholtz EoS if possible?
-      - Laplacian{schemes.p.laplacian}(rhorDf, p) # something to do with momentum - figure this out!
-      ==
-      - Source(divHv)
+        - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
     ) → ScalarEquation(p, boundaries.p)
-
-
 
     @info "Initialising preconditioners..."
 
@@ -145,62 +123,40 @@ function setup_multiphase_solvers(
     @reset alpha_eqn.preconditioner = set_preconditioner(solvers.alpha.preconditioner, alpha_eqn)
 
     @info "Pre-allocating solvers..."
-     
+
     @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
     @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
     @reset alpha_eqn.solver = _workspace(solvers.alpha.solver, _b(alpha_eqn))
 
-
     @info "Initialising turbulence model..."
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
-    # if typeof(model.energy) <: MultiphaseEnergy
-    #     @info "Initialising energy model..."
-
-    #     if typeof(model.turbulence) <: KOmega # DUMMY CHECK
-    #         nutf = model.turbulence.nutf
-    #     else
-    #         nutf = ConstantScalar(0.0)
-    #     end
-
-    #     # k_eff? dt ?
-    #     energyModel = initialise(model.energy, model, nutf, ∇p, config, mesh, 1.0) #ASSUME LEE MODEL IS TURNED ON
-    # else
-    #     energyModel = nothing
-    # end
-    energyModel = nothing
-
-    update_nueff!(nueff, nuf, model.turbulence, config)
-        
-
     residuals  = solver_variant(
-        model, turbulenceModel, energyModel, alpha_eqn, ∇p, ∇U, U_eqn, p_eqn, config;
+        model, turbulenceModel, ∇p, ∇U, ∇alpha, U_eqn, p_eqn, alpha_eqn, rho_l, rho_v, rhof_l, config; 
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops,
-        time, rhorDf, nueff, phif, mdotf, divHv
-        )
+        inner_loops=inner_loops)
 
-    return residuals    
+    return residuals
 end # end function
 
 
 
-
-
 function MULTIPHASE(
-    model, turbulenceModel, energyModel, alpha_eqn, ∇p, ∇U, U_eqn, p_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2,
-    time, rhorDf, nueff, phif, mdotf, divHv
+    model, turbulenceModel, ∇p, ∇U, ∇alpha, U_eqn, p_eqn, alpha_eqn, rho_l, rho_v, rhof_l, config; 
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
     
+    # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
     (; alpha, alphaf, rho, rhof, nu, nuf) = model.fluid
+    # (; nu) = model.fluid
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries) = config
-    (; iterations, write_interval, dt) = runtime
+    (; iterations, write_interval) = runtime
     (; backend) = hardware
+    
 
     phases = model.fluid.phases
     props = model.fluid.physics_properties
@@ -211,27 +167,29 @@ function MULTIPHASE(
     isInit = false
     phase_eos = [phases[1].eosModel, phases[2].eosModel]
 
-    mesh = model.domain
+    mdotf = get_flux(U_eqn, 2)
+    mdotf_VOF = get_flux(alpha_eqn, 2)
+    nueff = get_flux(U_eqn, 3)
+    rDf = get_flux(p_eqn, 1)
+    divHv = get_source(p_eqn, 1)
 
-
-    # Define aux fields 
-    # gradU = Grad{schemes.U.gradient}(U)
-    # gradUT = T(gradU) # HAVE NO CLUE WHY BUT IT DOESNT LIKE THIS LINE!
-    # S = StrainRate(gradU, gradUT, U, Uf)
-    
-    Hv = VectorField(mesh)
-
-
-    rD = ScalarField(mesh)
     outputWriter = initialise_writer(output, model.domain)
     
-    TF = _get_float(mesh)
+    @info "Allocating working memory..."
+
+    # Define aux fields 
+    gradU = Grad{schemes.U.gradient}(U)
+    gradUT = T(gradU)
+    S = StrainRate(gradU, gradUT, U, Uf)
 
     n_cells = length(mesh.cells)
-    n_faces = length(mesh.faces)
+    Hv = VectorField(mesh)
+    rD = ScalarField(mesh)
 
+    # Pre-allocate auxiliary variables
+    TF = _get_float(mesh)
+    # prev = _convert_array!(prev, backend) 
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
-    corr = KernelAbstractions.zeros(backend, TF, n_faces) 
 
     # Pre-allocate vectors to hold residuals 
     R_ux = ones(TF, iterations)
@@ -241,27 +199,36 @@ function MULTIPHASE(
     R_alpha = ones(TF, iterations)
     cellsCourant =adapt(backend, zeros(TF, length(mesh.cells)))
     
+    # Initial calculations
+    time = zero(TF) # assuming time=0
+    interpolate!(Uf, U, config)   
+    correct_boundaries!(Uf, U, boundaries.U, time, config)
+    flux!(mdotf, Uf, config)
+    grad!(∇p, pf, p, boundaries.p, time, config)
+    limit_gradient!(schemes.p.limiter, ∇p, p, config)
+
+
     #REWORK THIS BIT OF CODE!!!
 
     if typeof(model.energy) <: Nothing # Isothermal
-        T = ConstantScalar(273.0) # THIS PROBABLY NEEDS TO BE DEFINED BY USER! Redesign Isothermal Energy ?
+        Temp = ConstantScalar(298.0) # THIS PROBABLY NEEDS TO BE DEFINED BY USER! Redesign Isothermal Energy ?
     else
-        T = model.energy.T
+        Temp = model.energy.T
     end
 
-    xdir, ydir, zdir = XDir(), YDir(), ZDir()
+    update_nueff!(nueff, nuf, model.turbulence, config)
 
-    @info "Starting Multiphase Solver..."
+    @info "Starting [MultiPhase] loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
-    @time for iteration ∈ 1:iterations
-        time = iteration *dt
+    xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
-        ### [START] BEFORE PISO LOOPS
+    for iteration ∈ 1:iterations
+        time = iteration
 
-        update_phase_thermodynamics!(phase_eos[1], Val(1), nueff, T, model, config) # For 3+ phases can just wrap in a for loop
-        update_phase_thermodynamics!(phase_eos[2], Val(2), nueff, T, model, config)
+        update_phase_thermodynamics!(phase_eos[1], Val(1), nueff, Temp, model, config) # For 3+ phases can just wrap in a for loop
+        update_phase_thermodynamics!(phase_eos[2], Val(2), nueff, Temp, model, config)
 
         blend_properties!(rho, alpha, phases[1].rho, phases[2].rho)
         blend_viscosity!(alpha, phases, nu)
@@ -269,25 +236,20 @@ function MULTIPHASE(
         interpolate!(rhof, rho, config)
         interpolate!(nuf, nu, config)
 
+
         for property in props
             update_extra_physics!(property, ∇U, model, config, isInit, 1.0, mesh) # currently computes v_pq and updates velocities in drift model
         end
 
-        update_sources!(model.momentum, model, props, U_eqn, alpha, rho, phases, config, mesh)
-        update_sources!(model.fluid, model, props, alpha_eqn, alpha, rho, phases, config, mesh)
-        
-        ### [END] BEFORE PISO LOOPS
+        update_sources!(model.momentum, model, props, U_eqn, alpha, rho, phases, config, mesh, time)
+        update_sources!(model.fluid, model, props, alpha_eqn, alpha, rho, phases, config, mesh, time)
 
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
-
-
-
+          
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
-        interpolate!(rhorDf, rD, config)
-        @. rhorDf.values *= rhof.values
-
+        interpolate!(rDf, rD, config)
         remove_pressure_source!(U_eqn, ∇p, config)
         
         rp = 0.0
@@ -297,15 +259,8 @@ function MULTIPHASE(
             # Interpolate faces
             interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
             correct_boundaries!(Uf, Hv, boundaries.U, time, config)
-            # div!(divHv, Uf, config)
-
-            # old approach
-            @. corr = mdotf.values
+            
             flux!(mdotf, Uf, config)
-            @. mdotf.values *= rhof.values
-            @. corr -= mdotf.values
-            @. corr *= 0.0/runtime.dt # ??? huh
-            @. mdotf.values += rhorDf.values*corr/rhof.values # ??????
             div!(divHv, mdotf, config)
             
             # Pressure calculations (previous implementation)
@@ -320,51 +275,66 @@ function MULTIPHASE(
             grad!(∇p, pf, p, boundaries.p, time, config) 
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
-            if !isnothing(solvers.p.limit)
-                pmin = solvers.p.limit[1]; pmax = solvers.p.limit[2]
-                clamp!(p.values, pmin, pmax)
+            # nonorthogonal correction (experimental)
+            for i ∈ 1:ncorrectors
+                discretise!(p_eqn, p, config)       
+                apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
+                setReference!(p_eqn, pref, 1, config)
+                nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+                update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+                rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
+
+                if i == ncorrectors
+                    explicit_relaxation!(p, prev, 1.0, config)
+                else
+                    explicit_relaxation!(p, prev, solvers.p.relax, config)
+                end
+                grad!(∇p, pf, p, boundaries.p, time, config) 
+                limit_gradient!(schemes.p.limiter, ∇p, p, config)
             end
 
-            # new approach
-            interpolate!(Uf, U, config) # velocity from momentum equation
-
-            correct_boundaries!(Uf, U, boundaries.U, time, config)
-            flux!(mdotf, Uf, config)
-            correct_mass_flux(mdotf, p, rhorDf, config)
+            correct_mass_flux(mdotf, p, rDf, config)
             correct_velocity!(U, Hv, ∇p, rD, config)
-        end
 
-        
-        # turbulence!(turbulenceModel, model, S, prev, time, config)
+        end # corrector loop end
+    
 
+        interpolate!(rhof_l, rho_l, config)
+        turbulence!(turbulenceModel, model, S, prev, time, config) 
         update_nueff!(nueff, nuf, model.turbulence, config)
-        flux!(phif, Uf, config)
-        
 
+        @. mdotf_VOF.values = mdotf.values * (rhof_l.values/rhof.values)
+        
         ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
-        # @. alpha.values = clamp(alpha.values, 0.0, 1.0)
+        # @. alpha.values = clamp.(alpha.values, 0.0, 1.0)
         interpolate!(alphaf, alpha, config)
 
-
-        # if typeof(model.energy) <: MultiphaseEnergy
-        #     if typeof(model.turbulence) <: KOmega # DUMMY CHECK
-        #         nutf = model.turbulence.nutf
-        #     else
-        #         nutf = ConstantScalar(0.0)
-        #     end
-
-        #     # k_eff? dt ?
-        #     energy!(energyModel, model, energyModel.energy_eqn, nutf, ∇p, config, mesh, dt, time) #ASSUME LEE MODEL IS TURNED ON
-        # end
-
-
         maxCourant = max_courant_number!(cellsCourant, model, config)
-
         R_ux[iteration] = rx
         R_uy[iteration] = ry
         R_uz[iteration] = rz
         R_p[iteration] = rp
         R_alpha[iteration] = ralpha
+
+        Uz_convergence = true
+        if typeof(mesh) <: Mesh3
+            Uz_convergence = rz <= solvers.U.convergence
+        end
+
+        # if (R_ux[iteration] <= solvers.U.convergence && 
+        #     R_uy[iteration] <= solvers.U.convergence && 
+        #     Uz_convergence &&
+        #     R_p[iteration] <= solvers.p.convergence &&
+        #     turbulenceModel.state.converged)
+
+        #     progress.n = iteration
+        #     finish!(progress)
+        #     @info "Simulation converged in $iteration iterations!"
+        #     if !signbit(write_interval)
+        #         save_output(model, outputWriter, iteration, time, config)
+        #     end
+        #     break
+        # end
 
         ProgressMeter.next!(
             progress, showvalues = [
@@ -379,30 +349,35 @@ function MULTIPHASE(
                 ]
             )
 
-        if iteration%write_interval + signbit(write_interval) == 0
-            
+        if iteration%write_interval + signbit(write_interval) == 0      
             save_output(model, outputWriter, iteration, time, config)
         end
 
     end # end for loop
-
-    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p, alpha=R_alpha)
+    
+    return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end
 
 
-function construct_sources(model_specific, dummy_rhs, model, props, alpha, rho, phases, config, mesh)
+
+
+
+
+
+
+function construct_sources(model_specific, dummy_rhs, model, props, alpha, rho, phases, config, mesh, time)
 
     for (i, prop) in enumerate(props)
-        field, sign = update_source(model_specific, prop, model, alpha, rho, phases, config, mesh)
+        field, sign = update_source(model_specific, prop, model, alpha, rho, phases, config, mesh, time)
         dummy_rhs += Src(field, sign)
     end
 
     return dummy_rhs
 end
 
-function update_sources!(model_specific, model, props, eqn, alpha, rho, phases, config, mesh)
+function update_sources!(model_specific, model, props, eqn, alpha, rho, phases, config, mesh, time)
     for (i, prop) in enumerate(props)
-        field, sign = update_source(model_specific, prop, model, alpha, rho, phases, config, mesh)
+        field, sign = update_source(model_specific, prop, model, alpha, rho, phases, config, mesh, time)
 
         temp_field = get_source(eqn, i+1)
         temp_field = field
