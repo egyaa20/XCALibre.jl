@@ -41,6 +41,16 @@ end
     # 0.0, -ap*values[cellID] # try this
 end
 
+@define_boundary Extrapolated Divergence{CentralDifference} begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
+
+    # phi = term.phi 
+    # values = get_values(phi, component)
+    # 0.0, -ap*values[cellID] # try this
+end
+
 @define_boundary Extrapolated Divergence{Upwind} begin
     flux = term.flux[fID]
     ap = term.sign*(flux) 

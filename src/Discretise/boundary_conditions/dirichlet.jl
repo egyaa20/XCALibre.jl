@@ -30,6 +30,12 @@ end
     0.0, ap*bc.value
 end
 
+@define_boundary Dirichlet Divergence{CentralDifference} begin
+    flux = -term.flux[fID]
+    ap = term.sign*(flux)
+    0.0, ap*bc.value
+end
+
 @define_boundary Dirichlet Divergence{Upwind} begin
     flux = -term.flux[fID]
     ap = term.sign*(flux)
@@ -57,6 +63,12 @@ end
 end
 
 @define_boundary Dirichlet Divergence{Linear} VectorField begin
+    flux = -term.flux[fID]
+    ap = term.sign*(flux)
+    0.0, ap*bc.value[component.value]
+end
+
+@define_boundary Dirichlet Divergence{CentralDifference} VectorField begin
     flux = -term.flux[fID]
     ap = term.sign*(flux)
     0.0, ap*bc.value[component.value]

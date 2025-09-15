@@ -105,6 +105,24 @@ end
     0.0, 0.0
 end
 
+
+# CentralDifference
+@inline function scheme!(
+    term::Operator{F,P,I,Divergence{CentralDifference}}, 
+    nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
+    )  where {F,P,I}
+
+    ap = term.sign*(term.flux[fID]*ns)
+    ac = ap * 0.5
+    an = ap * 0.5
+    
+    return ac, an
+end
+@inline scheme_source!(
+    term::Operator{F,P,I,Divergence{CentralDifference}}, cell, cID, cIndex, prev, runtime) where {F,P,I} = begin
+    0.0, 0.0
+end
+
 # Upwind
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{Upwind}}, 

@@ -7,6 +7,8 @@ export BoundedUpwind
 export SteadyState, Euler, CrankNicolson
 export Gauss, Midpoint
 
+export CentralDifference # TESTING
+
 # SUPPORTED DISCRETISATION SCHEMES 
 
 abstract type AbstractScheme end
@@ -21,6 +23,7 @@ struct SteadyState <: AbstractScheme end
 struct Euler <: AbstractScheme end 
 struct CrankNicolson <: AbstractScheme end # not implemented yet
 
+struct CentralDifference <: AbstractScheme end # TESTING
 
 # SUPPORTED BOUNDARY CONDITIONS 
 

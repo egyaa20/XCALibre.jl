@@ -58,6 +58,10 @@ end
     0.0, 0.0
 end
 
+@define_boundary Wall Divergence{CentralDifference} VectorField begin # To-do refactor this code for reusability
+    0.0, 0.0
+end
+
 @define_boundary Wall Divergence{Upwind} VectorField begin
     0.0, 0.0
 end
@@ -84,6 +88,16 @@ end
 end
 
 @define_boundary Wall Divergence{Linear} ScalarField begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
+
+    # phi = term.phi 
+    # values = get_values(phi, component)
+    # 0.0, -ap*values[cellID] # try this
+end
+
+@define_boundary Wall Divergence{CentralDifference} ScalarField begin
     flux = term.flux[fID]
     ap = term.sign*(flux) 
     ap, 0.0 # original

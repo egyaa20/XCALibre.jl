@@ -62,6 +62,14 @@ end
     0.0, ap*h
 end
 
+@define_boundary FixedTemperature Divergence{CentralDifference} begin
+    (; T, energy_model) = bc.value
+    flux = term.flux[fID]
+    ap = term.sign*(-flux)
+    h = energy_model(T) # To do: find nicer way to accomplish this
+    0.0, ap*h
+end
+
 
 @define_boundary FixedTemperature Divergence{Upwind} begin
     (; T, energy_model) = bc.value

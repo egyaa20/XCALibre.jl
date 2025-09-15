@@ -228,6 +228,40 @@ end
     ac, -an*values[pcellID] # explicit this works
 end
 
+
+@define_boundary Union{PeriodicParent,Periodic} Divergence{CentralDifference} begin
+    phi = term.phi
+    mesh = phi.mesh 
+    (; faces, cells) = mesh
+    values = get_values(phi, component)
+
+    # determine id of periodic cell and interpolate face value
+    pfID = bc.value.face_map[i] # id of periodic face 
+    pface = faces[pfID]
+    pcellID = pface.ownerCells[1]
+
+
+    delta1 = face.delta
+    delta2 = pface.delta
+    delta = delta1 + delta2
+    
+    weight = delta2/delta
+    one_minus_weight = one(eltype(weight)) - weight
+
+    # Calculate ap value to increment
+    flux = term.flux[fID]
+    ap = term.sign*(flux)
+    ac = weight*ap
+    an = one_minus_weight*ap
+
+    # Playing with implicit version
+    # fzcellID = spindex(rowptr, colval, cellID, pcellID)
+    # nzval[fzcellID] = an
+    # ac, 0.0
+
+    ac, -an*values[pcellID] # explicit this works
+end
+
 @define_boundary Union{PeriodicParent,Periodic} Divergence{Upwind} begin
     phi = term.phi
     mesh = phi.mesh 

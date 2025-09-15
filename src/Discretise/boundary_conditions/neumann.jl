@@ -36,6 +36,12 @@ end
     ap = term.sign*(flux) 
     ap, -bc.value*ap*delta
 end
+@define_boundary Neumann Divergence{CentralDifference} ScalarField begin
+    flux = term.flux[fID]
+    (; area, delta) = face 
+    ap = term.sign*(flux) 
+    ap, -bc.value*ap*delta
+end
 
 @define_boundary Neumann Divergence{Upwind} ScalarField begin
     flux = term.flux[fID]

@@ -69,6 +69,18 @@ end
     0.0, 0.0 # try this
 end
 
+@define_boundary Empty Divergence{CentralDifference} begin
+    # flux = term.flux[fID]
+    # ap = term.sign*(flux) 
+    # ap, 0.0 # original
+
+    # # phi = term.phi 
+    # # values = get_values(phi, component)
+    # # 0.0, -ap*values[cellID] # try this
+
+    0.0, 0.0 # try this
+end
+
 @define_boundary Empty Divergence{Upwind} begin
     # flux = term.flux[fID]
     # ap = term.sign*(flux) 

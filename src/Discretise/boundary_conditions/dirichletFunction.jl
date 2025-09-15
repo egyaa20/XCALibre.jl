@@ -49,6 +49,13 @@ end
     0.0, ap*value
 end
 
+@define_boundary DirichletFunction Divergence{CentralDifference} begin
+    flux = -term.flux[fID]
+    ap = term.sign*(flux)
+    value = bc.value(face.centre, time, i)[component.value]
+    0.0, ap*value
+end
+
 @define_boundary DirichletFunction Divergence{Upwind} begin
     flux = -term.flux[fID]
     ap = term.sign*(flux)

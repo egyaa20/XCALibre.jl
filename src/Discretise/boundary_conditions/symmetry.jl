@@ -75,6 +75,12 @@ end
     ap, 0.0 # original
 end
 
+@define_boundary Symmetry Divergence{CentralDifference} ScalarField begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    ap, 0.0 # original
+end
+
 @define_boundary Symmetry Divergence{Upwind} ScalarField begin
     flux = term.flux[fID]
     ap = term.sign*(flux) 
@@ -88,6 +94,20 @@ end
 end
 
 @define_boundary Symmetry Divergence{Linear} VectorField begin
+    # 0.0, 0.0
+
+    (; normal) = face 
+    phi = term.phi
+    flux = term.flux[fID]
+    ap = term.sign*(flux) 
+    vc = phi[cellID]
+    vn = (vc⋅normal)*normal
+    # vp = vc - vn
+    ap, ap*vn[component.value]
+    # 0.0, ap*(vc[component.value] - vn[component.value])
+end
+
+@define_boundary Symmetry Divergence{CentralDifference} VectorField begin
     # 0.0, 0.0
 
     (; normal) = face 
