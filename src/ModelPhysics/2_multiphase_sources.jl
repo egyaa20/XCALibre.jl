@@ -45,16 +45,17 @@ function update_source(model_specific::AbstractMomentumModel, source::GravitySta
     initialise!(z, z0)
 
     rho_ref = ConstantScalar(1.225) # Prototyping
+    # rho_ref = min(phase1, phase2)
 
-    @. x.values = x.values * (rho.values - rho_ref.values)
-    @. y.values = y.values * (rho.values - rho_ref.values)
-    @. z.values = z.values * (rho.values - rho_ref.values)
+    # @. x.values = x.values * (rho.values - rho_ref.values)
+    # @. y.values = y.values * (rho.values - rho_ref.values)
+    # @. z.values = z.values * (rho.values - rho_ref.values)
 
-    # @. x.values = x.values * rho.values
-    # @. y.values = y.values * rho.values
-    # @. z.values = z.values * rho.values
+    @. x.values = x.values * rho.values
+    @. y.values = y.values * rho.values
+    @. z.values = z.values * rho.values
 
-    rhoG = VectorField(x, y, z, mesh) #should I create it by default?
+    rhoG = VectorField(x, y, z, mesh)
     
     return rhoG, 1 # Source, sign
 end

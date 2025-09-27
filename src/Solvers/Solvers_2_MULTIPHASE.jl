@@ -55,6 +55,8 @@ function setup_multiphase_solvers(
 
     mdotf = FaceScalarField(mesh)
     mdotf_VOF = FaceScalarField(mesh)
+    psi = ScalarField(mesh)
+    initialise!(psi, 1.0)
     
     rDf = FaceScalarField(mesh)
     initialise!(rDf, 1.0)
@@ -113,7 +115,10 @@ function setup_multiphase_solvers(
     ) → ScalarEquation(alpha, boundaries.alpha)
 
     p_eqn = (
-        - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
+        Time{schemes.p.time}(psi, p)
+        - Laplacian{schemes.p.laplacian}(rDf, p)
+        ==
+        - Source(divHv)
     ) → ScalarEquation(p, boundaries.p)
 
     @info "Initialising preconditioners..."
@@ -170,7 +175,8 @@ function MULTIPHASE(
     mdotf = get_flux(U_eqn, 2)
     mdotf_VOF = get_flux(alpha_eqn, 2)
     nueff = get_flux(U_eqn, 3)
-    rDf = get_flux(p_eqn, 1)
+    rDf = get_flux(p_eqn, 2)
+    # rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
     outputWriter = initialise_writer(output, model.domain)
@@ -275,23 +281,24 @@ function MULTIPHASE(
             grad!(∇p, pf, p, boundaries.p, time, config) 
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
-            # nonorthogonal correction (experimental)
-            for i ∈ 1:ncorrectors
-                discretise!(p_eqn, p, config)       
-                apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
-                setReference!(p_eqn, pref, 1, config)
-                nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
-                update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-                rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
 
-                if i == ncorrectors
-                    explicit_relaxation!(p, prev, 1.0, config)
-                else
-                    explicit_relaxation!(p, prev, solvers.p.relax, config)
-                end
-                grad!(∇p, pf, p, boundaries.p, time, config) 
-                limit_gradient!(schemes.p.limiter, ∇p, p, config)
-            end
+            # # nonorthogonal correction (experimental)
+            # for i ∈ 1:ncorrectors
+            #     discretise!(p_eqn, p, config)       
+            #     apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
+            #     setReference!(p_eqn, pref, 1, config)
+            #     nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+            #     update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+            #     rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
+
+            #     if i == ncorrectors
+            #         explicit_relaxation!(p, prev, 1.0, config)
+            #     else
+            #         explicit_relaxation!(p, prev, solvers.p.relax, config)
+            #     end
+            #     grad!(∇p, pf, p, boundaries.p, time, config) 
+            #     limit_gradient!(schemes.p.limiter, ∇p, p, config)
+            # end
 
             correct_mass_flux(mdotf, p, rDf, config)
             correct_velocity!(U, Hv, ∇p, rD, config)
@@ -306,7 +313,7 @@ function MULTIPHASE(
         @. mdotf_VOF.values = mdotf.values * (rhof_l.values/rhof.values)
         
         ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
-        # @. alpha.values = clamp.(alpha.values, 0.0, 1.0)
+        @. alpha.values = clamp.(alpha.values, 0.0, 1.0)
         interpolate!(alphaf, alpha, config)
 
         maxCourant = max_courant_number!(cellsCourant, model, config)
