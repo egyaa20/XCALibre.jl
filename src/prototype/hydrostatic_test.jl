@@ -1,13 +1,44 @@
 using XCALibre
 using CUDA
 
+function setField_Box!(; mesh, field, value::F, min_corner::V, max_corner::V) where {F <: AbstractFloat, V <: AbstractVector}
+
+    @assert length(min_corner) == 3 "`min_corner` must have exactly 3 elements"
+    @assert length(max_corner) == 3 "`max_corner` must have exactly 3 elements"
+
+    cells_in_region = Int[]
+    
+    for (id, cell) in enumerate(mesh.cells) #check that X, Y, Z coords are within the box
+        center = cell.centre
+        if (min_corner[1] <= center[1] <= max_corner[1] &&
+            min_corner[2] <= center[2] <= max_corner[2] &&
+            min_corner[3] <= center[3] <= max_corner[3])
+            
+            push!(cells_in_region, id)
+            # Warning: if outer cell boundary is outside the box but its centre is within the box, this cell will count too
+        end
+    end
+
+    if !isempty(cells_in_region)
+        field.values[cells_in_region] .= value # Reassign values inside the field
+    end
+    
+    return length(cells_in_region)
+end
+
+
+
+
+
+
+
 
 grids_dir = pkgdir(XCALibre, "src", "prototype", "polyMesh_pipe/")
 mesh = FOAM3D_mesh(grids_dir, scale=0.001)
 
 
-backend = CUDABackend(); workgroup = 32
-# backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -34,8 +65,8 @@ model = Physics(
             # Phase(eosModel=ConstEos(1.225), viscosityModel=ConstMu(1.8e-5)),        #vapour
             
         ),
-        # gravity = gravity,
-        csf = CSF(sigma=0.072),
+        gravity = gravity,
+        # csf = CSF(sigma=0.072),
         # artificialCompression = ArtificialCompression(compression_coeff=2.0)
     ),
     turbulence = RANS{Laminar}(),
@@ -63,8 +94,8 @@ BCs = assign(
     (
         U = [
             Wall(:wall, noSlipVelocity),
-            Dirichlet(:inlet_inner, [0.0, 0.0, inner_velocity]),
-            Dirichlet(:inlet_outer, [0.0, 0.0, outer_velocity]),
+            Dirichlet(:inlet_inner, [0.0, 0.0, 0.0]),
+            Dirichlet(:inlet_outer, [0.0, 0.0, 0.0]),
             Zerogradient(:outlet_inner),
             Zerogradient(:outlet_outer),
             Symmetry(:sym_1),
@@ -80,33 +111,21 @@ BCs = assign(
             Symmetry(:sym_2)
         ],
         alpha = [
-            Wall(:wall), # not sure..... Wall(:wall),
-            Dirichlet(:inlet_inner, inner_alpha),
-            Dirichlet(:inlet_outer, outer_alpha),
+            Wall(:wall),
+            Zerogradient(:inlet_inner),
+            Zerogradient(:inlet_outer),
             Zerogradient(:outlet_inner),
             Zerogradient(:outlet_outer),
             Symmetry(:sym_1),
             Symmetry(:sym_2)
-        ]#,
-
-        # T = [
-        #     Dirichlet(:wall, Temp),
-        #     Dirichlet(:inlet_inner, Temp),
-        #     Dirichlet(:inlet_outer, Temp),
-        #     Extrapolated(:outlet_inner),
-        #     Extrapolated(:outlet_outer),
-        #     Symmetry(:sym_1),
-        #     Symmetry(:sym_2)
-        # ]
+        ]
     )
 )
 
 schemes = (
-    U =     Schemes(time=Euler, divergence=Linear),
+    U =     Schemes(time=Euler, divergence=Upwind),
     p =     Schemes(time=Euler),
-    alpha = Schemes(time=Euler, divergence=Linear),
-
-    # T = Schemes(time=Euler, divergence=Upwind, laplacian=Linear)
+    alpha = Schemes(time=Euler, divergence=Upwind),
 )
 
 
@@ -119,8 +138,8 @@ solvers = (
         rtol = 1e-2
     ),
     p = SolverSetup(
-        solver      = Cg(), # Bicgstab(), Gmres(), Cg()
-        preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
+        solver      = Gmres(), # Bicgstab(), Gmres(), Cg()
+        preconditioner = DILU(), # IC0GPU, Jacobi, DILU
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 1e-3
@@ -135,7 +154,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=5000, time_step=1.0e-4, write_interval=1000)
+    iterations=1000, time_step=1.0e-6, write_interval=100)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -144,9 +163,13 @@ config = Configuration(
 
 GC.gc()
 
+
+
+
 # initialise!(model.momentum.p, operating_pressure) # GAUGE vs ABSOLUTE ?
 initialise!(model.momentum.p, operating_pressure)
-# initialise!(model.fluid.alpha, 1.0)
+initialise!(model.fluid.alpha, 0.0)
+setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[0.0, 0.0, 0.0], max_corner=[1.0,1.0,0.5])
 # initialise!(model.fluid.alpha, 1.0)
 
 
