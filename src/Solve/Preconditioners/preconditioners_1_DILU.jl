@@ -1,6 +1,6 @@
 import LinearAlgebra.ldiv!, LinearAlgebra.\
 
-export ldiv!
+export ldiv!, update_dilu_diagonal!
 
 function extract_diagonal!(D, Di, A::AbstractSparseArray, config)
     (; hardware) = config

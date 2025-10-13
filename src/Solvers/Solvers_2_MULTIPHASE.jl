@@ -313,7 +313,7 @@ function MULTIPHASE(
         @. mdotf_VOF.values = mdotf.values * (rhof_l.values/rhof.values)
         
         ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
-        @. alpha.values = clamp.(alpha.values, 0.0, 1.0) # required for schemes beyond upwind
+        # @. alpha.values = clamp.(alpha.values, 0.0, 1.0) # required for schemes beyond upwind
         interpolate!(alphaf, alpha, config)
 
         maxCourant = max_courant_number!(cellsCourant, model, config)
