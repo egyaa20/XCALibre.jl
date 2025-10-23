@@ -26,7 +26,7 @@ function setup_multiphase_solvers(
     @info "Extracting configuration and input fields..."
 
     (; U, p, Uf, pf) = model.momentum
-    (; alpha, alphaf, rho, rhof, nu, nuf) = model.fluid
+    (; alpha, alphaf, rho, rhof, nu, nuf, p_rgh, p_rghf) = model.fluid
 
     phases = model.fluid.phases
     props = model.fluid.physics_properties
@@ -41,9 +41,9 @@ function setup_multiphase_solvers(
     TF = _get_float(mesh)
     time = zero(TF) # assuming time=0
     
-    ∇p = Grad{schemes.p.gradient}(p)
-    grad!(∇p, pf, p, boundaries.p, time, config)
-    limit_gradient!(schemes.p.limiter, ∇p, p, config)
+    # ∇p = Grad{schemes.p.gradient}(p)
+    # grad!(∇p, pf, p, boundaries.p, time, config)
+    # limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
     ∇U = Grad{schemes.U.gradient}(U)
     grad!(∇U, Uf, U, boundaries.U, time, config)
@@ -56,7 +56,9 @@ function setup_multiphase_solvers(
     mdotf = FaceScalarField(mesh)
     mdotf_VOF = FaceScalarField(mesh)
     psi = ScalarField(mesh)
-    initialise!(psi, 1.0)
+    initialise!(psi, 0.0)
+    # initialise!(psi, 1.0)
+    # @. psi.values = 1e-8 * (1 + abs(alpha.values - 0.5))
     
     rDf = FaceScalarField(mesh)
     initialise!(rDf, 1.0)
@@ -95,49 +97,128 @@ function setup_multiphase_solvers(
         update_extra_physics!(property, ∇U, model, config, isInit, 1.0, mesh)
     end
 
+
+    ################### p_rgh
+    ################### p_rgh
+    ################### p_rgh
+
+    # p_rgh = ScalarField(mesh)
+    # p_rghf = FaceScalarField(mesh)
+    
+    ∇p_rgh = Grad{schemes.p_rgh.gradient}(p_rgh)
+    ∇p_rghf = FaceVectorField(mesh)
+    grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config)
+    limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
+    interpolate!(∇p_rghf, ∇p_rgh, config)
+
+    gh = model.fluid.physics_properties.gravity.gh
+    ghf = model.fluid.physics_properties.gravity.ghf
+    g = model.fluid.physics_properties.gravity.g
+    
+    ndrange = length(gh)
+    ndrangef = length(ghf)
+
+    kernel! = compute_gh!(_setup(backend, workgroup, ndrange)...)
+    kernel!(gh, g)
+    kernel! = compute_ghf!(_setup(backend, workgroup, ndrangef)...)
+    kernel!(ghf, g)
+    
+
+    ndrange = length(p_rgh)
+    ndrangef = length(p_rghf)
+
+    kernel! = compute_p_rgh!(_setup(backend, workgroup, ndrange)...)
+    kernel!(p_rgh, p, gh, rho)
+
+    kernel! = compute_p_rghf!(_setup(backend, workgroup, ndrangef)...)
+    kernel!(p_rghf, pf, ghf, rhof)
+
+
+
+
+    
+    phiHbyA = FaceScalarField(mesh)
+    # phi_g = ScalarField(mesh)
+    phi_gf = FaceScalarField(mesh)
+    phi_g_vector = VectorField(mesh)
+
+    
+    ∇rho = Grad{schemes.p.gradient}(rho)
+    ∇rhof = FaceVectorField(mesh)
+    grad!(∇rho, rhof, rho, time, config)
+    limit_gradient!(schemes.p.limiter, ∇rho, rho, config)
+    interpolate!(∇rhof, ∇rho, config)
+
+    # ndrange = length(phi_g)
+    # kernel! = compute_phi_g!(_setup(backend, workgroup, ndrangef)...)
+    # kernel!(phi_g, gh, ∇rho)
+    # interpolate!(phi_gf, phi_g, config)
+
+
+
+
+
+
+    ################### p_rgh
+    ################### p_rgh
+    ################### p_rgh
+
     zero_field = ConstantScalar(0.0)
 
-    momentum_rhs = - Src(∇p.result, 1)
+    # momentum_rhs = - Src(∇p.result, 1) # DEFAULT
+    momentum_rhs = - Src(∇p_rgh.result, 1)
     momentum_rhs = construct_sources(model.momentum, momentum_rhs, model, props, alpha, rho, phases, config, mesh, time)
     U_eqn = (
+        # Time{schemes.U.time}(ConstantScalar(0.0), U)
         Time{schemes.U.time}(rho, U)
         + Divergence{schemes.U.divergence}(mdotf, U) 
         - Laplacian{schemes.U.laplacian}(nueff, U) 
-        == momentum_rhs
+        # == momentum_rhs # -grad(p_rgh
+        ==
+        - Source(∇p_rgh.result)
+        - Source(phi_g_vector)
     ) → VectorEquation(U, boundaries.U)
 
     alpha_rhs = - Src(zero_field, 1)
     alpha_rhs = construct_sources(model.fluid, alpha_rhs, model, props, alpha, rho, phases, config, mesh, time)
     alpha_eqn = (
-        Time{schemes.alpha.time}(rho_l, alpha)
+        Time{schemes.alpha.time}(alpha)
         + Divergence{schemes.alpha.divergence}(mdotf_VOF, alpha) 
-        == alpha_rhs
+        # == alpha_rhs
+        == Source(ConstantScalar(0.0))
     ) → ScalarEquation(alpha, boundaries.alpha)
 
+    # p_eqn = (
+    #     Time{schemes.p.time}(psi, p)
+    #     - Laplacian{schemes.p.laplacian}(rDf, p)
+    #     ==
+    #     - Source(divHv)
+    # ) → ScalarEquation(p, boundaries.p)
+    
     p_eqn = (
-        Time{schemes.p.time}(psi, p)
-        - Laplacian{schemes.p.laplacian}(rDf, p)
+        # Time{schemes.p.time}(ConstantScalar(0.0), p_rgh)
+        - Laplacian{schemes.p.laplacian}(rDf, p_rgh)
         ==
         - Source(divHv)
-    ) → ScalarEquation(p, boundaries.p)
+    ) → ScalarEquation(p_rgh, boundaries.p_rgh)
 
     @info "Initialising preconditioners..."
 
     @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
-    @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
+    @reset p_eqn.preconditioner = set_preconditioner(solvers.p_rgh.preconditioner, p_eqn)
     @reset alpha_eqn.preconditioner = set_preconditioner(solvers.alpha.preconditioner, alpha_eqn)
 
     @info "Pre-allocating solvers..."
 
     @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
-    @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
+    @reset p_eqn.solver = _workspace(solvers.p_rgh.solver, _b(p_eqn))
     @reset alpha_eqn.solver = _workspace(solvers.alpha.solver, _b(alpha_eqn))
 
     @info "Initialising turbulence model..."
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-        model, turbulenceModel, ∇p, ∇U, ∇alpha, U_eqn, p_eqn, alpha_eqn, rho_l, rho_v, rhof_l, config; 
+        model, turbulenceModel, ∇U, ∇alpha, ∇p_rgh, ∇p_rghf, ∇rho, ∇rhof, phiHbyA, phi_gf, phi_g_vector, gh, ghf, psi, U_eqn, p_eqn, alpha_eqn, rho_l, rho_v, rhof_l, config; 
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
@@ -147,15 +228,116 @@ function setup_multiphase_solvers(
 end # end function
 
 
+@kernel inbounds=true function compute_gh!(gh, g)
+    i = @index(Global)
+
+    # h_ref = [0.0, 2.0, 0.0]
+    # c = gh.mesh.cells[i].centre
+    # gh[i] = g[2]*(c[2] - h_ref[2])
+
+
+    # gh[i] = dot(g, gh.mesh.cells[i].centre) - 2.0
+    gh[i] = dot(g, gh.mesh.cells[i].centre)
+end
+
+@kernel inbounds=true function compute_ghf!(ghf, g)
+    i = @index(Global)
+    # h_ref = [0.0, 2.0, 0.0]
+    # c = ghf.mesh.faces[i].centre
+    # ghf[i] = g[2]*(c[2] - h_ref[2])
+
+    # ghf[i] = dot(g, ghf.mesh.faces[i].centre) - 2.0
+    ghf[i] = dot(g, ghf.mesh.faces[i].centre)
+end
+
+@kernel inbounds=true function compute_p_rgh!(p_rgh, p, gh, rho)
+    i = @index(Global)
+
+    p_rgh[i] = p[i] - (rho[i] * gh[i])
+end
+
+@kernel inbounds=true function compute_p_rghf!(p_rghf, pf, ghf, rhof)
+    i = @index(Global)
+
+    p_rghf[i] = pf[i] - (rhof[i] * ghf[i])
+end
+
+
+function compute_phi_gf!(model, phi_gf, gh, ghf, rho, ∇rho, ∇rhof, rDf, phi_g_vector, config)
+    mesh = model.domain
+    (; faces, cells, boundary_cellsID) = mesh
+
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    
+    n_cells = length(cells)
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces
+
+    ndrange = n_ifaces
+    kernel! = _compute_phi_gf!(_setup(backend, workgroup, ndrange)...)
+    kernel!(phi_gf, gh, ghf, rho, ∇rho, ∇rhof, rDf, faces, cells, n_bfaces, phi_g_vector)
+
+    ndrange = n_cells
+    kernel! = _compute_phi_g_vector!(_setup(backend, workgroup, ndrange)...)
+    kernel!(gh, ∇rho, phi_g_vector)
+    
+end
+@kernel function _compute_phi_gf!(phi_gf, gh, ghf, rho, ∇rho, ∇rhof, rDf, faces, cells, n_bfaces, phi_g_vector)
+    i = @index(Global)
+    fID = i + n_bfaces
+    #correct boundary faces#correct boundary faces#correct boundary faces#correct boundary faces#correct boundary faces#correct boundary faces#correct boundary faces#correct boundary faces#correct boundary faces
+
+    @inbounds begin 
+        face = faces[fID]
+
+        (; area, normal, ownerCells, delta) = face 
+
+        # gradx = ∇rhof[fID].x
+        # grady = ∇rhof[fID].y
+        # gradz = ∇rhof[fID].z
+
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        rho1 = rho[cID1]
+        rho2 = rho[cID2]
+        # face_grad = area*(rho2 - rho1)/delta
+        # face_grad = area * (normal[1]*gradx + normal[2]*grady + normal[3]*gradz)
+
+
+        # TRY FLUX! 
+        face_grad = area*(rho2 - rho1)/delta #area
+
+
+        # face_grad = dot(normal, area*∇rhof[fID])
+
+        # grad_vector = area*∇rho.result[fID]
+        
+        phi_gf[fID] = -ghf[fID] * face_grad * rDf[fID] # Scalar
+        # phi_g_vector[fID] = -gh[fID] * grad_vector # Vector
+    end
+end
+
+@kernel function _compute_phi_g_vector!(gh, ∇rho, phi_g_vector)
+    i = @index(Global)
+
+    @inbounds begin 
+        
+        # reconstruction formulation?
+        phi_g_vector[i] = gh[i] * ∇rho.result[i] # Vector
+    end
+end
+
 
 function MULTIPHASE(
-    model, turbulenceModel, ∇p, ∇U, ∇alpha, U_eqn, p_eqn, alpha_eqn, rho_l, rho_v, rhof_l, config; 
+    model, turbulenceModel, ∇U, ∇alpha, ∇p_rgh, ∇p_rghf, ∇rho, ∇rhof, phiHbyA, phi_gf, phi_g_vector, gh, ghf, psi, U_eqn, p_eqn, alpha_eqn, rho_l, rho_v, rhof_l, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
     
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
-    (; alpha, alphaf, rho, rhof, nu, nuf) = model.fluid
+    (; alpha, alphaf, rho, rhof, nu, nuf, p_rgh, p_rghf) = model.fluid
     # (; nu) = model.fluid
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -175,8 +357,8 @@ function MULTIPHASE(
     mdotf = get_flux(U_eqn, 2)
     mdotf_VOF = get_flux(alpha_eqn, 2)
     nueff = get_flux(U_eqn, 3)
-    rDf = get_flux(p_eqn, 2)
-    # rDf = get_flux(p_eqn, 1)
+    # rDf = get_flux(p_eqn, 2)
+    rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
     outputWriter = initialise_writer(output, model.domain)
@@ -205,13 +387,16 @@ function MULTIPHASE(
     R_alpha = ones(TF, iterations)
     cellsCourant =adapt(backend, zeros(TF, length(mesh.cells)))
     
+
+    temp_field = FaceScalarField(mesh)
+
     # Initial calculations
     time = zero(TF) # assuming time=0
     interpolate!(Uf, U, config)   
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
-    grad!(∇p, pf, p, boundaries.p, time, config)
-    limit_gradient!(schemes.p.limiter, ∇p, p, config)
+    # grad!(∇p, pf, p, boundaries.p, time, config)
+    # limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
 
     #REWORK THIS BIT OF CODE!!!
@@ -224,7 +409,7 @@ function MULTIPHASE(
 
     update_nueff!(nueff, nuf, model.turbulence, config)
 
-    @info "Starting [MultiPhase] loops..."
+    @info "Starting MULTIPHASE loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
@@ -242,13 +427,14 @@ function MULTIPHASE(
         interpolate!(rhof, rho, config)
         interpolate!(nuf, nu, config)
 
+        # for property in props
+        #     update_extra_physics!(property, ∇U, model, config, isInit, 1.0, mesh) # currently computes v_pq and updates velocities in drift model
+        # end
 
-        for property in props
-            update_extra_physics!(property, ∇U, model, config, isInit, 1.0, mesh) # currently computes v_pq and updates velocities in drift model
-        end
+        # update_sources!(model.momentum, model, props, U_eqn, alpha, rho, phases, config, mesh, time)
+        # update_sources!(model.fluid, model, props, alpha_eqn, alpha, rho, phases, config, mesh, time)
 
-        update_sources!(model.momentum, model, props, U_eqn, alpha, rho, phases, config, mesh, time)
-        update_sources!(model.fluid, model, props, alpha_eqn, alpha, rho, phases, config, mesh, time)
+        # @. psi.values = 1e-8 * (1 + abs(alpha.values - 0.5))
 
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
@@ -256,7 +442,8 @@ function MULTIPHASE(
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
-        remove_pressure_source!(U_eqn, ∇p, config)
+        # remove_pressure_source!(U_eqn, ∇p, config)
+        remove_pressure_source!(U_eqn, ∇p_rgh, config)
         
         rp = 0.0
         for i ∈ 1:inner_loops
@@ -267,19 +454,42 @@ function MULTIPHASE(
             correct_boundaries!(Uf, Hv, boundaries.U, time, config)
             
             flux!(mdotf, Uf, config)
-            div!(divHv, mdotf, config)
+
+            grad!(∇rho, rhof, rho, time, config)
+            limit_gradient!(schemes.p_rgh.limiter, ∇rho, rho, config)
+            interpolate!(∇rhof, ∇rho, config)
+            compute_phi_gf!(model, phi_gf, gh, ghf, rho, ∇rho, ∇rhof, rDf, phi_g_vector, config)
+
+            # flux!(phi_gf, )
+
+
+
+            @. phiHbyA.values = mdotf.values + phi_gf.values
+            
+
+            
+            # div!(divHv, mdotf, config)
+            div!(divHv, phiHbyA, config)
+            
             
             # Pressure calculations (previous implementation)
-            @. prev = p.values
-            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref, time=time)
-            if i == inner_loops
-                explicit_relaxation!(p, prev, 1.0, config)
-            else
-                explicit_relaxation!(p, prev, solvers.p.relax, config)
-            end
+            # @. prev = p.values
+            @. prev = p_rgh.values
+            # rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref, time=time)
+            rp = solve_equation!(p_eqn, p_rgh, boundaries.p_rgh, solvers.p_rgh, config; ref=pref, time=time)
+            explicit_relaxation!(p_rgh, prev, 1.0, config)
+            # explicit_relaxation!(p, prev, 1.0, config)
+            # if i == inner_loops
+            #     explicit_relaxation!(p_rgh, prev, 1.0, config)
+            # else
+            #     explicit_relaxation!(p_rgh, prev, solvers.p.relax, config)
+            # end
 
-            grad!(∇p, pf, p, boundaries.p, time, config) 
-            limit_gradient!(schemes.p.limiter, ∇p, p, config)
+            interpolate!(p_rghf, p_rgh, config) #makes no difference with this line
+
+            grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config) 
+            limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
+            interpolate!(∇p_rghf, ∇p_rgh, config)
 
 
             # # nonorthogonal correction (experimental)
@@ -300,23 +510,83 @@ function MULTIPHASE(
             #     limit_gradient!(schemes.p.limiter, ∇p, p, config)
             # end
 
-            correct_mass_flux(mdotf, p, rDf, config)
-            correct_velocity!(U, Hv, ∇p, rD, config)
+            #phiHbyA 
+            # correct_mass_flux(mdotf, p_rgh, rDf, config)
+            # correct_mass_flux(phiHbyA, p_rgh, rDf, config)
+
+            
+            correct_mass_flux(phiHbyA, p_rgh, rDf, config)
+            # correct_velocity!(U, Hv, ∇p_rgh, rD, config)
+            correct_velocity_multiphase!(U, Hv, ∇p_rgh, ∇rho, gh, rD, phi_g_vector, config)
+            # correct_mass_flux_multiphase(mdotf, phiHbyA, phi_gf, p_rgh, ∇p_rghf, rDf, config)
+
+
+
+
+
+            # correct_mass_flux_multiphase(mdotf, phiHbyA, phi_gf, p_rgh, rDf, config)
+
+            # correct_mass_flux_rgh(mdotf, p_rgh, rhof, [0.0, -9.81, 0.0], rDf, config)
+
+
+            # correct_velocity_multiphase!(U, Hv, ∇p_rgh, rho, gh, rD, config)
+
+
+
+
 
         end # corrector loop end
+
+        
+        @. p.values = p_rgh.values + (rho.values * gh.values)
     
 
         interpolate!(rhof_l, rho_l, config)
         turbulence!(turbulenceModel, model, S, prev, time, config) 
         update_nueff!(nueff, nuf, model.turbulence, config)
 
-        @. mdotf_VOF.values = mdotf.values * (rhof_l.values/rhof.values)
+
+
+
+
+        # @. mdotf_VOF.values = phiHbyA.values
+        @. mdotf_VOF.values = phiHbyA.values / rhof.values
+
+        # @. mdotf_VOF.values = mdotf.values * (rhof_l.values/rhof.values)
+        # @. mdotf_VOF.values = phiHbyA.values / rhof.values
         
         ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
         # @. alpha.values = clamp.(alpha.values, 0.0, 1.0) # required for schemes beyond upwind
         interpolate!(alphaf, alpha, config)
 
+        alpha_vals = alpha.values
+        avg_alpha = sum(alpha_vals) / length(alpha_vals)
+
+        random_U = norm(U[5])
+        
         maxCourant = max_courant_number!(cellsCourant, model, config)
+
+        # checker = false
+        # if (checker == false) && (avg_alpha > 0.7)
+        #     println("[NO CONSERVATION of alpha] Time report: $(iteration*runtime.dt); iter: $iteration")
+        #     println("Alpha avg: $avg_alpha")
+        #     println("CFL $maxCourant")
+        #     checker = true
+        #     return
+        # end
+
+        # if random_U > 100
+        #     println("[NO CONSERVATION of U] Time report: $(iteration*runtime.dt); iter: $iteration")
+        #     println("U random: $random_U")
+        #     println("CFL $maxCourant")
+        #     checker = true
+        #     return
+        # end
+
+        if iteration == 9999 || iteration == 49999 || iteration == 99999
+            println("Avg alpha: $avg_alpha")
+        end
+
         R_ux[iteration] = rx
         R_uy[iteration] = ry
         R_uz[iteration] = rz
@@ -364,6 +634,100 @@ function MULTIPHASE(
     
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end
+
+
+
+## MASS FLUX CORRECTION
+
+
+function correct_mass_flux_multiphase(mdotf, phiHbyA, phi_gf, p_rgh, ∇p_rghf, rDf, config)
+    # sngrad = FaceScalarField(mesh)
+    (; faces, cells, boundary_cellsID) = mdotf.mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces
+
+    ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
+    kernel! = _correct_mass_flux_multiphase(_setup(backend, workgroup, ndrange)...)
+    kernel!(mdotf, phiHbyA, phi_gf, p_rgh, ∇p_rghf, rDf, faces, cells, n_bfaces)
+    # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _correct_mass_flux_multiphase(mdotf, phiHbyA, phi_gf, p_rgh, ∇p_rghf, rDf, faces, cells, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+
+    @inbounds begin 
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        p1 = p_rgh[cID1]
+        p2 = p_rgh[cID2]
+
+        # snGrad_p = area*(p2 - p1)/delta
+        # snGrad_p = area*∇p_rghf[fID]
+        snGrad_p = dot(normal, area*∇p_rghf[fID])
+
+
+        phiHbyA[fID] -= snGrad_p*rDf[fID]
+        mdotf[fID] = phiHbyA[fID]
+
+        # mdotf[fID] -= snGrad_p*rDf[fID]
+        # mdotf[fID] = phiHbyA[fID] - rDf[fID] * snGrad_p
+    end
+end
+
+
+
+## VELOCITY CORRECTION
+
+function correct_velocity_multiphase!(U, Hv, ∇p_rgh, rho, gh, rD, phi_g_vector, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    ndrange = length(U)
+    kernel! = _correct_velocity_multiphase!(_setup(backend, workgroup, ndrange)...)
+    kernel!(U, Hv, ∇p_rgh, rD, rho, gh, phi_g_vector)
+    # # KernelAbstractions.synchronize(backend)
+end
+@kernel function _correct_velocity_multiphase!(U, Hv, ∇p_rgh, rD, rho, gh, phi_g_vector)
+    i = @index(Global)
+
+    @uniform begin
+        Ux, Uy, Uz = U.x, U.y, U.z
+        Hvx, Hvy, Hvz = Hv.x, Hv.y, Hv.z
+        dpdx, dpdy, dpdz = ∇p_rgh.result.x, ∇p_rgh.result.y, ∇p_rgh.result.z
+        phi_g_x, phi_g_y, phi_g_z = phi_g_vector.x, phi_g_vector.y, phi_g_vector.z
+        rDvalues = rD.values
+        ghvalues = gh.values
+    end
+
+    @inbounds begin
+        rD_i = rDvalues[i]
+
+        Ux[i] = Hvx[i] + (phi_g_x[i] - dpdx[i]) * rD_i
+        Uy[i] = Hvy[i] + (phi_g_y[i] - dpdy[i]) * rD_i
+        Uz[i] = Hvz[i] + (phi_g_y[i] - dpdz[i]) * rD_i
+
+
+        # total_grad_x = dpdx[i] + phi_g_x[i]
+        # total_grad_y = dpdy[i] + phi_g_y[i]
+        # total_grad_z = dpdz[i] + phi_g_z[i]
+        
+        # Ux[i] = Hvx[i] - rD_i * total_grad_x
+        # Uy[i] = Hvy[i] - rD_i * total_grad_y
+        # Uz[i] = Hvz[i] - rD_i * total_grad_z
+    end
+end
+
+
+
+
+
 
 
 
@@ -819,4 +1183,48 @@ function max_field_value(field::VectorField)
     max_z = maximum(field.z.values)
 
     return SVector(max_x, max_y, max_z)
+end
+
+
+### p_rgh
+
+
+function correct_mass_flux_rgh(mdotf, p_rgh, rhof, g, rDf, config)
+    # sngrad = FaceScalarField(mesh)
+    (; faces, cells, boundary_cellsID) = mdotf.mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces
+
+    ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
+    kernel! = _correct_mass_flux_rgh(_setup(backend, workgroup, ndrange)...)
+    kernel!(mdotf, p_rgh, rhof, g, rDf, faces, cells, n_bfaces)
+    # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _correct_mass_flux_rgh(mdotf, p_rgh, rhof, g, rDf, faces, cells, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+
+    @inbounds begin 
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        p1 = p_rgh[cID1]
+        p2 = p_rgh[cID2]
+
+        
+        dynamic_grad_term = area * (p2 - p1) / delta
+
+        g_dot_n = g[1] * normal[1] + g[2] * normal[2] + g[3] * normal[3]
+        hydrostatic_grad_term = rhof[fID] * g_dot_n * area
+        
+        total_face_grad = dynamic_grad_term + hydrostatic_grad_term
+
+        mdotf[fID] -= total_face_grad * rDf[fID]
+    end
 end

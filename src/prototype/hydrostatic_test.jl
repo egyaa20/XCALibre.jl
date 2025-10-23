@@ -29,16 +29,19 @@ end
 
 
 
+# grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+# grid = "laplace_2d_mesh.unv"
+# mesh_file = joinpath(grids_dir, grid)
+# mesh = UNV2D_mesh(mesh_file) # scale????
 
 
 
+grids_dir = pkgdir(XCALibre, "src", "prototype", "polyMesh_hydrostatic/")
+mesh = FOAM3D_mesh(grids_dir)
 
-grids_dir = pkgdir(XCALibre, "src", "prototype", "polyMesh_pipe/")
-mesh = FOAM3D_mesh(grids_dir, scale=0.001)
 
-
-backend = CUDABackend(); workgroup = 32
-# backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
+# backend = CUDABackend(); workgroup = 32
+backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
@@ -47,7 +50,7 @@ noSlipVelocity = [0.0, 0.0, 0.0]
 
 
 
-gravity = Gravity([0.0, 0.0, -9.81])
+gravity = Gravity([0.0, -9.81, 0.0])
 
 # driftVelocity = DriftVelocity(
 #             gravity = gravity,
@@ -63,10 +66,10 @@ model = Physics(
     fluid = Fluid{Multiphase}(
         phases = (
             Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3)),       #liquid
-            Phase(eosModel=ConstEos(1.225), viscosityModel=ConstMu(1.8e-5)),        #vapour
+            Phase(eosModel=ConstEos(1.2), viscosityModel=ConstMu(1.8e-5)),        #vapour
+            # Phase(eosModel=ConstEos(1.225), viscosityModel=ConstMu(1.8e-5)),        #vapour
             # Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3)),       #liquid
             # Phase(eosModel=ConstEos(1.225), viscosityModel=ConstMu(1.8e-5)),        #vapour
-            
         ),
         gravity = gravity,
         # csf = CSF(sigma=0.072),
@@ -90,44 +93,60 @@ outer_alpha = 0.033
 # model.fluid.phases[1].eosModel = HelmholtzEnergy(name=H2(), interpolationMode=true)
 
 # operating_pressure = 3.0e4
+
 operating_pressure = 0.0
+
+
+
+############################################################
+
 
 BCs = assign(
     region = mesh_dev,
     (
         U = [
-            Wall(:wall, noSlipVelocity),
-            Dirichlet(:inlet_inner, [0.0, 0.0, 0.0]),
-            Dirichlet(:inlet_outer, [0.0, 0.0, 0.0]),
-            Zerogradient(:outlet_inner),
-            Zerogradient(:outlet_outer),
-            Symmetry(:sym_1),
-            Symmetry(:sym_2)
+            # Dirichlet(:left, [0.1, 0.0, 0.0]),
+            Symmetry(:left),
+            Symmetry(:right), #slip
+            # Zerogradient(:top), #pressureInletOutletVelocity 0 0 0
+            Dirichlet(:top, [0.0, 0.0, 0.0]), #dirichlet 0 0 0
+            Dirichlet(:bottom, [0.0, 0.0, 0.0]), #dirichlet 0 0 0
+            Empty(:frontAndBack)
         ],
         p = [
-            Wall(:wall),
-            Zerogradient(:inlet_inner),
-            Zerogradient(:inlet_outer),
-            Dirichlet(:outlet_inner, operating_pressure),
-            Dirichlet(:outlet_outer, operating_pressure),
-            Symmetry(:sym_1),
-            Symmetry(:sym_2)
+            # Zerogradient(:left), #Symmetry
+            Symmetry(:left), #Symmetry
+            Symmetry(:right), #Symmetry
+            Zerogradient(:bottom), #Zerogradient
+            Dirichlet(:top, 0.0), #Zerogradient
+            # Zerogradient(:top), #Zerogradient
+            Empty(:frontAndBack)
+        ],
+        p_rgh = [
+            # Zerogradient(:left), #Symmetry
+            Symmetry(:left), #Symmetry
+            Symmetry(:right), #Symmetry
+            Zerogradient(:bottom), #Zerogradient
+            Dirichlet(:top, 0.0), #Zerogradient
+            # Zerogradient(:top), #Zerogradient
+            Empty(:frontAndBack)
         ],
         alpha = [
-            Wall(:wall),
-            Zerogradient(:inlet_inner),
-            Zerogradient(:inlet_outer),
-            Zerogradient(:outlet_inner),
-            Zerogradient(:outlet_outer),
-            Symmetry(:sym_1),
-            Symmetry(:sym_2)
+            # Zerogradient(:left), #Symmetry
+            Symmetry(:left), #Symmetry
+            Symmetry(:right), #Symmetry
+            Zerogradient(:bottom), #Zerogradient
+            Zerogradient(:top),
+            Empty(:frontAndBack)
         ]
     )
 )
 
+
 schemes = (
     U =     Schemes(time=Euler, divergence=Upwind),
-    p =     Schemes(time=Euler),
+    p =     Schemes(time=Euler, gradient=Gauss),
+    p_rgh =     Schemes(time=Euler, gradient=Gauss),
     alpha = Schemes(time=Euler, divergence=Upwind),
 )
 
@@ -147,6 +166,13 @@ solvers = (
         relax       = 0.2,
         rtol = 1e-3
     ),
+    p_rgh = SolverSetup(
+        solver      = Cg(), # Bicgstab(), Gmres(), Cg()
+        preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
+        convergence = 1e-7,
+        relax       = 0.2,
+        rtol = 1e-3
+    ),
     alpha = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres(), Cg()
         preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
@@ -157,7 +183,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=200, time_step=1.0e-6, write_interval=50)
+    iterations=25, time_step=1.0e-4, write_interval=1)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -170,9 +196,10 @@ GC.gc()
 
 
 initialise!(model.momentum.p, operating_pressure)
+initialise!(model.momentum.U, noSlipVelocity) #?????
 
 initialise!(model.fluid.alpha, 0.0)
-setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[0.0, 0.0, 0.0], max_corner=[1.0,1.0,0.5])
+setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[-5.0, 0.0, -0.5], max_corner=[5.0,1.0,0.5])
 
 
 

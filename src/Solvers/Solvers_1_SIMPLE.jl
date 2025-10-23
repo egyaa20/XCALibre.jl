@@ -230,6 +230,12 @@ function SIMPLE(
         turbulence!(turbulenceModel, model, S, prev, time, config) 
         update_nueff!(nueff, nu, model.turbulence, config)
 
+        divU = ScalarField(mesh)
+        div!(divU, Uf, config)
+        @info "Mean div(U) = $(mean(abs.(divU.values)))"
+        # println(∇p.result[1])
+        # @info "Mean ∇p = $(mean(abs.(∇p.result)))"
+
         R_ux[iteration] = rx
         R_uy[iteration] = ry
         R_uz[iteration] = rz

@@ -110,7 +110,8 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
         ("U", model.momentum.U), 
         ("p", model.momentum.p),
         ("alpha", model.fluid.alpha),
-        ("rho", model.fluid.rho)
+        ("rho", model.fluid.rho),
+        ("p_rgh", model.fluid.p_rgh)
     )
 
     

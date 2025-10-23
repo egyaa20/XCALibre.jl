@@ -16,16 +16,23 @@ Base.@kwdef struct Drag_SchillerNaumann <: AbstractDrag end # not actually used 
 Base.@kwdef struct Gravity{V<:AbstractVector{<:AbstractFloat}} <: AbstractPhysicsProperty
     g::V
 end
-@kwdef struct GravityState{V<:AbstractVector{<:AbstractFloat}} <: AbstractPhysicsProperty
+@kwdef struct GravityState{V<:AbstractVector{<:AbstractFloat}, S1,F1} <: AbstractPhysicsProperty
     g::V
+    gh::S1
+    ghf::F1
 end
 Adapt.@adapt_structure GravityState
 
 function build_gravityModel(setup::Gravity, mesh)
+    gh = ScalarField(mesh)
+    ghf = FaceScalarField(mesh)
     return GravityState(
-        g=setup.g
+        g=setup.g,
+        gh=gh,
+        ghf=ghf
     )
 end
+
 function update_source(model_specific::AbstractFluid, source::GravityState, model, alpha, rho, phases, config, mesh, time) # alpha eqn
     return ConstantScalar(0.0), 1
 end
@@ -33,33 +40,62 @@ function update_source(model_specific::AbstractEnergyModel, source::GravityState
     return ConstantScalar(0.0), 1
 end
 function update_source(model_specific::AbstractMomentumModel, source::GravityState, model, alpha, rho, phases, config, mesh, time) # momentum eqn
-    g = source.g
+    (; solvers, schemes, runtime, hardware, boundaries) = config
 
-    x0, y0, z0 = g[1], g[2], g[3]
+    dummy_field = VectorField(mesh) # Poor solution, bad constantVector is not possible currently
+    return dummy_field, 1
     
-    x = ScalarField(mesh)
-    y = ScalarField(mesh)
-    z = ScalarField(mesh)
-    initialise!(x, x0)
-    initialise!(y, y0)
-    initialise!(z, z0)
+    # backend = config.hardware.backend
+    # workgroup = config.hardware.workgroup
 
-    rho_ref = ConstantScalar(1.225) # Prototyping
-    # rho_ref = min(phase1, phase2)
-
-    # @. x.values = x.values * (rho.values - rho_ref.values)
-    # @. y.values = y.values * (rho.values - rho_ref.values)
-    # @. z.values = z.values * (rho.values - rho_ref.values)
-
-    @. x.values = x.values * rho.values
-    @. y.values = y.values * rho.values
-    @. z.values = z.values * rho.values
-
-    rhoG = VectorField(x, y, z, mesh)
+    # rhof = model.fluid.rhof
+    # gh = model.fluid.physics_properties.gravity.gh
     
-    return rhoG, 1 # Source, sign
+    # ∇rho = Grad{schemes.p.gradient}(rho)
+    # grad!(∇rho, rhof, rho, time, config)
+    # limit_gradient!(schemes.p.limiter, ∇rho, rho, config)
+    
+    # rgh = VectorField(mesh)
+
+    # ndrange = length(rgh)
+    # kernel! = compute_rgh!(_setup(backend, workgroup, ndrange)...)
+    # kernel!(rgh, gh, ∇rho)
+    
+    # return rgh, -1 # Source, sign
+
+
+
+    # g = source.g
+
+    # x0, y0, z0 = g[1], g[2], g[3]
+    
+    # x = ScalarField(mesh)
+    # y = ScalarField(mesh)
+    # z = ScalarField(mesh)
+    # initialise!(x, x0)
+    # initialise!(y, y0)
+    # initialise!(z, z0)
+
+    # rho_ref = ConstantScalar(1.225) # Prototyping
+    # # rho_ref = min(phase1, phase2)
+
+    # # @. x.values = x.values * (rho.values - rho_ref.values)
+    # # @. y.values = y.values * (rho.values - rho_ref.values)
+    # # @. z.values = z.values * (rho.values - rho_ref.values)
+
+    # @. x.values = x.values * rho.values
+    # @. y.values = y.values * rho.values
+    # @. z.values = z.values * rho.values
+
+    # rhoG = VectorField(x, y, z, mesh)
+
+    # return rhoG, 1 # Source, sign
 end
+@kernel inbounds=true function compute_rgh!(rgh, gh, ∇rho)
+    i = @index(Global)
 
+    rgh[i] = gh[i] * ∇rho[i] # assuming gh would be negative to go down
+end
 
 Base.@kwdef struct CSF{T<:AbstractFloat} <: AbstractPhysicsProperty
     sigma::T

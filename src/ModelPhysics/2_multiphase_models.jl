@@ -259,6 +259,8 @@ end
     rhof::F2
     nu::S3
     nuf::F3
+    p_rgh::S1
+    p_rghf::F1
 end
 Adapt.@adapt_structure Multiphase
 
@@ -298,6 +300,9 @@ function build_multiphase(phase_setups::Tuple{<:AbstractPhase, <:AbstractPhase},
 
     nu  = ScalarField(mesh)
     nuf = FaceScalarField(mesh)
+
+    p_rgh  = ScalarField(mesh)
+    p_rghf = FaceScalarField(mesh)
     
-    Multiphase(phases=phases, physics_properties=built_properties, alpha=alpha, alphaf=alphaf, rho=rho, rhof=rhof, nu=nu, nuf=nuf)
+    Multiphase(phases=phases, physics_properties=built_properties, alpha=alpha, alphaf=alphaf, rho=rho, rhof=rhof, nu=nu, nuf=nuf, p_rgh=p_rgh, p_rghf=p_rghf)
 end

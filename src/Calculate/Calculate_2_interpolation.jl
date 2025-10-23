@@ -152,6 +152,38 @@ function interpolate!(psif::FaceVectorField, psi::VectorField, config)
     # # KernelAbstractions.synchronize(backend)
 end
 
+
+
+# GRAD INTERPOLATION
+function interpolate!(psif::FaceVectorField, psi::Grad, config)
+    # Extract x, y, z, values from FaceVectorField
+    (; mesh) = psif
+
+    #Redefine x, y, z values to be used in kernel
+    xf = psif.x
+    yf = psif.y
+    zf = psif.z
+
+    # Extract x, y, z, values from VectorField
+    psi = psi.result
+    xv = psi.x
+    yv = psi.y
+    zv = psi.z
+
+    #Extract faces array from mesh
+    faces = mesh.faces
+
+    # Launch interpolate kernel
+    # backend = _get_backend(mesh)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    ndrange = length(faces)
+    kernel! = interpolate_Vector!(_setup(backend, workgroup, ndrange)...)
+    kernel!(xv, yv, zv, xf, yf, zf, faces)
+    # # KernelAbstractions.synchronize(backend)
+end
+
+
 @kernel function interpolate_Vector!(@Const(xv), @Const(yv), @Const(zv), xf, yf, zf, @Const(faces))
     # Define index for thread
     i = @index(Global)
@@ -179,31 +211,42 @@ end
 
 # GRADIENT INTERPOLATION
 
-function interpolate!(
-    gradf::FaceVectorField, grad::Grad, phi
-    )
-    (; mesh, x, y, z) = gradf
-    (; cells, faces) = mesh
-    (; values) = phi
-    nbfaces = total_boundary_faces(mesh)
-    start = nbfaces + 1
-    @inbounds for fID ∈ start:length(faces)
-        face = faces[fID]
-        (; delta, ownerCells, e) = face
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        grad1 = grad(cID1)
-        grad2 = grad(cID2)
-        # get weight for current scheme
-        w, df = weight(get_scheme(grad), cells, faces, fID)
-        one_minus_weight = 1.0 - w
-        # calculate interpolated value
-        grad_ave = w*grad1 + one_minus_weight*grad2
-        # correct interpolation
-        grad_corr = grad_ave + ((values[cID2] - values[cID1])/delta - (grad_ave⋅e))*e
-        x[fID] = grad_corr[1]
-        y[fID] = grad_corr[2]
-        z[fID] = grad_corr[3]
-    end
-end
+
+
+# function interpolate!(
+#     gradf::FaceVectorField, grad::Grad, phi
+#     )
+#     (; mesh, x, y, z) = gradf
+#     (; cells, faces) = mesh
+#     (; values) = phi
+#     nbfaces = total_boundary_faces(mesh)
+#     start = nbfaces + 1
+
+#     grad_data = grad.result
+
+#     @inbounds for fID ∈ start:length(faces)
+#         face = faces[fID]
+#         (; delta, ownerCells, e) = face
+#         cID1 = ownerCells[1]
+#         cID2 = ownerCells[2]
+
+#         # grad1 = grad(cID1)
+#         # grad2 = grad(cID2)
+
+#         grad1 = grad_data[cID1]
+#         grad2 = grad_data[cID2]
+
+#         # get weight for current scheme
+#         # w, df = weight(get_scheme(grad), cells, faces, fID)
+#         w, df = weight(::Type{Linear}, cells, faces, fID)
+#         one_minus_weight = 1.0 - w
+#         # calculate interpolated value
+#         grad_ave = w*grad1 + one_minus_weight*grad2
+#         # correct interpolation
+#         grad_corr = grad_ave + ((values[cID2] - values[cID1])/delta - (grad_ave⋅e))*e
+#         x[fID] = grad_corr[1]
+#         y[fID] = grad_corr[2]
+#         z[fID] = grad_corr[3]
+#     end
+# end
 

@@ -256,3 +256,24 @@ function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs, time, config) where
         green_gauss!(grad, phif, config)
     end
 end
+
+# This calculates gradient for quantities without BCs
+
+function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, time, config) where {F,R,I,M}
+    # interpolate_midpoint!(phif, phi, config)
+    # correct_boundaries!(phif, phi, BCs, time, config)
+    green_gauss!(grad, phif, config)
+
+    # Loop to run correction and green-gauss required number of times over all dimensions
+    for i ∈ 1:2
+        correct_interpolation!(grad, phif, phi, config)
+        green_gauss!(grad, phif, config)
+    end
+end
+
+
+function grad!(grad::Grad{Gauss,F,R,I,M}, phif, phi, time, config) where {F,R<:VectorField,I,M}
+    # interpolate!(phif, phi, config)
+    # correct_boundaries!(phif, phi, BCs, time, config)
+    green_gauss!(grad, phif, config)
+end
