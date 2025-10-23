@@ -38,14 +38,16 @@ function setup_multiphase_solvers(
 
     TF = _get_float(mesh)
     time = zero(TF) # assuming time=0
+
     
-    ∇p_rgh = Grad{schemes.p_rgh.gradient}(p_rgh) # Define grad(p_rgh) 
-    grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config)
-    limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
+    # ∇p_rgh = Grad{schemes.p_rgh.gradient}(p_rgh) # Define grad(p_rgh) 
+    # grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config)
+    # limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
     
-    ∇rho = Grad{schemes.p_rgh.gradient}(rho)
-    grad!(∇rho, rhof, rho, time, config) # No BC given for this one
-    limit_gradient!(schemes.p_rgh.limiter, ∇rho, rho, config)
+    # ∇rho = Grad{schemes.p_rgh.gradient}(rho)
+    # grad!(∇rho, rhof, rho, time, config) # No BC given for this one
+    # limit_gradient!(schemes.p_rgh.limiter, ∇rho, rho, config)
+
 
     ∇U = Grad{schemes.U.gradient}(U)
     grad!(∇U, Uf, U, boundaries.U, time, config)
@@ -96,6 +98,16 @@ function setup_multiphase_solvers(
     compute_ghf!(ghf, g, config)
     compute_p_rgh!(p_rgh, gh, p, rho, config)
     compute_p_rghf!(p_rghf, ghf, pf, rhof, config)
+    
+    ∇p_rgh = Grad{schemes.p_rgh.gradient}(p_rgh) # Define grad(p_rgh) 
+    grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config)
+    limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
+    
+    ∇rho = Grad{schemes.p_rgh.gradient}(rho)
+    grad!(∇rho, rhof, rho, time, config) # No BC given for this one
+    limit_gradient!(schemes.p_rgh.limiter, ∇rho, rho, config)
+
+    phi_g!(phi_g, gh, ∇rho, config)
 
     @info "Defining models..."
 
@@ -334,8 +346,6 @@ function MULTIPHASE(
     interpolate!(Uf, U, config)   
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
-    grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config)
-    limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
 
     update_nueff!(nueff, nuf, model.turbulence, config)
 
@@ -356,6 +366,9 @@ function MULTIPHASE(
 
         interpolate!(rhof, rho, config)
         interpolate!(nuf, nu, config)
+
+        grad!(∇rho, rhof, rho, time, config)
+        limit_gradient!(schemes.p_rgh.limiter, ∇rho, rho, config)
 
         phi_g!(phi_g, gh, ∇rho, config)
 
@@ -380,8 +393,8 @@ function MULTIPHASE(
             
             
             flux!(mdotf, Uf, config)
-            div!(divHv, mdotf, config) #requires + phi_gf # [COMMENT OUT]
-            # div!(divHv, phiHbyA, config)
+            # div!(divHv, mdotf, config) #requires + phi_gf # [COMMENT OUT]
+            div!(divHv, phiHbyA, config)
             
             @. prev = p_rgh.values
             rp = solve_equation!(p_eqn, p_rgh, boundaries.p_rgh, solvers.p_rgh, config; ref=pref, time=time) # p_rghEqn.solve();
@@ -390,11 +403,11 @@ function MULTIPHASE(
             grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config) 
             limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
 
-            correct_mass_flux(mdotf, p_rgh, rDf, config) # phi = phiHbyA - p_rghEqn.flux(); # [COMMENT OUT]
-            # correct_mass_flux(phiHbyA, p_rgh, rDf, config)
+            # correct_mass_flux(mdotf, p_rgh, rDf, config) # phi = phiHbyA - p_rghEqn.flux(); # [COMMENT OUT]
+            correct_mass_flux(phiHbyA, p_rgh, rDf, config)
 
-            correct_velocity!(U, Hv, ∇p_rgh, rD, config) # U = HbyA + rAU()*fvc::reconstruct((phig - p_rghEqn.flux())/rAUf); # [COMMENT OUT]
-            # correct_velocity_multiphase!(U, Hv, ∇p_rgh, rD, phi_g, config)
+            # correct_velocity!(U, Hv, ∇p_rgh, rD, config) # U = HbyA + rAU()*fvc::reconstruct((phig - p_rghEqn.flux())/rAUf); # [COMMENT OUT]
+            correct_velocity_multiphase!(U, Hv, ∇p_rgh, rD, phi_g, config)
 
         end # corrector loop end
     

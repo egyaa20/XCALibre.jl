@@ -76,7 +76,7 @@ BCs = assign(
 schemes = (
     U =     Schemes(time=Euler, divergence=Upwind),
     p =     Schemes(time=Euler, gradient=Gauss),
-    p_rgh =     Schemes(time=Euler, gradient=Gauss),
+    p_rgh = Schemes(time=Euler, gradient=Gauss),
     alpha = Schemes(time=Euler, divergence=Upwind),
 )
 
@@ -106,7 +106,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=25, time_step=1.0e-4, write_interval=5)
+    iterations=25, time_step=1.0e-4, write_interval=1)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -119,7 +119,7 @@ initialise!(model.momentum.p, operating_pressure)
 initialise!(model.momentum.U, noSlipVelocity) #?????
 
 initialise!(model.fluid.alpha, 0.0)
-setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[-5.0, 0.0, -0.5], max_corner=[5.0,1.0,0.5])
+# setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[-5.0, 0.0, -0.5], max_corner=[5.0,1.0,0.5])
 
 
 
