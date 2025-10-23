@@ -250,7 +250,7 @@ end
 
 
 
-@kwdef struct Multiphase{P1,P2,S1,F1,S2,F2,S3,F3} <: AbstractMultiphase
+@kwdef struct Multiphase{P1,P2,S1,F1,S2,F2,S3,F3,S4,F4} <: AbstractMultiphase
     phases::P1
     physics_properties::P2
     alpha::S1
@@ -259,6 +259,8 @@ end
     rhof::F2
     nu::S3
     nuf::F3
+    p_rgh::S4
+    p_rghf::F4
 end
 Adapt.@adapt_structure Multiphase
 
@@ -298,6 +300,9 @@ function build_multiphase(phase_setups::Tuple{<:AbstractPhase, <:AbstractPhase},
 
     nu  = ScalarField(mesh)
     nuf = FaceScalarField(mesh)
+
+    p_rgh  = ScalarField(mesh)
+    p_rghf = FaceScalarField(mesh)
     
-    Multiphase(phases=phases, physics_properties=built_properties, alpha=alpha, alphaf=alphaf, rho=rho, rhof=rhof, nu=nu, nuf=nuf)
+    Multiphase(phases=phases, physics_properties=built_properties, alpha=alpha, alphaf=alphaf, rho=rho, rhof=rhof, nu=nu, nuf=nuf, p_rgh=p_rgh, p_rghf=p_rghf)
 end
