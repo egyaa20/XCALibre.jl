@@ -16,14 +16,20 @@ Base.@kwdef struct Drag_SchillerNaumann <: AbstractDrag end # not actually used 
 Base.@kwdef struct Gravity{V<:AbstractVector{<:AbstractFloat}} <: AbstractPhysicsProperty
     g::V
 end
-@kwdef struct GravityState{V<:AbstractVector{<:AbstractFloat}} <: AbstractPhysicsProperty
+@kwdef struct GravityState{V<:AbstractVector{<:AbstractFloat}, S1,F1} <: AbstractPhysicsProperty
     g::V
+    gh::S1
+    ghf::F1
 end
 Adapt.@adapt_structure GravityState
 
 function build_gravityModel(setup::Gravity, mesh)
+    gh = ScalarField(mesh)
+    ghf = FaceScalarField(mesh)
     return GravityState(
-        g=setup.g
+        g=setup.g,
+        gh=gh,
+        ghf=ghf
     )
 end
 function update_source(model_specific::AbstractFluid, source::GravityState, model, alpha, rho, phases, config, mesh, time) # alpha eqn
