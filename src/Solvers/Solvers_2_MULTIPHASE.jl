@@ -58,7 +58,11 @@ function setup_multiphase_solvers(
     limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
 
     mdotf = FaceScalarField(mesh)
-    mdotf_VOF = FaceScalarField(mesh) # mdotf / rhof for alpha eqn divergence
+    mdotf_VOF = FaceScalarField(mesh)
+
+    rhoPhi = FaceScalarField(mesh)
+    phi = FaceScalarField(mesh)
+
     
     rDf = FaceScalarField(mesh)
     initialise!(rDf, 1.0)
@@ -113,7 +117,7 @@ function setup_multiphase_solvers(
 
     U_eqn = (
         Time{schemes.U.time}(rho, U)
-        + Divergence{schemes.U.divergence}(mdotf, U) 
+        + Divergence{schemes.U.divergence}(rhoPhi, U)  #????????
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         == 
         - Source(∇p_rgh.result)
@@ -122,7 +126,7 @@ function setup_multiphase_solvers(
 
     alpha_eqn = (
         Time{schemes.alpha.time}(alpha)
-        + Divergence{schemes.alpha.divergence}(mdotf_VOF, alpha) 
+        + Divergence{schemes.alpha.divergence}(phi, alpha) 
         ==
         Source(ConstantScalar(0.0))
     ) → ScalarEquation(alpha, boundaries.alpha)
@@ -150,7 +154,7 @@ function setup_multiphase_solvers(
     turbulenceModel = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-        model, turbulenceModel, ∇p_rgh, ∇rho, ∇U, ∇alpha, U_eqn, p_eqn, phi_g, phi_gf, alpha_eqn, rho_l, rho_v, rhof_l, config; 
+        model, turbulenceModel, ∇p_rgh, ∇rho, ∇U, ∇alpha, U_eqn, p_eqn, phi, rhoPhi, phi_g, phi_gf, alpha_eqn, rho_l, rho_v, rhof_l, config; 
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
@@ -275,7 +279,7 @@ end
     rho1 = rho[cID1]
     rho2 = rho[cID2]
 
-    face_grad = area*(rho2 - rho1)/delta ######### TRY FLUX!
+    face_grad = area*(rho2 - rho1)/delta
 
     phi_gf[fID] = -ghf[fID] * face_grad * rDf[fID]
 end
@@ -283,7 +287,7 @@ end
 
 
 function MULTIPHASE(
-    model, turbulenceModel, ∇p_rgh, ∇rho, ∇U, ∇alpha, U_eqn, p_eqn, phi_g, phi_gf, alpha_eqn, rho_l, rho_v, rhof_l, config; 
+    model, turbulenceModel, ∇p_rgh, ∇rho, ∇U, ∇alpha, U_eqn, p_eqn, phi, rhoPhi, phi_g, phi_gf, alpha_eqn, rho_l, rho_v, rhof_l, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
     
@@ -326,6 +330,7 @@ function MULTIPHASE(
 
     n_cells = length(mesh.cells)
     Hv = VectorField(mesh)
+    Hvf = FaceVectorField(mesh)
     rD = ScalarField(mesh)
 
     # Pre-allocate auxiliary variables
@@ -345,7 +350,7 @@ function MULTIPHASE(
     time = zero(TF) # assuming time=0
     interpolate!(Uf, U, config)   
     correct_boundaries!(Uf, U, boundaries.U, time, config)
-    flux!(mdotf, Uf, config)
+    # flux!(mdotf, Uf, config)
 
     update_nueff!(nueff, nuf, model.turbulence, config)
 
@@ -383,16 +388,22 @@ function MULTIPHASE(
         rp = 0.0
         for i ∈ 1:inner_loops
             H!(Hv, U, U_eqn, config) #HbyA in OpenFOAM
+            interpolate!(Hvf, Hv, config)
             
             # Interpolate faces
             interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
             correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
-            phi_gf!(phi_gf, rho, ghf, rDf, model, config)
-            @. phiHbyA.values = mdotf.values + phi_gf.values
+            flux!(phiHbyA, Hvf, config)
+
+            phi_gf!(phi_gf, rho, ghf, rDf, model, config)            
+            flux!(phi_gf, config) #multiplies by area..... because if we multiply by normal then we get a vector...
             
+            # flux!(mdotf, Uf, config)
+            # flux!(phi_gf, config) #multiplies by area..... because if we multiply by normal then we get a vector...
             
-            flux!(mdotf, Uf, config)
+            @. phiHbyA.values += phi_gf.values
+
             # div!(divHv, mdotf, config) #requires + phi_gf # [COMMENT OUT]
             div!(divHv, phiHbyA, config)
             
@@ -404,7 +415,8 @@ function MULTIPHASE(
             limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
 
             # correct_mass_flux(mdotf, p_rgh, rDf, config) # phi = phiHbyA - p_rghEqn.flux(); # [COMMENT OUT]
-            correct_mass_flux(phiHbyA, p_rgh, rDf, config)
+            # correct_mass_flux(phiHbyA, p_rgh, rDf, config)
+            correct_mass_flux_multiphase(phi, phiHbyA, rhoPhi, rhof, p_rgh, rDf, config)
 
             # correct_velocity!(U, Hv, ∇p_rgh, rD, config) # U = HbyA + rAU()*fvc::reconstruct((phig - p_rghEqn.flux())/rAUf); # [COMMENT OUT]
             correct_velocity_multiphase!(U, Hv, ∇p_rgh, rD, phi_g, config)
@@ -417,12 +429,14 @@ function MULTIPHASE(
         # turbulence!(turbulenceModel, model, S, prev, time, config) # GIVES ERROR!!!
         update_nueff!(nueff, nuf, model.turbulence, config)
 
-        @. mdotf_VOF.values = mdotf.values / rhof.values
+        # @. mdotf_VOF.values = mdotf.values #/ rhof.values [We actually never used rho in flux....]
         
         ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
         interpolate!(alphaf, alpha, config)
 
         maxCourant = max_courant_number!(cellsCourant, model, config)
+        continuity_err!(rhof, Uf, model)
+
         R_ux[iteration] = rx
         R_uy[iteration] = ry
         R_uz[iteration] = rz
@@ -457,6 +471,41 @@ function MULTIPHASE(
 end
 
 
+
+function correct_mass_flux_multiphase(phi, phiHbyA, rhoPhi, rhof, p_rgh, rDf, config)
+    # sngrad = FaceScalarField(mesh)
+    (; faces, cells, boundary_cellsID) = rhof.mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces
+
+    ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
+    kernel! = _correct_mass_flux_multiphase(_setup(backend, workgroup, ndrange)...)
+    kernel!(phi, phiHbyA, rhoPhi, rhof, p_rgh, rDf, faces, cells, n_bfaces)
+    # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _correct_mass_flux_multiphase(phi, phiHbyA, rhoPhi, rhof, p_rgh, rDf, faces, cells, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+
+    @inbounds begin 
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        p1 = p_rgh[cID1]
+        p2 = p_rgh[cID2]
+        face_grad = area*(p2 - p1)/delta
+
+
+        phi[fID] = phiHbyA[fID] - face_grad*rDf[fID]
+        rhoPhi[fID] = phi[fID] * rhof[fID]
+    end
+end
 
 
 
@@ -493,6 +542,34 @@ end
 
 
 
+function continuity_err!(rhof, Uf, model)
+    mesh = model.domain
+    #total error ?
+    # define local error = dt * (div of flux)
+    # compute total error from locals
+
+    for (cell_id, cell) in enumerate(mesh.cells)
+        faces_range = cell.faces_range #???? mesh.cells[cell].faces_range
+
+        mdotf = 0.0
+
+        for faceID in faces_range
+            face = mesh.faces[faceID]
+            
+            rho_local = rhof[faceID]
+            U_local = Uf[faceID]
+
+            
+            (; area, normal) = face
+
+            mdotf += dot(U_local, rho_local * area * normal)
+        end
+
+        if mdotf > 1.0e-3
+            @warn "[CONTINUITY ERROR] at cell_ID=$cell_id >> mdtof_sum=$mdotf"
+        end
+    end
+end
 
 
 

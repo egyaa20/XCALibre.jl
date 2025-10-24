@@ -89,6 +89,31 @@ end
 end
 
 
+function flux!(phif::FS, config) where {FS<:FaceScalarField}
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    ndrange = length(phif)
+    kernel! = _flux_phi_only!(_setup(backend, workgroup, ndrange)...)
+    kernel!(phif)
+end
+@kernel function _flux_phi_only!(phif)
+    i = @index(Global)
+
+    @uniform begin
+        (; mesh, values) = phif
+        (; faces) = mesh
+    end
+
+    @inbounds begin
+        (; area, normal) = faces[i]
+        Sf = area #* normal
+        values[i] = values[i] * Sf
+    end
+end
+
+
+
 volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
 # INVERSE DIAGONAL CALCULATION
