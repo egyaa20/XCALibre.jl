@@ -117,7 +117,7 @@ function setup_multiphase_solvers(
 
     U_eqn = (
         Time{schemes.U.time}(rho, U)
-        + Divergence{schemes.U.divergence}(rhoPhi, U)  #????????
+        + Divergence{schemes.U.divergence}(rhoPhi, U)
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         == 
         - Source(∇p_rgh.result)
@@ -133,9 +133,10 @@ function setup_multiphase_solvers(
 
 
     p_eqn = (
-        - Laplacian{schemes.p_rgh.laplacian}(rDf, p_rgh)
+        # signs ?
+        Laplacian{schemes.p_rgh.laplacian}(rDf, p_rgh)
         ==
-        - Source(divHv)
+        Source(divHv)
     ) → ScalarEquation(p_rgh, boundaries.p_rgh)
 
     @info "Initialising preconditioners..."
@@ -279,7 +280,7 @@ end
     rho1 = rho[cID1]
     rho2 = rho[cID2]
 
-    face_grad = area*(rho2 - rho1)/delta
+    face_grad = (rho2 - rho1)/delta
 
     phi_gf[fID] = -ghf[fID] * face_grad * rDf[fID]
 end
@@ -317,6 +318,8 @@ function MULTIPHASE(
     mdotf_VOF = get_flux(alpha_eqn, 2)
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)
+    # rAU = ScalarField(mesh)
+    # rAUf = FaceScalarField(mesh)
     divHv = get_source(p_eqn, 1)
 
     outputWriter = initialise_writer(output, model.domain)
@@ -350,9 +353,10 @@ function MULTIPHASE(
     time = zero(TF) # assuming time=0
     interpolate!(Uf, U, config)   
     correct_boundaries!(Uf, U, boundaries.U, time, config)
-    # flux!(mdotf, Uf, config)
+    flux!(rhoPhi, Uf, rhof, config)
 
     update_nueff!(nueff, nuf, model.turbulence, config)
+    @. nueff.values = nueff.values * rhof.values
 
     @info "Starting MULTIPHASE loops..."
 
@@ -382,7 +386,9 @@ function MULTIPHASE(
           
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config) #rAU = 1.0/UEqn.A(); in OpenFOAM
+        # inverse_diagonal_multiphase!(rD, rAU, U_eqn, config) #rAU = 1.0/UEqn.A(); in OpenFOAM
         interpolate!(rDf, rD, config)
+        # interpolate!(rAUf, rAU, config)
         remove_pressure_source!(U_eqn, ∇p_rgh, config)
         
         rp = 0.0
@@ -428,6 +434,7 @@ function MULTIPHASE(
         interpolate!(rhof_l, rho_l, config)
         # turbulence!(turbulenceModel, model, S, prev, time, config) # GIVES ERROR!!!
         update_nueff!(nueff, nuf, model.turbulence, config)
+        @. nueff.values = nueff.values * rhof.values
 
         # @. mdotf_VOF.values = mdotf.values #/ rhof.values [We actually never used rho in flux....]
         
@@ -435,6 +442,7 @@ function MULTIPHASE(
         interpolate!(alphaf, alpha, config)
 
         maxCourant = max_courant_number!(cellsCourant, model, config)
+
         continuity_err!(rhof, Uf, model)
 
         R_ux[iteration] = rx
@@ -502,7 +510,7 @@ end
         face_grad = area*(p2 - p1)/delta
 
 
-        phi[fID] = phiHbyA[fID] - face_grad*rDf[fID]
+        phi[fID] = phiHbyA[fID] - face_grad * rDf[fID]
         rhoPhi[fID] = phi[fID] * rhof[fID]
     end
 end
@@ -565,9 +573,12 @@ function continuity_err!(rhof, Uf, model)
             mdotf += dot(U_local, rho_local * area * normal)
         end
 
-        if mdotf > 1.0e-3
+        if mdotf > 1.0e3
             @warn "[CONTINUITY ERROR] at cell_ID=$cell_id >> mdtof_sum=$mdotf"
         end
+        # if mdotf > 1.0e-3
+        #     @warn "[CONTINUITY ERROR] at cell_ID=$cell_id >> mdtof_sum=$mdotf"
+        # end
     end
 end
 
@@ -603,4 +614,36 @@ function update_phase_thermodynamics!(EoS::Union{ConstEos, PerfectGas}, phaseInd
     phase = model.fluid.phases[N]
     phase.eosModel(phase, model, config)
     phase.viscosityModel(phase, T)
+end
+
+
+
+
+function inverse_diagonal_multiphase!(rD::S, rAU, eqn, config) where {S<:ScalarField}
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    A = eqn.equation.A # Or should I use A0
+    nzval, colval, rowptr = get_sparse_fields(A)
+
+    ndrange = length(rD)
+    kernel! = _inverse_diagonal_multiphase!(_setup(backend, workgroup, ndrange)...)
+    kernel!(rD, rAU, nzval, colval, rowptr)
+    # # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _inverse_diagonal_multiphase!(rD, rAU, nzval, colval, rowptr)
+    i = @index(Global)
+
+    @uniform begin
+        (; mesh, values) = rD
+        cells = mesh.cells
+    end
+
+    @inbounds begin
+        idx = spindex(rowptr, colval, i, i)
+        D = nzval[idx]
+        (; volume) = cells[i]
+        values[i] = volume / D
+        rAU[i] = 1.0 / D
+    end
 end

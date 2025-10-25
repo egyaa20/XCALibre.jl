@@ -106,7 +106,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=250, time_step=1.0e-5, write_interval=10)
+    iterations=300, time_step=1.0e-5, write_interval=10)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -118,9 +118,9 @@ GC.gc()
 initialise!(model.momentum.p, operating_pressure)
 initialise!(model.momentum.U, noSlipVelocity) #?????
 
-initialise!(model.fluid.alpha, 0.0)
-setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[-5.0, 0.0, -0.5], max_corner=[5.0,1.0,0.5])
+initialise!(model.fluid.alpha, 1.0)
+# setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[-5.0, 0.0, -0.5], max_corner=[5.0,1.0,0.5])
 
 
 
-residuals = run!(model, config) 
+residuals = run!(model, config)
