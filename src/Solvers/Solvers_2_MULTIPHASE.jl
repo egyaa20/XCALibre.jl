@@ -333,11 +333,11 @@ end
 
         phi_gf[fID] = -ghf[fID] * face_grad * rDf[fID] #/ 2.5e-5
         if cID1==40 && fID==145
-            println("phi_gf = $(phi_gf[fID])")
-            println("ghf = $(ghf[fID])")
-            println("rho_face_grad = $(face_grad)")
-            println("p_rgh1 = $(model.fluid.p_rgh[cID1])")
-            println("p_rgh2 = $(model.fluid.p_rgh[cID2])")
+            # println("phi_gf = $(phi_gf[fID])")
+            # println("ghf = $(ghf[fID])")
+            # println("rho_face_grad = $(face_grad)")
+            # println("p_rgh1 = $(model.fluid.p_rgh[cID1])")
+            # println("p_rgh2 = $(model.fluid.p_rgh[cID2])")
         end
     end
 end
@@ -386,8 +386,7 @@ end
 
 
 
-function correct_mass_flux_multiphase(phi, phiHbyA, rhoPhi, rhof, p_rgh, rDf, config, model)
-    # sngrad = FaceScalarField(mesh)
+function correct_mass_flux_multiphase(phi, phiHbyA, rhoPhi, rhof, p_rgh, rDf, phi_gf, phi_force, config, model)
     (; faces, cells, boundary_cellsID) = rhof.mesh
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -396,13 +395,13 @@ function correct_mass_flux_multiphase(phi, phiHbyA, rhoPhi, rhof, p_rgh, rDf, co
     n_bfaces = length(boundary_cellsID)
     n_ifaces = n_faces - n_bfaces
 
-    ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
+    ndrange = n_ifaces 
     kernel! = _correct_mass_flux_multiphase(_setup(backend, workgroup, ndrange)...)
-    kernel!(phi, phiHbyA, rhoPhi, rhof, p_rgh, rDf, faces, cells, n_bfaces, model)
-    # KernelAbstractions.synchronize(backend)
+    kernel!(phi, phiHbyA, rhoPhi, rhof, p_rgh, rDf, phi_gf, phi_force, faces, cells, n_bfaces, model)
 end
 
-@kernel function _correct_mass_flux_multiphase(phi, phiHbyA, rhoPhi, rhof, p_rgh, rDf, faces, cells, n_bfaces, model)
+
+@kernel function _correct_mass_flux_multiphase(phi, phiHbyA, rhoPhi, rhof, p_rgh, rDf, phi_gf, phi_force,faces, cells, n_bfaces, model)
     i = @index(Global)
     fID = i + n_bfaces
 
@@ -411,26 +410,124 @@ end
         (; area, normal, ownerCells, delta) = face 
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
+        
+        
         p1 = p_rgh[cID1]
         p2 = p_rgh[cID2]
-        face_grad = area*(p2 - p1)/delta
 
-
-        phi[fID] = phiHbyA[fID] - (face_grad * rDf[fID])
-        rhoPhi[fID] = phi[fID] * rhof[fID]
+        e = cells[cID2].centre - cells[cID1].centre 
+        
+        Sf = area * normal 
+        
+        Ef = ((Sf ⋅ Sf) / (Sf ⋅ e)) * e
+        Ef_mag = norm(Ef)
+        D_f = rDf[fID] * Ef_mag / delta
+        
+        face_grad = (Ef_mag / delta) * (p2 - p1)
+        p_flux = face_grad * rDf[fID]
 
         
 
+        phi[fID] = phiHbyA[fID] - p_flux
+        rhoPhi[fID] = phi[fID] * rhof[fID]
+
+
+
+        phi_force[fID] = (phi_gf[fID] - p_flux)
+
+
+
         if cID1==40 && fID==145
-            println("CORRECTION >>>> p_flux: $(face_grad*rDf[fID])")
-            println("phiHbyA: $(phiHbyA[fID])")
-            println("rhoPhi: $(rhoPhi[fID])")
-            println("final phi: $(phi[fID])")
-            println("p_rgh1 = $(p1)")
-            println("p_rgh2 = $(p2)\n")
+            # println("CORRECTION >>>> p_flux: $(face_grad*rDf[fID])")
+            # println("phiHbyA: $(phiHbyA[fID])")
+            # println("rhoPhi: $(rhoPhi[fID])")
+            # println("final phi: $(phi[fID])")
+            # println("p_rgh1 = $(p1)")
+            # println("p_rgh2 = $(p2)\n")
         end
     end
 end
+
+
+function reconstruct_cell_field!(U_correction_term, phi_force, config, model)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    mesh = model.domain
+
+    ndrange = length(mesh.cells)
+    kernel! = _reconstruct_cell_field!(_setup(backend, workgroup, ndrange)...)
+    kernel!(U_correction_term, phi_force, mesh.faces, mesh.cells, mesh.cell_faces, mesh.cell_nsign)
+end
+@kernel function _reconstruct_cell_field!(U_corr, phi_force, faces, cells, cell_faces, cell_nsign)
+    i = @index(Global)
+
+    @inbounds begin
+        cell = cells[i]
+        faces_range = cell.faces_range
+        
+        sum_x = 0.0
+        sum_y = 0.0
+        sum_z = 0.0
+
+        for fi in faces_range
+            fID = cell_faces[fi]
+            face = faces[fID]
+            ns = cell_nsign[fi]
+            
+            area = face.area
+            Sf_x = area * face.normal.x * ns
+            Sf_y = area * face.normal.y * ns
+            Sf_z = area * face.normal.z * ns
+            
+            phi_f = phi_force[fID]
+            
+            sum_x += Sf_x * phi_f
+            sum_y += Sf_y * phi_f
+            sum_z += Sf_z * phi_f
+        end
+        
+        inv_vol = 1.0 / cell.volume
+        U_corr.x[i] = inv_vol * sum_x
+        U_corr.y[i] = inv_vol * sum_y
+        U_corr.z[i] = inv_vol * sum_z
+
+        if i==40
+            # println("Reconstruction.... Ucorr_x : $(U_corr.x[i]);   Ucorr_y : $(U_corr.y[i])")
+        end
+    end
+end
+
+
+
+# @kernel function _correct_mass_flux_multiphase(phi, phiHbyA, rhoPhi, rhof, p_rgh, rDf, faces, cells, n_bfaces, model)
+#     i = @index(Global)
+#     fID = i + n_bfaces
+
+#     @inbounds begin 
+#         face = faces[fID]
+#         (; area, normal, ownerCells, delta) = face 
+#         cID1 = ownerCells[1]
+#         cID2 = ownerCells[2]
+#         p1 = p_rgh[cID1]
+#         p2 = p_rgh[cID2]
+#         face_grad = area*(p2 - p1)/delta
+
+
+#         phi[fID] = phiHbyA[fID] - (face_grad * rDf[fID])
+#         rhoPhi[fID] = phi[fID] * rhof[fID]
+
+        
+
+#         if cID1==40 && fID==145
+#             println("CORRECTION >>>> p_flux: $(face_grad*rDf[fID])")
+#             println("phiHbyA: $(phiHbyA[fID])")
+#             println("rhoPhi: $(rhoPhi[fID])")
+#             println("final phi: $(phi[fID])")
+#             println("p_rgh1 = $(p1)")
+#             println("p_rgh2 = $(p2)\n")
+#         end
+#     end
+# end
 
 
 
@@ -460,6 +557,9 @@ function MULTIPHASE(
     gh = model.fluid.physics_properties.gravity.gh   # gh field
     ghf = model.fluid.physics_properties.gravity.ghf # ghf field
     phiHbyA = FaceScalarField(mesh) # used for p_eqn divergence as mdotf+phi_g
+
+    phi_force = FaceScalarField(mesh) #phig - p_rghEqn.flux())/rAUf for reconstruct function
+    U_correction_term = VectorField(mesh)
     
     phase_eos = [phases[1].eosModel, phases[2].eosModel]
 
@@ -543,17 +643,17 @@ function MULTIPHASE(
         rp = 0.0
         for i ∈ 1:inner_loops
             H!(Hv, U, U_eqn, config) #HbyA in OpenFOAM
-            println("[HbyA was just calculated] => $(Hv[40])")
+            # println("[HbyA was just calculated] => $(Hv[40])")
             interpolate!(Hvf, Hv, config)
-            println("[HbyAf was just interpolated] => $(Hvf[145])")
+            # println("[HbyAf was just interpolated] => $(Hvf[145])")
             
             # Interpolate faces
             interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
             correct_boundaries!(Uf, Hv, boundaries.U, time, config)
-            println("[Uf boundaries corrected] => $(Uf[145])")
+            # println("[Uf boundaries corrected] => $(Uf[145])")
 
             flux!(phiHbyA, Hvf, config)
-            println("[thus flux for phiHbyA] => $(phiHbyA[145])")
+            # println("[thus flux for phiHbyA] => $(phiHbyA[145])")
 
             phi_gf!(phi_gf, rho, ghf, rDf, model, config)            
             # flux!(phi_gf, config) #multiplies by area..... because if we multiply by normal then we get a vector...
@@ -570,17 +670,19 @@ function MULTIPHASE(
             correct_boundaries!(p_rghf, p_rgh, boundaries.p_rgh, time, config)
             rp = solve_equation!(p_eqn, p_rgh, boundaries.p_rgh, solvers.p_rgh, config; ref=pref, time=time) # p_rghEqn.solve();
             explicit_relaxation!(p_rgh, prev, solvers.p_rgh.relax, config)
+            correct_boundaries!(p_rghf, p_rgh, boundaries.p_rgh, time, config)
 
             grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config) 
             limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
 
             # correct_mass_flux(mdotf, p_rgh, rDf, config) # phi = phiHbyA - p_rghEqn.flux(); # [COMMENT OUT]
             # correct_mass_flux(phiHbyA, p_rgh, rDf, config)
-            correct_mass_flux_multiphase(phi, phiHbyA, rhoPhi, rhof, p_rgh, rDf, config, model)
+            correct_mass_flux_multiphase(phi, phiHbyA, rhoPhi, rhof, p_rgh, rDf, phi_gf, phi_force, config, model)
+            reconstruct_cell_field!(U_correction_term, phi_force, config, model)
             # explicit_relaxation!(p_rgh, prev, 0.2, config)
 
             # correct_velocity!(U, Hv, ∇p_rgh, rD, config) # U = HbyA + rAU()*fvc::reconstruct((phig - p_rghEqn.flux())/rAUf); # [COMMENT OUT]
-            correct_velocity_multiphase!(U, Hv, ∇p_rgh, rD, phi_g, config)
+            correct_velocity_multiphase!(U, Hv, ∇p_rgh, rD, phi_g, U_correction_term, config)
 
         end # corrector loop end
     
@@ -647,16 +749,16 @@ end
 
 
 
-function correct_velocity_multiphase!(U, Hv, ∇p_rgh, rD, phi_g, config)
+function correct_velocity_multiphase!(U, Hv, ∇p_rgh, rD, phi_g, U_correction_term, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     ndrange = length(U)
     kernel! = _correct_velocity_multiphase!(_setup(backend, workgroup, ndrange)...)
-    kernel!(U, Hv, ∇p_rgh, rD, phi_g)
+    kernel!(U, Hv, ∇p_rgh, rD, phi_g, U_correction_term)
 end
 
-@kernel function _correct_velocity_multiphase!(U, Hv, ∇p_rgh, rD, phi_g)
+@kernel function _correct_velocity_multiphase!(U, Hv, ∇p_rgh, rD, phi_g, U_correction_term)
     i = @index(Global)
 
     @uniform begin
@@ -664,27 +766,37 @@ end
         Hvx, Hvy, Hvz = Hv.x, Hv.y, Hv.z
         dpdx, dpdy, dpdz = ∇p_rgh.result.x, ∇p_rgh.result.y, ∇p_rgh.result.z
         phi_g_x, phi_g_y, phi_g_z = phi_g.x, phi_g.y, phi_g.z
+        U_corr_x, U_corr_y, U_corr_z = U_correction_term.x, U_correction_term.y, U_correction_term.z
         rDvalues = rD.values
     end
 
     @inbounds begin
         rD_i = rDvalues[i]
 
-        x_diff = (phi_g_x[i] - dpdx[i]) * rD_i
-        y_diff = (phi_g_y[i] - dpdy[i]) * rD_i
-        z_diff = (phi_g_z[i] - dpdz[i]) * rD_i
 
-        Ux[i] = Hvx[i] + x_diff
-        Uy[i] = Hvy[i] + y_diff
-        Uz[i] = Hvz[i] + z_diff
 
-        if i==40
-            println("velocity correction, this term should be zero (x): $(x_diff) and this one too (y): $(y_diff)")
-            println("dpdx: $(dpdx[i]) ; dpdy: $(dpdy[i])")
-            println("phi_gx: $(phi_g_x[i]); phi_gy: $(phi_g_y[i])")
-            println("dpdx*rD: $(dpdx[i]*rD_i) ; dpdy*rD: $(dpdy[i]*rD_i)")
-            println("(x) phi-dpdx = $(x_diff) ; (y) phi-dpdy = $(y_diff)\n---------------\n")
-        end
+        # 1) phi_g => phi_gf
+        # 2) dpdx => p_flux
+        # 3) rD => rDf
+
+        # x_diff = (phi_g_x[i] - dpdx[i]) * rD_i
+        # y_diff = (phi_g_y[i] - dpdy[i]) * rD_i
+        # z_diff = (phi_g_z[i] - dpdz[i]) * rD_i
+
+        
+        # Ux[i] = Hvx[i] + x_diff
+        # Uy[i] = Hvy[i] + y_diff
+        # Uz[i] = Hvz[i] + z_diff
+
+        Ux[i] = Hvx[i] + U_corr_x[i] * rD_i
+        Uy[i] = Hvy[i] + U_corr_y[i] * rD_i
+        Uz[i] = Hvz[i] + U_corr_z[i] * rD_i
+
+        # if i==40
+        #     println("U_corr_x: $(U_corr_x[i]);    U_corr_y: $(U_corr_y[i])")
+        #     println("Hvx: $(Hvx[i]);    Hvy: $(Hvy[i])")
+        #     println("U_corr_x*rDf: $(U_corr_x[i] * rD_i);    U_corr_y*rDf: $(U_corr_y[i] * rD_i)")
+        # end
     end
 end
 

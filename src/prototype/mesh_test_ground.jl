@@ -1,15 +1,15 @@
 using XCALibre
 using CUDA
-1
-grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "laplace_2d_mesh.unv"
+
+# grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+# # grid = "laplace_2d_mesh.unv"
 # grid = "finer_mesh_laplace.unv"
-mesh_file = joinpath(grids_dir, grid)
-mesh = UNV2D_mesh(mesh_file)
+# mesh_file = joinpath(grids_dir, grid)
+# mesh = UNV2D_mesh(mesh_file)
 
 
-# grids_dir = pkgdir(XCALibre, "src", "prototype", "polyMesh_hydrostatic/")
-# mesh = FOAM3D_mesh(grids_dir)
+grids_dir = pkgdir(XCALibre, "src", "prototype", "polyMesh_hydrostatic/")
+mesh = FOAM3D_mesh(grids_dir)
 
 
 # backend = CUDABackend(); workgroup = 32
@@ -46,44 +46,88 @@ operating_pressure = 0.0
 ############################################################
 
 
+# BCs = assign(
+#     region = mesh_dev,
+#     (
+#         U = [
+#             Zerogradient(:left_wall),
+#             # Dirichlet(:left_wall, [0.001, 0.0, 0.0]),
+#             Zerogradient(:right_wall), #slip
+#             # Zerogradient(:top), #pressureInletOutletVelocity 0 0 0
+#             Zerogradient(:upper_wall), #dirichlet 0 0 0
+#             Wall(:bottom_wall, [0.0, 0.0, 0.0]), #dirichlet 0 0 0
+#             # Empty(:frontAndBack)
+#         ],
+#         p_rgh = [
+#             # Zerogradient(:left), #Symmetry
+#             Zerogradient(:left_wall), #Symmetry
+#             Zerogradient(:right_wall), #Symmetry
+#             Zerogradient(:bottom_wall), #Zerogradient
+#             Dirichlet(:upper_wall, 0.0), #Zerogradient
+#             # Zerogradient(:upper_wall), #Zerogradient
+#             # Empty(:frontAndBack)
+#         ],
+#         alpha = [
+#             # Zerogradient(:left), #Symmetry
+#             Zerogradient(:left_wall), #Symmetry
+#             Zerogradient(:right_wall), #Symmetry
+#             Zerogradient(:bottom_wall), #Zerogradient
+#             Dirichlet(:upper_wall, 0.0),
+#             # Empty(:frontAndBack)
+#         ]
+#     )
+# )
+
+
+
+
+
+
+
 BCs = assign(
     region = mesh_dev,
     (
         U = [
-            Zerogradient(:left_wall),
+            # Zerogradient(:left),
             # Dirichlet(:left_wall, [0.001, 0.0, 0.0]),
-            Zerogradient(:right_wall), #slip
+            # Zerogradient(:right), #slip
             # Zerogradient(:top), #pressureInletOutletVelocity 0 0 0
-            Zerogradient(:upper_wall), #dirichlet 0 0 0
-            Wall(:bottom_wall, [0.0, 0.0, 0.0]), #dirichlet 0 0 0
-            # Empty(:frontAndBack)
+            # Zerogradient(:top), #dirichlet 0 0 0
+            Wall(:left, [0.0, 0.0, 0.0]), #dirichlet 0 0 0
+            Wall(:right, [0.0, 0.0, 0.0]), #dirichlet 0 0 0
+            Zerogradient(:top), #dirichlet 0 0 0
+            Wall(:bottom, [0.0, 0.0, 0.0]), #dirichlet 0 0 0
+            Empty(:frontAndBack)
         ],
         p_rgh = [
             # Zerogradient(:left), #Symmetry
-            Zerogradient(:left_wall), #Symmetry
-            Zerogradient(:right_wall), #Symmetry
-            Zerogradient(:bottom_wall), #Zerogradient
-            Dirichlet(:upper_wall, 0.0), #Zerogradient
+            Zerogradient(:left), #Symmetry
+            Zerogradient(:right), #Symmetry
+            Zerogradient(:bottom), #Zerogradient
+            Dirichlet(:top, 11.76), #Zerogradient
+            # Zerogradient(:top), #Zerogradient
             # Zerogradient(:upper_wall), #Zerogradient
-            # Empty(:frontAndBack)
+            Empty(:frontAndBack)
         ],
         alpha = [
             # Zerogradient(:left), #Symmetry
-            Zerogradient(:left_wall), #Symmetry
-            Zerogradient(:right_wall), #Symmetry
-            Zerogradient(:bottom_wall), #Zerogradient
-            Dirichlet(:upper_wall, 0.0),
-            # Empty(:frontAndBack)
+            Zerogradient(:left), #Symmetry
+            Zerogradient(:right), #Symmetry
+            Zerogradient(:bottom), #Zerogradient
+            Zerogradient(:top), #Zerogradient
+            Empty(:frontAndBack)
         ]
     )
 )
 
 
+
+
 schemes = (
-    U =     Schemes(time=Euler, divergence=Upwind),
-    p =     Schemes(time=Euler, gradient=Midpoint),
-    p_rgh = Schemes(time=Euler, gradient=Midpoint),
-    alpha = Schemes(time=Euler, divergence=Upwind),
+    U =     Schemes(time=Euler, divergence=Upwind, laplacian=Linear),
+    p =     Schemes(time=Euler, gradient=Midpoint, laplacian=Linear),
+    p_rgh = Schemes(time=Euler, gradient=Midpoint, laplacian=Linear),
+    alpha = Schemes(time=Euler, divergence=Upwind, laplacian=Linear),
 )
 
 
@@ -112,7 +156,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=1, time_step=1.0e-5, write_interval=1)
+    iterations=200, time_step=1.0e-5, write_interval=1)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
