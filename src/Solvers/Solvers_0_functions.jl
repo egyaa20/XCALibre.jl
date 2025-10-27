@@ -142,6 +142,7 @@ end
         idx = spindex(rowptr, colval, i, i)
         D = nzval[idx]
         (; volume) = cells[i]
+        # values[i] = 1.0 / D
         values[i] = volume / D
     end
 end

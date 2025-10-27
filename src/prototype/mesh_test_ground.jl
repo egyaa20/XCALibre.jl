@@ -1,9 +1,15 @@
 using XCALibre
 using CUDA
+1
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+grid = "laplace_2d_mesh.unv"
+# grid = "finer_mesh_laplace.unv"
+mesh_file = joinpath(grids_dir, grid)
+mesh = UNV2D_mesh(mesh_file)
 
 
-grids_dir = pkgdir(XCALibre, "src", "prototype", "polyMesh_hydrostatic/")
-mesh = FOAM3D_mesh(grids_dir)
+# grids_dir = pkgdir(XCALibre, "src", "prototype", "polyMesh_hydrostatic/")
+# mesh = FOAM3D_mesh(grids_dir)
 
 
 # backend = CUDABackend(); workgroup = 32
@@ -44,30 +50,30 @@ BCs = assign(
     region = mesh_dev,
     (
         U = [
-            # Dirichlet(:left, [0.1, 0.0, 0.0]),
-            Symmetry(:left),
-            Symmetry(:right), #slip
+            Zerogradient(:left_wall),
+            # Dirichlet(:left_wall, [0.001, 0.0, 0.0]),
+            Zerogradient(:right_wall), #slip
             # Zerogradient(:top), #pressureInletOutletVelocity 0 0 0
-            Dirichlet(:top, [0.0, 0.0, 0.0]), #dirichlet 0 0 0
-            Dirichlet(:bottom, [0.0, 0.0, 0.0]), #dirichlet 0 0 0
-            Empty(:frontAndBack)
+            Zerogradient(:upper_wall), #dirichlet 0 0 0
+            Wall(:bottom_wall, [0.0, 0.0, 0.0]), #dirichlet 0 0 0
+            # Empty(:frontAndBack)
         ],
         p_rgh = [
             # Zerogradient(:left), #Symmetry
-            Symmetry(:left), #Symmetry
-            Symmetry(:right), #Symmetry
-            Zerogradient(:bottom), #Zerogradient
-            Dirichlet(:top, 0.0), #Zerogradient
-            # Zerogradient(:top), #Zerogradient
-            Empty(:frontAndBack)
+            Zerogradient(:left_wall), #Symmetry
+            Zerogradient(:right_wall), #Symmetry
+            Zerogradient(:bottom_wall), #Zerogradient
+            Dirichlet(:upper_wall, 0.0), #Zerogradient
+            # Zerogradient(:upper_wall), #Zerogradient
+            # Empty(:frontAndBack)
         ],
         alpha = [
             # Zerogradient(:left), #Symmetry
-            Symmetry(:left), #Symmetry
-            Symmetry(:right), #Symmetry
-            Zerogradient(:bottom), #Zerogradient
-            Zerogradient(:top),
-            Empty(:frontAndBack)
+            Zerogradient(:left_wall), #Symmetry
+            Zerogradient(:right_wall), #Symmetry
+            Zerogradient(:bottom_wall), #Zerogradient
+            Dirichlet(:upper_wall, 0.0),
+            # Empty(:frontAndBack)
         ]
     )
 )
@@ -75,8 +81,8 @@ BCs = assign(
 
 schemes = (
     U =     Schemes(time=Euler, divergence=Upwind),
-    p =     Schemes(time=Euler, gradient=Gauss),
-    p_rgh = Schemes(time=Euler, gradient=Gauss),
+    p =     Schemes(time=Euler, gradient=Midpoint),
+    p_rgh = Schemes(time=Euler, gradient=Midpoint),
     alpha = Schemes(time=Euler, divergence=Upwind),
 )
 
@@ -106,7 +112,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=5, time_step=1.0e-5, write_interval=1)
+    iterations=1, time_step=1.0e-5, write_interval=1)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -115,12 +121,13 @@ config = Configuration(
 
 GC.gc()
 
-initialise!(model.momentum.p, operating_pressure)
-initialise!(model.momentum.U, noSlipVelocity) #?????
+initialise!(model.momentum.p, 0.0)
+initialise!(model.momentum.U, [0.0, 0.0, 0.0]) #?????
 
 initialise!(model.fluid.alpha, 0.0)
 setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[-5.0, 0.0, -0.5], max_corner=[5.0,1.0,0.5])
 
 
 
+# residuals = run!(model, config, pref=0.0)
 residuals = run!(model, config)
