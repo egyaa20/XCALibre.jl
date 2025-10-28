@@ -124,33 +124,28 @@ schemes = (
 )
 
 
+
+
 solvers = (
     U = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # ILU0GPU, Jacobi, DILU
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 1.0,
         rtol = 1e-2
-    ),
-    p = SolverSetup(
-        solver      = Cg(), # Bicgstab(), Gmres(), Cg()
-        preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
-        convergence = 1e-7,
-        relax       = 0.2,
-        rtol = 1e-3
     ),
     p_rgh = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres(), Cg()
         preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
         convergence = 1e-7,
-        relax       = 0.2,
-        rtol = 1e-3
+        relax       = 1.0,
+        rtol = 1e-7
     ),
     alpha = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres(), Cg()
         preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 1.0,
         rtol = 1e-2
     )
 )
@@ -160,7 +155,7 @@ solvers = (
 
     
 runtime = Runtime(
-    iterations=1000, time_step=0.0001, write_interval=100)
+    iterations=5000, time_step=1.0e-5, write_interval=50)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 

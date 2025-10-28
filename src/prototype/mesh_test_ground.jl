@@ -136,27 +136,27 @@ solvers = (
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # ILU0GPU, Jacobi, DILU
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 1.0,
         rtol = 1e-2
     ),
     p_rgh = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres(), Cg()
         preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
         convergence = 1e-7,
-        relax       = 0.2,
-        rtol = 1e-3
+        relax       = 1.0,
+        rtol = 1e-7
     ),
     alpha = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres(), Cg()
         preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
         convergence = 1e-7,
-        relax       = 0.8,
+        relax       = 1.0,
         rtol = 1e-2
     )
 )
 
 runtime = Runtime(
-    iterations=200, time_step=1.0e-5, write_interval=1)
+    iterations=1000, time_step=1.0e-5, write_interval=10)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -169,7 +169,16 @@ initialise!(model.momentum.p, 0.0)
 initialise!(model.momentum.U, [0.0, 0.0, 0.0]) #?????
 
 initialise!(model.fluid.alpha, 0.0)
-setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[-5.0, 0.0, -0.5], max_corner=[5.0,1.0,0.5])
+
+
+setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[-5.0, 0.0, -0.5], max_corner=[5.0,0.25,0.5])
+
+# setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[0.1, 0.25, -0.5], max_corner=[5.0,0.3,0.5])
+# setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[0.15, 0.3, -0.5], max_corner=[5.0,0.35,0.5])
+# setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[0.2, 0.35, -0.5], max_corner=[5.0,0.4,0.5])
+# setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[0.25, 0.4, -0.5], max_corner=[5.0,0.45,0.5])
+# setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[0.3, 0.45, -0.5], max_corner=[5.0,0.5,0.5])
+
 
 
 
