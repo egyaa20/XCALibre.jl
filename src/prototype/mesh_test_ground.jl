@@ -2,8 +2,8 @@ using XCALibre
 using CUDA
 
 # grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-# # grid = "laplace_2d_mesh.unv"
-# grid = "finer_mesh_laplace.unv"
+# grid = "laplace_2d_mesh.unv"
+# # grid = "finer_mesh_laplace.unv"
 # mesh_file = joinpath(grids_dir, grid)
 # mesh = UNV2D_mesh(mesh_file)
 
@@ -50,10 +50,9 @@ operating_pressure = 0.0
 #     region = mesh_dev,
 #     (
 #         U = [
-#             Zerogradient(:left_wall),
+#             Wall(:left_wall, [0.0, 0.0, 0.0]), #dirichlet 0 0 0
 #             # Dirichlet(:left_wall, [0.001, 0.0, 0.0]),
-#             Zerogradient(:right_wall), #slip
-#             # Zerogradient(:top), #pressureInletOutletVelocity 0 0 0
+#             Wall(:right_wall, [0.0, 0.0, 0.0]), #dirichlet 0 0 0
 #             Zerogradient(:upper_wall), #dirichlet 0 0 0
 #             Wall(:bottom_wall, [0.0, 0.0, 0.0]), #dirichlet 0 0 0
 #             # Empty(:frontAndBack)
@@ -63,7 +62,7 @@ operating_pressure = 0.0
 #             Zerogradient(:left_wall), #Symmetry
 #             Zerogradient(:right_wall), #Symmetry
 #             Zerogradient(:bottom_wall), #Zerogradient
-#             Dirichlet(:upper_wall, 0.0), #Zerogradient
+#             Dirichlet(:upper_wall, 11.76), #Zerogradient
 #             # Zerogradient(:upper_wall), #Zerogradient
 #             # Empty(:frontAndBack)
 #         ],
@@ -72,7 +71,7 @@ operating_pressure = 0.0
 #             Zerogradient(:left_wall), #Symmetry
 #             Zerogradient(:right_wall), #Symmetry
 #             Zerogradient(:bottom_wall), #Zerogradient
-#             Dirichlet(:upper_wall, 0.0),
+#             Zerogradient(:upper_wall), #Zerogradient
 #             # Empty(:frontAndBack)
 #         ]
 #     )
@@ -144,7 +143,7 @@ solvers = (
         preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
         convergence = 1e-7,
         relax       = 1.0,
-        rtol = 1e-7
+        rtol = 1e-2
     ),
     alpha = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres(), Cg()
@@ -156,7 +155,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=1000, time_step=1.0e-5, write_interval=10)
+    iterations=100, time_step=1.0e-4, write_interval=5000000)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -171,7 +170,7 @@ initialise!(model.momentum.U, [0.0, 0.0, 0.0]) #?????
 initialise!(model.fluid.alpha, 0.0)
 
 
-setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[-5.0, 0.0, -0.5], max_corner=[5.0,0.25,0.5])
+setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[-5.0, 0.0, -0.5], max_corner=[5.0,1.0,0.5])
 
 # setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[0.1, 0.25, -0.5], max_corner=[5.0,0.3,0.5])
 # setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[0.15, 0.3, -0.5], max_corner=[5.0,0.35,0.5])

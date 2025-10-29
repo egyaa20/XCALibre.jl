@@ -85,16 +85,10 @@ BCs = assign(
             Wall(:left, [0.0, 0.0, 0.0]),
             Wall(:right, [0.0, 0.0, 0.0]),
             Wall(:top, [0.0, 0.0, 0.0]),
+            # Zerogradient(:top), #dirichlet 0 0 0
             Wall(:bottom, [0.0, 0.0, 0.0]),
             # Zerogradient(:top), #pressureInletOutletVelocity 0 0 0
             # Dirichlet(:bottom, [0.0, 0.0, 0.0]), #dirichlet 0 0 0
-            Empty(:frontAndBack)
-        ],
-        p = [
-            Zerogradient(:left), #Symmetry
-            Zerogradient(:right), #Symmetry
-            Zerogradient(:bottom), #Zerogradient
-            Dirichlet(:top, 0.0), #Zerogradient
             Empty(:frontAndBack)
         ],
         p_rgh = [
@@ -109,7 +103,7 @@ BCs = assign(
             Zerogradient(:left), #Symmetry
             Zerogradient(:right), #Symmetry
             Zerogradient(:bottom), #Zerogradient
-            Dirichlet(:top, 0.0),
+            Dirichlet(:top, 0.0), #Zerogradient
             Empty(:frontAndBack)
         ]
     )
@@ -137,7 +131,7 @@ solvers = (
     p_rgh = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres(), Cg()
         preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
-        convergence = 1e-7,
+        convergence = 1e-10,
         relax       = 1.0,
         rtol = 1e-7
     ),
@@ -155,7 +149,7 @@ solvers = (
 
     
 runtime = Runtime(
-    iterations=5000, time_step=1.0e-5, write_interval=50)
+    iterations=100000, time_step=1.0e-5, write_interval=100)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
