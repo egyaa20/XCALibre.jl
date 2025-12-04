@@ -38,6 +38,33 @@ end
         return ac, b
 end
 
+
+## fixedFluxPressure:
+
+# 1) how to get access to gradient of phi at faces ? e.g. grad(phi)_f
+# I guess we first compute grad(phi) and then multiply by face normal
+# we do (phi_cell - phi_Neighbour) / distance for each internal face
+
+# 2) we need an access to velocity fields:
+# something like phi_target = rho_f * U_derived * Sf
+# where U_derived = 0 for noSlip wall
+# where U_derived = U for fixed velocity (inlet)
+# where U_derived = U_wall for moving walls
+
+# 3) we need access to mdotf (e.g. flux(HbyA) + phi_gf)
+# 4) we need access to rDf
+
+# for each boundary face:
+# grad(p_rgh)_f = (mdotf - phi_target) / (rDf * mag(Sf)
+
+# this grad() goes into p_rgh_eqn as the value of Neumann BC (which is implemented)
+# something like (d_prgh)/(dn) = grad(p_rgh)_f
+
+## QUESTIONS
+
+# 1) can we compute grad(phi) by simply 
+
+
 # LAPLACIAN
 
 @inline function scheme!(
@@ -47,6 +74,12 @@ end
 
     
     (; area, normal, delta, e) = face
+    # println(fieldnames(typeof(term)))
+    # println(term.type)
+    # println(term.flux)
+    # println(term.phi)
+    # println(term.sign)
+
     ## Potential simplified form for performance, needs checking before use in release
     # dPN = cellN.centre - cell.centre
     # n = ns*normal

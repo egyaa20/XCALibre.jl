@@ -12,7 +12,7 @@ using LinearAlgebra
 
 
 
-grids_dir = pkgdir(XCALibre, "src", "prototype", "polyMesh_hydrostatic/")
+grids_dir = pkgdir(XCALibre, "src", "prototype", "polyMesh_injection/")
 mesh = FOAM3D_mesh(grids_dir)
 
 
@@ -42,7 +42,8 @@ model = Physics(
     fluid = Fluid{Multiphase}(
         phases = (
             Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3)),       #liquid
-            Phase(eosModel=ConstEos(1.2), viscosityModel=ConstMu(1.8e-5)),        #vapour
+            Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3)),       #liquid
+            # Phase(eosModel=ConstEos(1.2), viscosityModel=ConstMu(1.8e-5)),        #vapour
             # Phase(eosModel=ConstEos(1.225), viscosityModel=ConstMu(1.8e-5)),        #vapour
             # Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3)),       #liquid
             # Phase(eosModel=ConstEos(1.225), viscosityModel=ConstMu(1.8e-5)),        #vapour
@@ -81,28 +82,24 @@ BCs = assign(
     region = mesh_dev,
     (
         U = [
-            # Dirichlet(:left, [0.1, 0.0, 0.0]),
-            Wall(:left, [0.0, 0.0, 0.0]),
-            Wall(:right, [0.0, 0.0, 0.0]),
-            Wall(:top, [0.0, 0.0, 0.0]),
-            # Zerogradient(:top),
-            Wall(:bottom, [0.0, 0.0, 0.0]),
+            Dirichlet(:inlet, [1.0, 0.0, 0.0]),
+            # Wall(:outlet, [0.0, 0.0, 0.0]),
+            Extrapolated(:outlet),
+            Wall(:walls, [0.0, 0.0, 0.0]),
             Empty(:frontAndBack)
         ],
         p_rgh = [
-            Zerogradient(:left), #Symmetry
-            Zerogradient(:right), #Symmetry
-            Zerogradient(:bottom), #Zerogradient
-            Dirichlet(:top, 0.0), #Zerogradient
+            Extrapolated(:inlet),
+            Dirichlet(:outlet, 0.0),
+            # Extrapolated(:walls),
+            Wall(:walls),
             Empty(:frontAndBack)
         ],
         alpha = [
-            # Zerogradient(:left), #Symmetry
-            Zerogradient(:left), #Symmetry
-            Zerogradient(:right), #Symmetry
-            Zerogradient(:bottom), #Zerogradient
-            Zerogradient(:top), #Zerogradient
-            # Dirichlet(:top, 0.0), #Zerogradient
+            Dirichlet(:inlet, 0.0),
+            Extrapolated(:outlet),
+            # Extrapolated(:walls),
+            Wall(:walls),
             Empty(:frontAndBack)
         ]
     )
@@ -110,13 +107,11 @@ BCs = assign(
 
 
 schemes = (
-    U =     Schemes(time=Euler, divergence=Upwind),
-    p =     Schemes(time=Euler, gradient=Gauss),
-    p_rgh =     Schemes(time=Euler, gradient=Gauss),
-    alpha = Schemes(time=Euler, divergence=Upwind),
+    U =     Schemes(time=Euler, divergence=Upwind, laplacian=Linear),
+    p =     Schemes(time=Euler, gradient=Gauss,    laplacian=Linear),
+    p_rgh = Schemes(time=Euler, gradient=Gauss,    laplacian=Linear),
+    alpha = Schemes(time=Euler, divergence=Upwind, laplacian=Linear),
 )
-
-
 
 
 solvers = (
@@ -136,6 +131,14 @@ solvers = (
         rtol        = 0.0,
         atol        = 1.0e-5
     ),
+    p = SolverSetup(
+        solver      = Cg(), # Bicgstab(), Gmres(), Cg()
+        preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
+        convergence = 1e-7,
+        relax       = 1.0,
+        rtol        = 0.0,
+        atol        = 1.0e-5
+    ),
     alpha = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres(), Cg()
         preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
@@ -146,12 +149,9 @@ solvers = (
     )
 )
 
-# runtime = Runtime(
-#     iterations=100000, time_step=0.0001, write_interval=10000)
-
     
 runtime = Runtime(
-    iterations=5000, time_step=1.0e-4, write_interval=100)
+    iterations=1000, time_step=1.0e-6, write_interval=100)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -164,14 +164,8 @@ GC.gc()
 
 
 initialise!(model.momentum.p, operating_pressure)
-initialise!(model.momentum.U, [0.0, 0.0, 0.0]) #?????
+initialise!(model.momentum.U, noSlipVelocity) #?????
 
 initialise!(model.fluid.alpha, 0.0)
-setField_Circle2D!(mesh=mesh, field=model.fluid.alpha, value=1.0, centre=[0.5, 1.0], radius=0.35)
-
-
-
-# initialise!(model.energy.T, Temp)
-
 
 residuals = run!(model, config) 

@@ -8,6 +8,7 @@ using CUDA
 # mesh = UNV2D_mesh(mesh_file)
 
 
+
 grids_dir = pkgdir(XCALibre, "src", "prototype", "polyMesh_hydrostatic/")
 mesh = FOAM3D_mesh(grids_dir)
 
@@ -155,7 +156,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=100, time_step=1.0e-4, write_interval=5000000)
+    iterations=10000, time_step=1.0e-5, write_interval=1000)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 

@@ -1,32 +1,25 @@
 using XCALibre
 using CUDA
 
-
-
-# grids_dir = pkgdir(XCALibre, "src", "prototype", "polyMesh_hydrostatic/")
-# mesh = FOAM3D_mesh(grids_dir)
-
+# backwardFacingStep_2mm, 5mm or 10mm
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "finer_mesh_laplace.unv"
-
-
+grid = "backwardFacingStep_10mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 
-scaling = 0.05
+mesh = UNV2D_mesh(mesh_file, scale=0.001)
 
-mesh = UNV2D_mesh(mesh_file, scale=scaling)
-
-# backend = CUDABackend(); workgroup = 32;
+# backend = CUDABackend(); workgroup = 32
 backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
-noSlipVelocity = [0.0, 0.0, 0.0]
+# gravity = Gravity([0.0, 0.0, 0.0])
+gravity = Gravity([9.0, 0.0, 0.0])
 
-
-# gravity = Gravity([0.0, -9.81, 0.0])
-gravity = Gravity([0.0, 0.0, 0.0])
+velocity = [0.001, 0.0, 0.0]
+nu = 1e-3
+Re = velocity[1]*0.1/nu
 
 
 
@@ -35,55 +28,47 @@ model = Physics(
     fluid = Fluid{Multiphase}(
         phases = (
             Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3)),       #liquid
-            Phase(eosModel=ConstEos(1.2), viscosityModel=ConstMu(1.8e-5)),          #vapour
+            # Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3)),       #liquid
+            Phase(eosModel=ConstEos(1.2), viscosityModel=ConstMu(1.8e-5)),        #vapour
+            # Phase(eosModel=ConstEos(1.225), viscosityModel=ConstMu(1.8e-5)),        #vapour
+            # Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3)),       #liquid
+            # Phase(eosModel=ConstEos(1.225), viscosityModel=ConstMu(1.8e-5)),        #vapour
         ),
-        gravity = gravity
+        gravity = gravity,
+        # csf = CSF(sigma=0.072),
+        # artificialCompression = ArtificialCompression(compression_coeff=2.0)
     ),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
     )
 
-
-operating_pressure = 0.0
-
-
-
-
 BCs = assign(
     region = mesh_dev,
     (
         U = [
-            # Dirichlet(:left, [0.1, 0.0, 0.0]),
-            Wall(:left_wall, [0.0, 0.0, 0.0]),
-            Wall(:right_wall, [0.0, 0.0, 0.0]),
-            Wall(:upper_wall, [0.0, 0.0, 0.0]),
-            # Dirichlet(:top, [0.0, -0.001, 0.0]),
-            # Zerogradient(:top),
-            Wall(:bottom_wall, [0.0, 0.0, 0.0]),
-            # Empty(:frontAndBack)
+            Dirichlet(:inlet, velocity),
+            Extrapolated(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+
+            Symmetry(:top)
         ],
         p_rgh = [
-            Zerogradient(:left_wall), #Symmetry
-            Zerogradient(:right_wall), #Symmetry
-            Zerogradient(:bottom_wall), #Zerogradient
-            # Zerogradient(:upper_wall), #Zerogradient
-            Dirichlet(:upper_wall, 0.0), #Zerogradient
-            # Empty(:frontAndBack)
+            Extrapolated(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Wall(:wall),
+
+            Symmetry(:top)
         ],
         alpha = [
-            # Zerogradient(:left), #Symmetry
-            Zerogradient(:left_wall), #Symmetry
-            Zerogradient(:right_wall), #Symmetry
-            Zerogradient(:bottom_wall), #Zerogradient
-            Zerogradient(:upper_wall), #Zerogradient
-            # Dirichlet(:top, 0.0), #Zerogradient
-            # Empty(:frontAndBack)
+            Dirichlet(:inlet, 1.0),
+            Extrapolated(:outlet),
+            
+            Wall(:wall),
+            Symmetry(:top)
         ]
     )
 )
-
-
 
 schemes = (
     U =     Schemes(time=Euler, divergence=Upwind, laplacian=Linear),
@@ -91,6 +76,7 @@ schemes = (
     p_rgh = Schemes(time=Euler, gradient=Gauss,    laplacian=Linear),
     alpha = Schemes(time=Euler, divergence=Upwind, laplacian=Linear),
 )
+
 
 
 solvers = (
@@ -130,29 +116,28 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=2500, time_step=1.0e-5, write_interval=100)
-    
+    iterations=5000, time_step=1.0e-5, write_interval=10)
+    # iterations=1, time_step=1, write_interval=1)
+
+# hardware = Hardware(backend=CUDABackend(), workgroup=32)
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
+# config = adapt(CUDABackend(), config)
 
 GC.gc()
 
-
-
+initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
-initialise!(model.momentum.U, [0.0, 0.0, 0.0])
 
-initialise!(model.fluid.alpha, 1.0)
-
-min_corner_vec = [-5.0, 0.0, -0.5] * scaling
-max_corner_vec = [5.0,3.0,0.5] * scaling
-
-setField_Circle2D!(mesh=mesh, field=model.fluid.alpha, value=0.0, centre=[0.0, 3.0]*scaling, radius=0.8*scaling)
-# setField_Box!(mesh=mesh, field=model.fluid.alpha, value=0.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
+setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[0.2, 0.06, -0.1], max_corner=[0.8, 1.0, 0.1])
 
 
+@time residuals = run!(model, config) # 1106 iterations!
 
+# # Profiling now 
+# GC.gc()
 
-residuals = run!(model, config)
+# initialise!(model.momentum.U, velocity)
+# initialise!(model.momentum.p, 0.0)
