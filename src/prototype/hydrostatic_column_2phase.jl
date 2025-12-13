@@ -6,15 +6,22 @@ using CUDA
 # grids_dir = pkgdir(XCALibre, "src", "prototype", "polyMesh_hydrostatic/")
 # mesh = FOAM3D_mesh(grids_dir)
 
-grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "finer_mesh_laplace.unv"
+scaling = 1.0
+# scaling = 0.0025
+grids_dir = pkgdir(XCALibre, "src", "prototype", "polyMesh_square_fine/")
+# grids_dir = pkgdir(XCALibre, "src", "prototype", "polyMesh_column_fine/")
+mesh = FOAM3D_mesh(grids_dir, scale=scaling)
+
+# grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+# grid = "finer_mesh_laplace.unv"
+# grid = "laplace_2d_mesh.unv"
 
 
-mesh_file = joinpath(grids_dir, grid)
+# mesh_file = joinpath(grids_dir, grid)
 
-scaling = 0.05
+# scaling = 0.025
 
-mesh = UNV2D_mesh(mesh_file, scale=scaling)
+# mesh = UNV2D_mesh(mesh_file, scale=scaling)
 
 # backend = CUDABackend(); workgroup = 32;
 backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
@@ -25,8 +32,8 @@ mesh_dev = adapt(backend, mesh)
 noSlipVelocity = [0.0, 0.0, 0.0]
 
 
-# gravity = Gravity([0.0, -9.81, 0.0])
-gravity = Gravity([0.0, 0.0, 0.0])
+gravity = Gravity([0.0, -9.81, 0.0])
+# gravity = Gravity([0.0, 0.0, 0.0])
 
 
 
@@ -55,30 +62,33 @@ BCs = assign(
     (
         U = [
             # Dirichlet(:left, [0.1, 0.0, 0.0]),
-            Wall(:left_wall, [0.0, 0.0, 0.0]),
-            Wall(:right_wall, [0.0, 0.0, 0.0]),
-            Wall(:upper_wall, [0.0, 0.0, 0.0]),
+            Wall(:left, [0.0, 0.0, 0.0]),
+            Wall(:right, [0.0, 0.0, 0.0]),
+            # Wall(:top, [0.0, 0.0, 0.0]),
+            # Wall(:upper_wall, [0.0, 0.0, 0.0]),
+            Zerogradient(:top),
             # Dirichlet(:top, [0.0, -0.001, 0.0]),
-            # Zerogradient(:top),
-            Wall(:bottom_wall, [0.0, 0.0, 0.0]),
-            # Empty(:frontAndBack)
+            # Zerogradient(:bottom),
+            Dirichlet(:bottom, [0.0, 5.0, 0.0]),
+            Empty(:frontAndBack)
         ],
         p_rgh = [
-            Zerogradient(:left_wall), #Symmetry
-            Zerogradient(:right_wall), #Symmetry
-            Zerogradient(:bottom_wall), #Zerogradient
+            Zerogradient(:left, 0.0), #Symmetry
+            Zerogradient(:right, 0.0), #Symmetry
+            Zerogradient(:bottom, 0.0), #Zerogradient
             # Zerogradient(:upper_wall), #Zerogradient
-            Dirichlet(:upper_wall, 0.0), #Zerogradient
-            # Empty(:frontAndBack)
+            # Zerogradient(:top, 0.0), #Zerogradient
+            Dirichlet(:top, 0.0), #Zerogradient
+            Empty(:frontAndBack)
         ],
         alpha = [
             # Zerogradient(:left), #Symmetry
-            Zerogradient(:left_wall), #Symmetry
-            Zerogradient(:right_wall), #Symmetry
-            Zerogradient(:bottom_wall), #Zerogradient
-            Zerogradient(:upper_wall), #Zerogradient
+            Zerogradient(:left), #Symmetry
+            Zerogradient(:right), #Symmetry
+            Dirichlet(:bottom, 1.0), #Zerogradient
+            Zerogradient(:top), #Zerogradient
             # Dirichlet(:top, 0.0), #Zerogradient
-            # Empty(:frontAndBack)
+            Empty(:frontAndBack)
         ]
     )
 )
@@ -130,7 +140,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=2500, time_step=1.0e-5, write_interval=100)
+    iterations=3000, time_step=1.0e-5, write_interval=50)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -144,13 +154,18 @@ GC.gc()
 initialise!(model.momentum.p, 0.0)
 initialise!(model.momentum.U, [0.0, 0.0, 0.0])
 
-initialise!(model.fluid.alpha, 1.0)
+initialise!(model.fluid.alpha, 0.0)
 
-min_corner_vec = [-5.0, 0.0, -0.5] * scaling
-max_corner_vec = [5.0,3.0,0.5] * scaling
+# min_corner_vec = [-5.0, 0.0, -0.5] * scaling
+# max_corner_vec = [5.0,3.0,0.5] * scaling
 
-setField_Circle2D!(mesh=mesh, field=model.fluid.alpha, value=0.0, centre=[0.0, 3.0]*scaling, radius=0.8*scaling)
-# setField_Box!(mesh=mesh, field=model.fluid.alpha, value=0.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
+
+min_corner_vec = [0.7, 0.0, -0.5] * scaling
+max_corner_vec = [1.5,0.5,0.5] * scaling
+
+
+# setField_Circle2D!(mesh=mesh, field=model.fluid.alpha, value=1.0, centre=[0.5, 0.5]*scaling, radius=0.15*scaling)
+# setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
 
 
 

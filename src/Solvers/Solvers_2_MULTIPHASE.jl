@@ -74,12 +74,28 @@ function setup_multiphase_solvers(
     grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config)
     limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
     
+    ∇alpha = Grad{schemes.alpha.gradient}(alpha)
+    grad!(∇alpha, alphaf, alpha, boundaries.alpha, time, config)
+    limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
+    
     ∇rho = Grad{schemes.p_rgh.gradient}(rho)
     grad!(∇rho, rhof, rho, time, config)
     limit_gradient!(schemes.p_rgh.limiter, ∇rho, rho, config)
 
-
     phi_g!(phi_g, gh, ∇rho, config)
+
+    divCompressionFlux = ScalarField(mesh)
+    compressionFlux = FaceVectorField(mesh)
+    
+    nhat = VectorField(mesh)
+    nhatf = FaceVectorField(mesh)
+    U_c = FaceVectorField(mesh)
+
+    compute_compression_flux_step1!(nhat, nhatf, compressionFlux, U_c, Uf, alphaf, ∇alpha, config)
+    interpolate!(nhatf, nhat, config)
+    compute_compression_flux_step2!(nhat, nhatf, compressionFlux, U_c, Uf, alphaf, ∇alpha, config)
+    div!(divCompressionFlux, compressionFlux, config)
+
 
     @info "Defining models..."
 
@@ -103,7 +119,8 @@ function setup_multiphase_solvers(
         Time{schemes.alpha.time}(rho, alpha)
         + Divergence{schemes.alpha.divergence}(mdotf, alpha)
         == 
-        Source(ConstantScalar(0.0))
+        - Source(divCompressionFlux)
+        # Source(ConstantScalar(0.0))
     ) → ScalarEquation(alpha, boundaries.alpha)
 
     @info "Initialising preconditioners..."
@@ -125,7 +142,8 @@ function setup_multiphase_solvers(
     # turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-        model, ∇p, ∇p_rgh, ∇rho, U_eqn, p_eqn, alpha_eqn, gh, ghf, phi_g, phi_gf, config;
+        # model, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, gh, ghf, phi_g, phi_gf, config;
+        model, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, gh, ghf, phi_g, phi_gf, compressionFlux, divCompressionFlux, nhat, nhatf, U_c, config;
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
@@ -135,7 +153,8 @@ function setup_multiphase_solvers(
 end # end function
 
 function MULTIPHASE(
-    model, ∇p, ∇p_rgh, ∇rho, U_eqn, p_eqn, alpha_eqn, gh, ghf, phi_g, phi_gf, config; 
+    model, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, gh, ghf, phi_g, phi_gf, compressionFlux, divCompressionFlux, nhat, nhatf, U_c, config; 
+    # model, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, gh, ghf, phi_g, phi_gf, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
     )
     
@@ -226,10 +245,23 @@ function MULTIPHASE(
 
         grad!(∇rho, rhof, rho, time, config)
 
+        # println("SOLVING U_EQN")
         rx, ry, rz = solve_equation!(
-            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, rhof, p_eqn; time=time) # rhof, p_eqn
-            
-        ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
+            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, rhof, p_eqn, boundaries.p_rgh; time=time) # rhof, p_eqn
+
+
+        ∇alpha = Grad{schemes.alpha.gradient}(alpha)
+        grad!(∇alpha, alphaf, alpha, boundaries.alpha, time, config)
+        limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
+        
+
+        compute_compression_flux_step1!(nhat, nhatf, compressionFlux, U_c, Uf, alphaf, ∇alpha, config)
+        interpolate!(nhatf, nhat, config)
+        compute_compression_flux_step2!(nhat, nhatf, compressionFlux, U_c, Uf, alphaf, ∇alpha, config)
+        div!(divCompressionFlux, compressionFlux, config)
+        
+
+        ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config, rhof, p_eqn, boundaries.U; time=time)
         interpolate!(alphaf, alpha, config)
         correct_boundaries!(alphaf, alpha, boundaries.alpha, time, config)
           
@@ -248,13 +280,15 @@ function MULTIPHASE(
             # flux!(mdotf, Uf, rhof, config)
             flux!(mdotf, Uf, config)
 
-            phi_gf!(phi_gf, rho, ghf, rDf, model, config) #
-            @. mdotf.values += phi_gf.values              #
+            phi_g!(phi_g, gh, ∇rho, config)
+            phi_gf!(phi_gf, rho, ghf, rDf, model, config)
+            @. mdotf.values += phi_gf.values
 
             div!(divHv, mdotf, config)
             
             @. prev = p_rgh.values
-            rp = solve_equation!(p_eqn, p_rgh, boundaries.p_rgh, solvers.p_rgh, config, rhof, U_eqn; ref=pref, time=time)
+            # println("SOLVING P_rgh_EQN")
+            rp = solve_equation!(p_eqn, p_rgh, boundaries.p_rgh, solvers.p_rgh, config, rhof, U_eqn, boundaries.U; ref=pref, time=time)
             if i == inner_loops
                 explicit_relaxation!(p_rgh, prev, 1.0, config)
             else
@@ -283,17 +317,20 @@ function MULTIPHASE(
             
             correct_mass_flux(mdotf, p_rgh, rDf, config)
             # correct_velocity!(U, Hv, ∇p_rgh, rD, config)
+            #### phi_g is not updated!!!!!!!!!!!!!!!!!!
+
             correct_velocity_multiphase_test!(U, Hv, ∇p_rgh, rD, phi_g, config)
 
         end # corrector loop end
         
     @. p.values = p_rgh.values + (rho.values * gh.values)
 
-    if iteration % 10_000 == 0
-        mean_alpha = sum(alpha.values) / length(alpha.values)
-        @info "Mean alpha at iteration $iteration: $mean_alpha"
-    end
+    # if iteration % 500 == 0
+    #     mean_alpha = sum(alpha.values) / length(alpha.values)
+    #     @info "Mean alpha at iteration $iteration: $mean_alpha"
+    # end
 
+    # @info "Iteration"
 
 
     # turbulence!(turbulenceModel, model, S, prev, time, config) 
@@ -363,6 +400,41 @@ function blend_properties!(property_field, alpha_field, property_0, property_1)
     @. property_field.values = (property_0.values * alpha_field.values) + (property_1.values * (1.0 - alpha_field.values))
     nothing
 end
+
+
+function compute_compression_flux_step1!(nhat, nhatf, compressionFlux, U_c, Uf, alphaf, ∇alpha, config)
+    (; hardware) = config
+    backend = hardware.backend
+    workgroup = hardware.workgroup
+
+    ndrange = length(nhat)
+    kernel! = _compute_compression_flux_step1!(_setup(backend, workgroup, ndrange)...)
+    kernel!(nhat, nhatf, compressionFlux, U_c, Uf, alphaf, ∇alpha)
+end
+@kernel inbounds=true function _compute_compression_flux_step1!(nhat, nhatf, compressionFlux, U_c, Uf, alphaf, ∇alpha)
+    i = @index(Global)
+
+    nhat[i] = ∇alpha[i] / (norm(∇alpha[i]) + eps())
+end
+
+
+function compute_compression_flux_step2!(nhat, nhatf, compressionFlux, U_c, Uf, alphaf, ∇alpha, config)
+    (; hardware) = config
+    backend = hardware.backend
+    workgroup = hardware.workgroup
+
+    ndrange = length(nhatf)
+    kernel! = _compute_compression_flux_step2!(_setup(backend, workgroup, ndrange)...)
+    kernel!(nhat, nhatf, compressionFlux, U_c, Uf, alphaf, ∇alpha)
+end
+@kernel inbounds=true function _compute_compression_flux_step2!(nhat, nhatf, compressionFlux, U_c, Uf, alphaf, ∇alpha)
+    i = @index(Global)
+
+    U_c[i] = 1.0 * nhatf[i] * norm(Uf[i])
+
+    compressionFlux[i] = alphaf[i] * (1.0 - alphaf[i]) * U_c[i]
+end
+
 
 
 function compute_gh!(gh, g, config)
@@ -509,6 +581,10 @@ end
         x_diff = (phi_g_x[i] - dpdx[i])
         y_diff = (phi_g_y[i] - dpdy[i])
         z_diff = (phi_g_z[i] - dpdz[i])
+
+        # x_diff = (dpdx[i])
+        # y_diff = (dpdy[i])
+        # z_diff = (dpdz[i])
 
         Ux[i] = Hvx[i] + x_diff * rD_i
         Uy[i] = Hvy[i] + y_diff * rD_i

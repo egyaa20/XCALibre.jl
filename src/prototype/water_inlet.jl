@@ -26,14 +26,7 @@ noSlipVelocity = [0.0, 0.0, 0.0]
 
 
 
-gravity = Gravity([0.0, 0.0, 0.0])
-
-# driftVelocity = DriftVelocity(
-#             gravity = gravity,
-#             d_p = 1.0e-5,
-#             drag = Drag_SchillerNaumann()
-        # )
-
+gravity = Gravity([0.0, -9.81, 0.0])
 
 
 
@@ -43,14 +36,8 @@ model = Physics(
         phases = (
             Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3)),       #liquid
             Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3)),       #liquid
-            # Phase(eosModel=ConstEos(1.2), viscosityModel=ConstMu(1.8e-5)),        #vapour
-            # Phase(eosModel=ConstEos(1.225), viscosityModel=ConstMu(1.8e-5)),        #vapour
-            # Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3)),       #liquid
-            # Phase(eosModel=ConstEos(1.225), viscosityModel=ConstMu(1.8e-5)),        #vapour
         ),
         gravity = gravity,
-        # csf = CSF(sigma=0.072),
-        # artificialCompression = ArtificialCompression(compression_coeff=2.0)
     ),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
@@ -65,11 +52,6 @@ outer_velocity = 0.036
 inner_alpha = 1.0
 outer_alpha = 0.033
 
-# Temp = 250.0
-
-# model.fluid.phases[1].eosModel = HelmholtzEnergy(name=H2(), interpolationMode=true)
-
-# operating_pressure = 3.0e4
 
 operating_pressure = 0.0
 
@@ -82,24 +64,23 @@ BCs = assign(
     region = mesh_dev,
     (
         U = [
-            Dirichlet(:inlet, [1.0, 0.0, 0.0]),
+            Dirichlet(:inlet, [2.0, 0.0, 0.0]),
             # Wall(:outlet, [0.0, 0.0, 0.0]),
-            Extrapolated(:outlet),
+            Zerogradient(:outlet),
             Wall(:walls, [0.0, 0.0, 0.0]),
             Empty(:frontAndBack)
         ],
         p_rgh = [
-            Extrapolated(:inlet),
+            Zerogradient(:inlet),
             Dirichlet(:outlet, 0.0),
             # Extrapolated(:walls),
-            Wall(:walls),
+            Zerogradient(:walls, 0.0),
             Empty(:frontAndBack)
         ],
         alpha = [
-            Dirichlet(:inlet, 0.0),
-            Extrapolated(:outlet),
-            # Extrapolated(:walls),
-            Wall(:walls),
+            Dirichlet(:inlet, 1.0),
+            Zerogradient(:outlet),
+            Zerogradient(:walls),
             Empty(:frontAndBack)
         ]
     )
@@ -151,7 +132,7 @@ solvers = (
 
     
 runtime = Runtime(
-    iterations=1000, time_step=1.0e-6, write_interval=100)
+    iterations=10000, time_step=1.0e-7, write_interval=100)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 

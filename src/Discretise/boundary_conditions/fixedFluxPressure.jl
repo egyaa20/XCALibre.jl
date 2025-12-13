@@ -17,42 +17,57 @@ Adapt.@adapt_structure fixedFluxPressure
 
 
 @define_boundary fixedFluxPressure Laplacian{Linear} ScalarField begin
-    # For now this is hard-coded as zero-gradient. To-do extension to any input gradient
-    phi = term.phi 
-    values = get_values(phi, component)
-    J = term.flux[fID]
-    (; area, delta) = face 
-    flux = J*area
-    0.0, flux*bc.value # draft implementation to test!
+    (; area, delta) = face
+
+    mdotf = extra_eqn.model.terms[2].flux[fID]
+    rDf = term.phi[fID]
+
+    U_d = nothing
+
+    for bc in extra_BCs
+        if fID in bc.IDs_range
+            U_d = bc.value
+            break
+        end
+    end
+
+    phi_target = rhof[fID] * norm(U_d) * area
+    g = (mdotf - phi_target) / ((rDf * area) + eps())
+
+    diff = mdotf - phi_target
+
+    # println("phi_target: $phi_target, mdotf: $mdotf, diff: $diff")
+    0.0, g
 end
 
-@define_boundary fixedFluxPressure Divergence{Linear} ScalarField begin
-    flux = term.flux[fID]
-    (; area, delta) = face 
-    ap = term.sign*(flux) 
-    ap, -bc.value*ap*delta
-end
+ # No need for those:
+# @define_boundary fixedFluxPressure Divergence{Linear} ScalarField begin
+#     flux = term.flux[fID]
+#     (; area, delta) = face 
+#     ap = term.sign*(flux) 
+#     ap, -bc.value*ap*delta # No need for those
+# end
 
-@define_boundary fixedFluxPressure Divergence{Upwind} ScalarField begin
-    flux = term.flux[fID]
-    (; area, delta) = face 
-    ap = term.sign*(flux) 
-    ap, -bc.value*ap*delta
-end
+# @define_boundary fixedFluxPressure Divergence{Upwind} ScalarField begin
+#     flux = term.flux[fID]
+#     (; area, delta) = face 
+#     ap = term.sign*(flux) 
+#     ap, -bc.value*ap*delta
+# end
 
-@define_boundary fixedFluxPressure Divergence{LUST} ScalarField begin
-    flux = term.flux[fID]
-    (; area, delta) = face 
-    ap = term.sign*(flux) 
-    ap, -bc.value*ap*delta
-end
+# @define_boundary fixedFluxPressure Divergence{LUST} ScalarField begin
+#     flux = term.flux[fID]
+#     (; area, delta) = face 
+#     ap = term.sign*(flux) 
+#     ap, -bc.value*ap*delta
+# end
 
-@define_boundary fixedFluxPressure Divergence{BoundedUpwind} ScalarField begin
-    flux = term.flux[fID]
-    (; area, delta) = face 
-    ap = term.sign*(flux) 
-    ap, -bc.value*ap*delta
-end
+# @define_boundary fixedFluxPressure Divergence{BoundedUpwind} ScalarField begin
+#     flux = term.flux[fID]
+#     (; area, delta) = face 
+#     ap = term.sign*(flux) 
+#     ap, -bc.value*ap*delta
+# end
 
 @define_boundary fixedFluxPressure Si ScalarField begin
     0.0, 0.0

@@ -15,9 +15,9 @@ hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
 
 # gravity = Gravity([0.0, 0.0, 0.0])
-gravity = Gravity([9.0, 0.0, 0.0])
+gravity = Gravity([0.0, -9.81, 0.0])
 
-velocity = [0.001, 0.0, 0.0]
+velocity = [5.0, 0.0, 0.0]
 nu = 1e-3
 Re = velocity[1]*0.1/nu
 
@@ -54,11 +54,11 @@ BCs = assign(
             Symmetry(:top)
         ],
         p_rgh = [
-            Extrapolated(:inlet),
+            fixedFluxPressure(:inlet, 0.0),
             Dirichlet(:outlet, 0.0),
-            Wall(:wall),
+            fixedFluxPressure(:wall, 0.0),
 
-            Symmetry(:top)
+            fixedFluxPressure(:top, 0.0)
         ],
         alpha = [
             Dirichlet(:inlet, 1.0),
@@ -116,7 +116,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=5000, time_step=1.0e-5, write_interval=10)
+    iterations=5000, time_step=2.0e-5, write_interval=100)
     # iterations=1, time_step=1, write_interval=1)
 
 # hardware = Hardware(backend=CUDABackend(), workgroup=32)
@@ -131,7 +131,7 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[0.2, 0.06, -0.1], max_corner=[0.8, 1.0, 0.1])
+# setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=[0.2, 0.06, -0.1], max_corner=[0.8, 1.0, 0.1])
 
 
 @time residuals = run!(model, config) # 1106 iterations!

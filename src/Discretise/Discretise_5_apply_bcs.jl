@@ -2,14 +2,21 @@ export apply_boundary_conditions!
 
 
 
-apply_boundary_conditions!(eqn, BCs, component, time, config) = begin
-    _apply_boundary_conditions!(eqn.model, BCs, eqn, component, time, config)
+apply_boundary_conditions!(eqn, BCs, component, time, config, rhof, extra_eqn, extra_BCs) = begin
+    _apply_boundary_conditions!(eqn.model, BCs, eqn, component, time, config, rhof, extra_eqn, extra_BCs)
 end
 
 # Apply Boundaries Function
 function _apply_boundary_conditions!(
-    model::Model{TN,SN,T,S}, BCs::B, eqn, component, time, config) where {TN,SN,T,S,B}
+    model::Model{TN,SN,T,S}, BCs::B, eqn, component, time, config, rhof, extra_eqn, extra_BCs) where {TN,SN,T,S,B}
     nTerms = length(model.terms)
+
+    # println(model)
+
+    # println(fieldnames(typeof(extra_eqn.model.terms)))
+    # println(fieldnames(typeof(extra_BCs[1])))
+    # println(fieldnames(typeof(extra_eqn.model.terms[1])))
+    # println(extra_eqn)
 
     # backend = _get_backend(mesh)
     (; hardware) = config
@@ -51,7 +58,7 @@ function _apply_boundary_conditions!(
         ndrange = nbfaces
         kernel! = apply_boundary_conditions_kernel!(_setup(backend, workgroup, ndrange)...)
         kernel!(
-            model, BCs,model.terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=ndrange
+            model, BCs,model.terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=ndrange, rhof, extra_eqn, extra_BCs
             )
         KernelAbstractions.synchronize(backend)
 
@@ -83,16 +90,16 @@ update_user_boundary!(
 
 @kernel function apply_boundary_conditions_kernel!(
     model::Model{TN,SN,T,S}, BCs, terms, 
-    faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time
+    faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, rhof, extra_eqn, extra_BCs
     ) where {TN,SN,T,S}
     fID = @index(Global)
 
     calculate_coefficients(
-        BCs, model, terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, fID)
+        BCs, model, terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, fID, rhof, extra_eqn, extra_BCs)
 end
 
 @generated function calculate_coefficients(
-    BCs, model, terms, faces, cells, boundary_cellsID,colval, rowptr, nzval, b, component, time, fID)
+    BCs, model, terms, faces, cells, boundary_cellsID,colval, rowptr, nzval, b, component, time, fID, rhof, extra_eqn, extra_BCs)
     N = length(BCs.parameters)
     unroll = Expr(:block)
     for bci ∈ 1:N
@@ -109,7 +116,7 @@ end
                     zcellID = spindex(rowptr, colval, cellID, cellID)
                     AP, BP = apply!(
                         model, BC, terms, 
-                        colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
+                        colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time, rhof, extra_eqn, extra_BCs
                         )
                     Atomix.@atomic nzval[zcellID] += AP
                     Atomix.@atomic b[cellID] += BP
@@ -170,7 +177,7 @@ end
 
 # Apply generated function definition
 @generated function apply!(
-    model::Model{TN,SN,T,S}, BC, terms, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
+    model::Model{TN,SN,T,S}, BC, terms, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time, rhof, extra_eqn, extra_BCs
     ) where {TN,SN,T,S}
 
     # Definition of main assignment loop (one per patch)
@@ -179,7 +186,7 @@ end
         call = quote
             ap, bp = BC(
                 terms[$t], 
-                colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
+                colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time, rhof, extra_eqn, extra_BCs
                 )
             AP += ap
             BP += bp
