@@ -361,6 +361,7 @@ function MULTIPHASE(
     new_dt_factor = clamp(new_dt_factor, minShrink, maxGrow)
 
     dt = dt * new_dt_factor # adaptive time-stepping!
+    # @reset config.runtime.dt = dt
 
     R_ux[iteration] = rx
     R_uy[iteration] = ry
