@@ -250,7 +250,7 @@ end
 
 ## COURANT NUMBER
 
-max_courant_number!(cellsCourant, model, config) = begin
+max_courant_number!(cellsCourant, model, config, dt) = begin
     (; U) = model.momentum
     (; mesh) = U
     # (; cells) = mesh
@@ -259,27 +259,71 @@ max_courant_number!(cellsCourant, model, config) = begin
 
     ndrange = length(cellsCourant)
     kernel! = _max_courant_number!(_setup(backend, workgroup, ndrange)...)
-    kernel!(cellsCourant, U, runtime, mesh)
+    kernel!(cellsCourant, U, runtime, dt, mesh)
     # # KernelAbstractions.synchronize(backend)
     return maximum(cellsCourant)
 end
 
-@kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh3)
+@kernel function _max_courant_number!(cellsCourant, U, runtime, dt, mesh::Mesh3)
     i = @index(Global)
     @uniform cells = mesh.cells
-    dt = runtime.dt
+    # dt = runtime.dt
     umag = norm(U[i])
     volume = cells[i].volume
     dx = volume^0.333333
     cellsCourant[i] = umag * dt / dx
 end
 
-@kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh2)
+@kernel function _max_courant_number!(cellsCourant, U, runtime, dt, mesh::Mesh2)
     i = @index(Global)
     @uniform cells = mesh.cells
-    dt = runtime.dt
+    # dt = runtime.dt
     umag = norm(U[i])
     volume = cells[i].volume
     dx = volume^0.5
     cellsCourant[i] = umag * dt / dx
 end
+
+
+## ALPHA COURANT NUMBER
+
+max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, model, config, dt) = begin
+    (; U) = model.momentum
+    (; mesh) = U
+    (; hardware, runtime) = config
+    (; backend, workgroup) = hardware
+
+    ndrange = length(cellsAlphaCourant)
+    kernel! = _max_alpha_courant_number!(_setup(backend, workgroup, ndrange)...)
+    kernel!(cellsAlphaCourant, alpha, mdotf, runtime, dt, mesh)
+    # # KernelAbstractions.synchronize(backend)
+    return maximum(cellsAlphaCourant)
+end
+
+
+@kernel function _max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, runtime, dt, mesh)
+    i = @index(Global)
+
+    @uniform cells = mesh.cells
+    @uniform cell_faces = mesh.cell_faces
+
+    # dt = runtime.dt
+    volume = cells[i].volume
+    alphaVal = alpha[i]
+
+    nearInterfaceVal = nearInterface(alphaVal)
+    sumAbsMdotf = zero(alphaVal)
+
+    fr = cells[i].faces_range
+    @inbounds for k in fr
+        pointer = cell_faces[k]
+        # faceID = mesh.faces[pointer]
+        sumAbsMdotf += abs(mdotf[pointer])
+    end
+
+    cellsAlphaCourant[i] = dt * nearInterfaceVal * sumAbsMdotf / volume
+end
+
+@inline nearInterface(alpha) = ifelse((alpha > 0.01) & (alpha < 0.99), one(alpha), zero(alpha)) #Combines the two functions below into one
+# @inline pos0(x) = ifelse(x >= zero(x), one(x), zero(x))
+# @inline nearInterface(α) = pos0(α - 0.01) * pos0(0.99 - α)

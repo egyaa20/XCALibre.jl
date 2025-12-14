@@ -232,6 +232,7 @@ function MULTIPHASE(
     R_p = ones(TF, iterations)
     R_alpha = ones(TF, iterations)
     cellsCourant = KernelAbstractions.zeros(backend, TF, n_cells)
+    cellsAlphaCourant = KernelAbstractions.zeros(backend, TF, n_cells)
     
     # Initial calculations
     time = zero(TF) # assuming time=0
@@ -258,7 +259,8 @@ function MULTIPHASE(
 
 
     @time for iteration ∈ 1:iterations
-        time = iteration *dt
+        # time = iteration*dt
+        time += dt
 
         update_phase_thermodynamics!(phase_eos[1], Val(1), nueff, Temp, model, config)
         update_phase_thermodynamics!(phase_eos[2], Val(2), nueff, Temp, model, config)
@@ -334,14 +336,31 @@ function MULTIPHASE(
             correct_mass_flux(mdotf, p_rgh, rDf, config)
             correct_velocity_multiphase!(U, Hv, ∇p_rgh, rD, phi_g, config)
 
+
         end # corrector loop end
-        
+
     @. p.values = p_rgh.values + (rho.values * gh.values)
 
     turbulence!(turbulenceModel, model, S, prev, time, config)
     update_nueff!(nueff, nuf, model.turbulence, config)
+    
+    @. alpha.values = clamp(alpha.values, 0.0, 1.0)
 
-    maxCourant = max_courant_number!(cellsCourant, model, config)
+    maxCo = 0.5         # must be defined by user
+    maxAlphaCo = 0.5    # must be defined by user
+    minShrink = 0.1     # smallest factor to multiply dt by
+    maxGrow = 1.2       # biggest factor to multiply dt by
+
+    courant = max_courant_number!(cellsCourant, model, config, dt)
+    alphaCourant = max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, model, config, dt)
+
+    courant_factor = maxCo / (courant + eps())
+    alphaCourant_factor = maxAlphaCo / (alphaCourant + eps())
+
+    new_dt_factor = min(courant_factor, alphaCourant_factor)
+    new_dt_factor = clamp(new_dt_factor, minShrink, maxGrow)
+
+    dt = dt * new_dt_factor # adaptive time-stepping!
 
     R_ux[iteration] = rx
     R_uy[iteration] = ry
@@ -351,14 +370,17 @@ function MULTIPHASE(
 
     ProgressMeter.next!(
         progress, showvalues = [
-            (:time, iteration*runtime.dt),
-            (:Courant, maxCourant),
+            # (:time, iteration*runtime.dt),
+            (:dt, dt), # We are going to cheat!
+            (:time, time),
+            (:Courant, courant),
+            (:AlphaCourant, alphaCourant),
             (:Ux, R_ux[iteration]),
             (:Uy, R_uy[iteration]),
             (:Uz, R_uz[iteration]),
             (:p, R_p[iteration]),
             (:alpha, R_alpha[iteration]),
-            # turbulenceModel.state.residuals...
+            turbulenceModel.state.residuals...
             ]
         )
 
