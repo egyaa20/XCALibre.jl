@@ -6,7 +6,8 @@ using XCALibre
 scaling = 0.001 # make sure the domain is 1x1 m
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "quad40.unv"
+# grid = "quad40.unv"
+grid = "quad100.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=scaling)
 
@@ -107,7 +108,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=5000, time_step=2.0e-4, write_interval=100)
+    iterations=15000, time_step=2.0e-4, write_interval=1000)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -124,9 +125,10 @@ initialise!(model.momentum.U, noSlipVelocity)
 initialise!(model.fluid.alpha, 0.0)
 
 min_corner_vec = [0.7, 0.0, -0.5] #* scaling
-max_corner_vec = [1.0,0.25,0.5] #* scaling
+max_corner_vec = [1.0,0.3,0.5] #* scaling
 
 setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec) #initialise water column 0.3 m wide and 0.25 m tall
+# setField_Circle2D!(mesh=mesh, field=model.fluid.alpha, value=1.0, centre=[0.5,0.5], radius=0.125)
 
 residuals = run!(model, config)
 

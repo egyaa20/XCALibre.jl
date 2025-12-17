@@ -1,6 +1,8 @@
 # export correct_boundaries!
 export interpolate!
 export interpolate_harmonic!
+export interpolate_upwind!
+
 
 # Temporary functions to extract boundary array
 function to_cpu(boundaries::AbstractArray)
@@ -74,6 +76,54 @@ end
 
         one_minus_weight = 1.0 - weight
         fvals[i] = weight*phi1 + one_minus_weight*phi2 # check weight is used correctly!
+    end
+end
+
+
+
+
+## UPWIND SCALAR INTERPOLATION
+
+function interpolate_upwind!(phif::FaceScalarField, phi::ScalarField, mdotf, config)
+    # Extract values arrays from scalar fields 
+    vals = phi.values
+    fvals = phif.values
+
+    # Extract faces from mesh
+    mesh = phif.mesh
+    (; cells, faces) = mesh
+
+    # Launch interpolate kernel
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    ndrange = length(faces)
+    kernel! = _interpolate_upwind!(_setup(backend, workgroup, ndrange)...)
+    kernel!(fvals, vals, mdotf, faces)
+    # # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _interpolate_upwind!(fvals, vals, mdotf, faces)
+    i = @index(Global)
+
+    @inbounds begin
+        face = faces[i]
+        (; weight, ownerCells, normal) = face
+        F = face.centre
+
+        owner1 = ownerCells[1] # [o]
+        owner2 = ownerCells[2] # [n]
+
+        flux = mdotf[i]
+
+        if owner1 == owner2
+            fvals[i] = vals[owner1]
+        else
+            if flux >= 0.0
+                fvals[i] = vals[owner1]
+            else
+                fvals[i] = vals[owner2]
+            end
+        end
     end
 end
 

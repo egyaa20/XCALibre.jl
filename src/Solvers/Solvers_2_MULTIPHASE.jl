@@ -84,7 +84,9 @@ function setup_multiphase_solvers(
     phi_g = VectorField(mesh)
     phi_gf = FaceScalarField(mesh)
 
-    interpolate!(alphaf, alpha, config)
+    # interpolate!(alphaf, alpha, config)
+    interpolate_upwind!(alphaf, alpha, mdotf, config)
+    correct_boundaries!(alphaf, alpha, boundaries.alpha, time, config)
 
     @info "Computing Fluid Properties..."
 
@@ -144,12 +146,12 @@ function setup_multiphase_solvers(
     # alpha_rhs = - Src(zero_field, 1)
     # alpha_rhs = construct_sources(model.fluid, alpha_rhs, model, props, alpha, rho, phases, config, mesh, time)
 
-    alpha_eqn = (
-        Time{schemes.alpha.time}(rho, alpha)
-        + Divergence{schemes.alpha.divergence}(mdotf, alpha) 
-        == 
-        Source(zero_field)
-    ) → ScalarEquation(alpha, boundaries.alpha)
+    # alpha_eqn = (
+    #     Time{schemes.alpha.time}(rho, alpha)
+    #     + Divergence{schemes.alpha.divergence}(mdotf, alpha) 
+    #     == 
+    #     Source(zero_field)
+    # ) → ScalarEquation(alpha, boundaries.alpha)
 
     p_eqn = (
         - Laplacian{schemes.p.laplacian}(rDf, p_rgh)
@@ -161,19 +163,20 @@ function setup_multiphase_solvers(
 
     @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
     @reset p_eqn.preconditioner = set_preconditioner(solvers.p_rgh.preconditioner, p_eqn)
-    @reset alpha_eqn.preconditioner = set_preconditioner(solvers.alpha.preconditioner, alpha_eqn)
+    # @reset alpha_eqn.preconditioner = set_preconditioner(solvers.alpha.preconditioner, alpha_eqn)
 
     @info "Pre-allocating solvers..."
      
     @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
     @reset p_eqn.solver = _workspace(solvers.p_rgh.solver, _b(p_eqn))
-    @reset alpha_eqn.solver = _workspace(solvers.alpha.solver, _b(alpha_eqn))
+    # @reset alpha_eqn.solver = _workspace(solvers.alpha.solver, _b(alpha_eqn))
 
     @info "Initialising turbulence model..."
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-        model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, gh, ghf, phi_g, phi_gf, config; 
+        model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, gh, ghf, phi_g, phi_gf, config; 
+        # model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, gh, ghf, phi_g, phi_gf, config; 
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
@@ -185,7 +188,7 @@ end # end function
 
 
 function MULTIPHASE(
-    model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, gh, ghf, phi_g, phi_gf, config; 
+    model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, gh, ghf, phi_g, phi_gf, config; 
     # model, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, gh, ghf, phi_g, phi_gf, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
     )
@@ -220,6 +223,8 @@ function MULTIPHASE(
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
 
+    alpha_old = ScalarField(mesh)
+
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     TI = _get_int(mesh)
@@ -253,6 +258,17 @@ function MULTIPHASE(
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
+    interpolate_upwind!(alphaf, alpha, mdotf, config)
+    correct_boundaries!(alphaf, alpha, boundaries.alpha, time, config)
+    
+    maxCo = 5.0        # must be defined by user
+    maxAlphaCo = 0.25   # must be defined by user
+    minShrink = 0.1     # smallest factor to multiply dt by
+    maxGrow = 1.2       # biggest factor to multiply dt by
+
+    # courant = 0.0
+    # alphaCourant = 0.0
+
     @info "Starting multiphase loops..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
@@ -273,17 +289,58 @@ function MULTIPHASE(
 
         grad!(∇rho, rhof, rho, time, config)
 
+        
+        # courant = max_courant_number!(cellsCourant, model, config, dt)
+        # alphaCourant = max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, model, config, dt)
+
+        # # ∇alpha = Grad{schemes.alpha.gradient}(alpha)
+        # # grad!(∇alpha, alphaf, alpha, boundaries.alpha, time, config)
+        # # limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
+
+        n_sub = ceil(Int, alphaCourant / maxAlphaCo)
+        n_sub = clamp(n_sub, 1, 20) # Ensure at least 1 step and max of 10 steps
+        sub_dt = dt / n_sub
+        current_time_sum = 0.0
+
+        for sub_step in 1:n_sub
+            # Correction for the final step to kill floating point error in dt division
+            if sub_step == n_sub
+                real_sub_dt = dt - current_time_sum
+            else
+                real_sub_dt = sub_dt
+            end
+
+            t_sub = time - dt + current_time_sum + real_sub_dt
+
+            interpolate_upwind!(alphaf, alpha, mdotf, config)
+            correct_boundaries!(alphaf, alpha, boundaries.alpha, t_sub, config)
+            @. alpha_old.values = alpha.values
+            alpha_explicit!(alpha_old, alpha, alphaf, mdotf, rho, real_sub_dt, config)
+        
+            @. alpha.values = clamp(alpha.values, 0.0, 1.0)
+
+            current_time_sum += real_sub_dt
+        end
+
+        # interpolate_upwind!(alphaf, alpha, mdotf, config)
+        # correct_boundaries!(alphaf, alpha, boundaries.alpha, time, config)
+
+        
+        @. alpha_old.values = alpha.values
+        alpha_explicit!(alpha_old, alpha, alphaf, mdotf, rho, dt, config)
+        # interpolate!(alphaf, alpha, config)
+        interpolate_upwind!(alphaf, alpha, mdotf, config)
+        correct_boundaries!(alphaf, alpha, boundaries.alpha, time, config)
+
+
+
+
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
 
-
-        ∇alpha = Grad{schemes.alpha.gradient}(alpha)
-        grad!(∇alpha, alphaf, alpha, boundaries.alpha, time, config)
-        limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)        
-
-        ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
-        interpolate!(alphaf, alpha, config)
-        correct_boundaries!(alphaf, alpha, boundaries.alpha, time, config)
+        # ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
+        # interpolate!(alphaf, alpha, config)
+        # correct_boundaries!(alphaf, alpha, boundaries.alpha, time, config)
           
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -344,20 +401,16 @@ function MULTIPHASE(
     turbulence!(turbulenceModel, model, S, prev, time, config)
     update_nueff!(nueff, nuf, model.turbulence, config)
     
-    @. alpha.values = clamp(alpha.values, 0.0, 1.0)
-
-    maxCo = 0.5         # must be defined by user
-    maxAlphaCo = 0.5    # must be defined by user
-    minShrink = 0.1     # smallest factor to multiply dt by
-    maxGrow = 1.2       # biggest factor to multiply dt by
-
+    # @. alpha.values = clamp(alpha.values, 0.0, 1.0)
+    
     courant = max_courant_number!(cellsCourant, model, config, dt)
     alphaCourant = max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, model, config, dt)
 
     courant_factor = maxCo / (courant + eps())
     alphaCourant_factor = maxAlphaCo / (alphaCourant + eps())
 
-    new_dt_factor = min(courant_factor, alphaCourant_factor)
+    new_dt_factor = min(courant_factor, alphaCourant_factor) # TWO CRITERIA 
+    # new_dt_factor = courant_factor # ONE CRITERIA
     new_dt_factor = clamp(new_dt_factor, minShrink, maxGrow)
 
     dt = dt * new_dt_factor # adaptive time-stepping!
@@ -367,7 +420,7 @@ function MULTIPHASE(
     R_uy[iteration] = ry
     R_uz[iteration] = rz
     R_p[iteration] = rp
-    R_alpha[iteration] = ralpha
+    # R_alpha[iteration] = ralpha
 
     ProgressMeter.next!(
         progress, showvalues = [
@@ -380,7 +433,7 @@ function MULTIPHASE(
             (:Uy, R_uy[iteration]),
             (:Uz, R_uz[iteration]),
             (:p, R_p[iteration]),
-            (:alpha, R_alpha[iteration]),
+            # (:alpha, R_alpha[iteration]),
             turbulenceModel.state.residuals...
             ]
         )
@@ -397,6 +450,42 @@ function MULTIPHASE(
 end
 
 
+
+function alpha_explicit!(alpha_old, alpha, alphaf, mdotf, rho, dt, config)
+    (; hardware) = config
+    mesh = rho.mesh
+    backend = hardware.backend
+    workgroup = hardware.workgroup
+    cells = rho.mesh.cells
+
+    divergence_sum = ScalarField(mesh)
+
+    ndrange = length(divergence_sum)
+    kernel! = _compute_divergence_sum!(_setup(backend, workgroup, ndrange)...)
+    kernel!(divergence_sum, mdotf, alphaf)
+
+    @. alpha.values = alpha_old.values - (dt) * divergence_sum.values
+end
+@kernel inbounds=true function _compute_divergence_sum!(divergence_sum, mdotf, alphaf)
+    i = @index(Global)
+
+    mesh = mdotf.mesh
+    cells = mesh.cells
+    cell_faces = mesh.cell_faces
+    cell_nsign = mesh.cell_nsign
+
+    T = eltype(divergence_sum.values)
+    sum = zero(T)
+    volume = cells[i].volume
+
+    fr = cells[i].faces_range
+    @inbounds for k in fr
+        pointer = cell_faces[k]
+        sum += mdotf[pointer] * alphaf[pointer] * cell_nsign[k]
+    end
+
+    divergence_sum[i] = sum / volume
+end
 
 
 function update_phase_thermodynamics!(EoS::AbstractEosModel, phaseIndex::Val{N}, nueff, T, model, config) where {N}
