@@ -132,7 +132,7 @@ function setup_multiphase_solvers(
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         ==
         - Source(∇p_rgh.result)
-        + Source(phi_g)
+        # + Source(phi_g)
     ) → VectorEquation(U, boundaries.U)
 
     alpha_eqn = (
@@ -201,7 +201,6 @@ function MULTIPHASE(
     S = StrainRate(gradU, gradUT, U, Uf)
 
     n_cells = length(mesh.cells)
-    pf = FaceScalarField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
 
@@ -240,6 +239,14 @@ function MULTIPHASE(
     @time for iteration ∈ 1:iterations
         time = iteration *dt
 
+        grad!(∇alpha, alphaf, alpha, boundaries.alpha, time, config)
+        limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)        
+
+        ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
+        interpolate!(alphaf, alpha, config)
+        correct_boundaries!(alphaf, alpha, boundaries.alpha, time, config)
+
+
         update_phase_thermodynamics!(phase_eos[1], Val(1), nueff, T_field, model, config)
         update_phase_thermodynamics!(phase_eos[2], Val(2), nueff, T_field, model, config)
 
@@ -250,18 +257,11 @@ function MULTIPHASE(
         interpolate!(nuf, nu, config)
 
         grad!(∇rho, rhof, rho, time, config)
+        limit_gradient!(schemes.p_rgh.limiter, ∇rho, rho, config)      
 
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
 
-
-        ∇alpha = Grad{schemes.alpha.gradient}(alpha)
-        grad!(∇alpha, alphaf, alpha, boundaries.alpha, time, config)
-        limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)        
-
-        ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config; time=time)
-        interpolate!(alphaf, alpha, config)
-        correct_boundaries!(alphaf, alpha, boundaries.alpha, time, config)
           
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -279,7 +279,6 @@ function MULTIPHASE(
 
             phi_g!(phi_g, gh, ∇rho, config)
             phi_gf!(phi_gf, rho, ghf, rDf, model, config)
-            # The solver is perfectly working as it is, but it might be worth checking if we need to update boundary faces for this field in the future.
             
             @. mdotf.values += phi_gf.values
 
@@ -293,7 +292,7 @@ function MULTIPHASE(
                 explicit_relaxation!(p_rgh, prev, solvers.p_rgh.relax, config)
             end
 
-            grad!(∇p_rgh, pf, p_rgh, boundaries.p_rgh, time, config) 
+            grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config) 
             limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
 
             # for i ∈ 1:ncorrectors
@@ -513,7 +512,7 @@ end
 
     @inbounds begin 
         face = faces[fID]
-        (; area, normal, ownerCells, delta) = face 
+        (; area, normal, ownerCells, delta) = face
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
         rho1 = rho[cID1]
@@ -553,9 +552,13 @@ end
     @inbounds begin
         rD_i = rDvalues[i]
 
-        x_diff = (phi_g_x[i] - dpdx[i])
-        y_diff = (phi_g_y[i] - dpdy[i])
-        z_diff = (phi_g_z[i] - dpdz[i])
+        # x_diff = (phi_g_x[i] - dpdx[i])
+        # y_diff = (phi_g_y[i] - dpdy[i])
+        # z_diff = (phi_g_z[i] - dpdz[i])
+
+        x_diff = (-dpdx[i])
+        y_diff = (-dpdy[i])
+        z_diff = (-dpdz[i])
 
         Ux[i] = Hvx[i] + x_diff * rD_i
         Uy[i] = Hvy[i] + y_diff * rD_i
