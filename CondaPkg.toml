@@ -1,0 +1,3 @@
+[deps]
+pyvista = ""
+python = "==3.11"

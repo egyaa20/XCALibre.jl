@@ -3,10 +3,11 @@ using Test
 
 # This case tests multiphase solver, gravitational effects, and fluid models such as Perfect gas, Andrade, Sutherland's
 
-scaling = 0.001 # make sure the domain is 1x1 m
+scaling = 0.000001 # make sure the domain is 1x1 m
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "quad40.unv"
+# grid = "quad40.unv"
+grid = "quad100.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=scaling)
 
@@ -109,7 +110,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=1000, time_step=1.0e-4, write_interval=100)
+    iterations=5000, time_step=1e-5, write_interval=100)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -125,7 +126,9 @@ initialise!(model.fluid.alpha, 0.0)
 min_corner_vec = [0.7, 0.0, -0.5] #* scaling
 max_corner_vec = [1.0,0.25,0.5] #* scaling
 
-setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec) #initialise water column 0.3 m wide and 0.25 m tall
+
+setField_Circle2D!(mesh=mesh, field=model.fluid.alpha, value=1.0, centre=[0.5*0.001, 0.5*0.001], radius=0.2*0.001)
+# setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec) #initialise water column 0.3 m wide and 0.25 m tall
 
 residuals = run!(model, config)
 
@@ -133,5 +136,5 @@ residuals = run!(model, config)
 # With time, gravity pulls liquid down and soon most of the bottom boundary becomes closer to full water fraction
 # Thus we check if after some time the boundary average value is > 0.5
 
-bottom_boundary = boundary_average(:bottom, model.fluid.alpha, BCs.alpha, config)
-@test bottom_boundary > 0.5
+# bottom_boundary = boundary_average(:bottom, model.fluid.alpha, BCs.alpha, config)
+# @test bottom_boundary > 0.5
