@@ -31,10 +31,12 @@ end
     term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
         volume = cell.volume
         vol_rdt = volume/runtime.dt
+
+        rho = term.flux[cID]
         
         # Increment sparse and b arrays 
-        ac = vol_rdt
-        b = prev[cID]*vol_rdt
+        ac = rho * vol_rdt
+        b = rho * prev[cID]*vol_rdt
         return ac, b
 end
 

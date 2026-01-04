@@ -392,5 +392,9 @@ end
         p2 = p[cID2]
         face_grad = area*(p2 - p1)/delta # best option so far!
         mdotf[fID] -= face_grad*rDf[fID]
+        if fID == 2017
+            # println("pressure flux(1): $(face_grad*rDf[fID])")
+            # println("New mdotf must be zero: $(mdotf[fID])")
+        end
     end
 end

@@ -1,13 +1,15 @@
 using XCALibre
-using Test
+using CUDA
 
-# This case tests multiphase solver, gravitational effects, and fluid models such as Perfect gas, Andrade, Sutherland's
+# grids_dir = pkgdir(XCALibre, "src", "prototype", "polyMesh_dam/")
+# mesh = FOAM3D_mesh(grids_dir, scale=1.0)
 
+# scaling = 0.00001 # make sure the domain is 1x1 m * 0.01
 scaling = 0.001 # make sure the domain is 1x1 m
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "quad40.unv"
-# grid = "quad100.unv"
+# grid = "quad40.unv"
+grid = "quad100.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=scaling)
 
@@ -31,10 +33,6 @@ model = Physics(
         phases = (
             Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3)),       #liquid
             Phase(eosModel=ConstEos(1.2), viscosityModel=ConstMu(1.8e-5)),          #vapour
-            
-            # Here we also test PerfectGas, Andrade, and Sutherlad models
-            # Phase(eosModel=ConstEos(1000.0), viscosityModel=AndradeModel),    #water
-            # Phase(eosModel=PerfectGasModel, viscosityModel=SutherlandModel),  #air
         ),
         gravity = gravity
     ),
@@ -43,7 +41,7 @@ model = Physics(
     domain = mesh_dev
     )
 
-operating_pressure = 0.0 # we define 101000 instead of 0.0 to make sure PerfectGas EoS works
+operating_pressure = 0.0
 
 
 BCs = assign(
@@ -65,11 +63,10 @@ BCs = assign(
             Zerogradient(:inlet),
             Zerogradient(:outlet),
             Zerogradient(:bottom),
-            Zerogradient(:top),
+            Zerogradient(:top, 0.0),
         ]
     )
 )
-
 
 
 schemes = (
@@ -96,7 +93,6 @@ solvers = (
         relax       = 1.0,
         rtol        = 0.0,
         atol        = 1.0e-5
-        
     ),
     alpha = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres(), Cg()
@@ -109,7 +105,8 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=4000, time_step=1.0e-4, write_interval=100)
+    iterations=10000, time_step=1.0e-4, write_interval=50)
+    # iterations=30000, time_step=1.0e-9, write_interval=500)
      
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -123,19 +120,12 @@ initialise!(model.momentum.U, noSlipVelocity)
 initialise!(model.fluid.alpha, 0.0)
 
 min_corner_vec = [0.0, 0.0, -0.5] # column
-max_corner_vec = [0.5,0.5,0.5] # column
+max_corner_vec = [0.3,0.4,0.5] # column
 
 
 
 
-# setField_Circle2D!(mesh=mesh, field=model.fluid.alpha, value=1.0, centre=[0.5,0.5], radius=0.25)
-setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec) #initialise water column 0.3 m wide and 0.25 m tall
+# setField_Circle2D!(mesh=mesh, field=model.fluid.alpha, value=1.0, centre=[0.005,0.005], radius=0.0015)
+setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
 
 residuals = run!(model, config)
-
-# Initially, only 30% (0.7 to 1.0) of the 1.0 m wide domain was initialised as water (alpha=1), thus avg. bottom alpha value = 0.3
-# With time, gravity pulls liquid down and soon most of the bottom boundary becomes closer to full water fraction
-# Thus we check if after some time the boundary average value is > 0.5
-
-# bottom_boundary = boundary_average(:bottom, model.fluid.alpha, BCs.alpha, config)
-# @test bottom_boundary > 0.5

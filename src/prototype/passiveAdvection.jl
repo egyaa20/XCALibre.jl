@@ -19,7 +19,7 @@ mesh_dev = adapt(backend, mesh)
 
 noSlipVelocity = [0.0, 0.0, 0.0]
 
-gravity = Gravity([0.0, -10.0, 0.0]) # Define gravity direction and magnitude
+gravity = Gravity([0.0, 0.0, 0.0]) # Define gravity direction and magnitude
 
 AndradeModel = Andrade(B=2.414e-5, C=247.8) #water
 SutherlandModel = Sutherland(mu_ref=1.716e-5, S=111.0) #air
@@ -51,16 +51,15 @@ BCs = assign(
     (
         U = [
             Wall(:inlet, noSlipVelocity),
-            Wall(:outlet, noSlipVelocity),
-            Zerogradient(:top),
+            Wall(:top, noSlipVelocity),
+            Zerogradient(:outlet),
             Wall(:bottom, noSlipVelocity),
-            # Wall(:top, noSlipVelocity),
         ],
         p_rgh = [
             Zerogradient(:inlet),
-            Zerogradient(:outlet),
+            Zerogradient(:top),
             Zerogradient(:bottom),
-            Dirichlet(:top, operating_pressure),
+            Dirichlet(:outlet, operating_pressure),
         ],
         alpha = [
             Zerogradient(:inlet),
@@ -96,12 +95,12 @@ solvers = (
         convergence = 1e-7,
         relax       = 1.0,
         rtol        = 0.0,
-        atol        = 1.0e-7
+        atol        = 1.0e-5
         
     ),
     alpha = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres(), Cg()
-        preconditioner = Jacobi(), # IC0GPU, Jaco•bi, DILU
+        preconditioner = Jacobi(), # IC0GPU, Jacobi, DILU
         convergence = 1e-7,
         relax       = 1.0,
         rtol        = 0.0,
@@ -110,7 +109,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=10000, time_step=1.0e-4, write_interval=50)
+    iterations=5000, time_step=1.0e-3, write_interval=100)
     
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -119,13 +118,12 @@ config = Configuration(
 
 GC.gc()
 
-# initialise!(model.momentum.p, operating_pressure)
-initialise!(model.fluid.p_rgh, 0.0)
-initialise!(model.momentum.U, noSlipVelocity)
+initialise!(model.momentum.p, operating_pressure)
+initialise!(model.momentum.U, [1.0,0.0,0.0])
 initialise!(model.fluid.alpha, 0.0)
 
-min_corner_vec = [0.0, 0.0, -0.5] # column
-max_corner_vec = [1.0,0.5,0.5] # column
+min_corner_vec = [0.2, 0.1, -0.5] # column
+max_corner_vec = [0.5,0.5,0.5] # column
 
 
 

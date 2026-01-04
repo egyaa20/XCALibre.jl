@@ -139,7 +139,8 @@ end
     @uniform begin
         Ux, Uy, Uz = U.x, U.y, U.z
         Hvx, Hvy, Hvz = Hv.x, Hv.y, Hv.z
-        dpdx, dpdy, dpdz = ∇p.result.x, ∇p.result.y, ∇p.result.z
+        # dpdx, dpdy, dpdz = ∇p.result.x, ∇p.result.y, ∇p.result.z
+        dpdx, dpdy, dpdz = ∇p.x, ∇p.y, ∇p.z
         rDvalues = rD.values
     end
 
