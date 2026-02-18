@@ -1,6 +1,6 @@
 
 @inline function boundary_interpolation!(
-    BC::FixedTemperature, phif::FaceScalarField, phi, boundary_cellsID, time, fID)
+    BC::FixedTemperature, phif::FaceScalarField, phi, boundary_cellsID, time, fID, rho_field, U_field)
     @inbounds begin
         (; T, energy_model) = BC.value
         phif[fID] = energy_model(T)

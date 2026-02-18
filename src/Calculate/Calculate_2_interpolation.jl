@@ -2,6 +2,7 @@
 export interpolate!
 export interpolate_harmonic!
 export interpolate_upwind!
+export interpolate_limited!
 
 # Temporary functions to extract boundary array
 function to_cpu(boundaries::AbstractArray)
@@ -78,6 +79,48 @@ end
                 fvals[i] = vals[owner1]
             else
                 fvals[i] = vals[owner2]
+            end
+        end
+    end
+end
+
+
+## UPWIND VECTOR INTERPOLATION
+
+function interpolate_upwind!(phif::FaceVectorField, phi::VectorField, mdotf, config)
+    # Extract faces from mesh
+    mesh = phif.mesh
+    (; cells, faces) = mesh
+
+    # Launch interpolate kernel
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    ndrange = length(faces)
+    kernel! = _interpolate_upwind!(_setup(backend, workgroup, ndrange)...)
+    kernel!(phif, phi, mdotf, faces)
+    # # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _interpolate_upwind!(phif, phi, mdotf, faces)
+    i = @index(Global)
+
+    @inbounds begin
+        face = faces[i]
+        (; weight, ownerCells, normal) = face
+        # F = face.centre
+
+        owner1 = ownerCells[1] # [o]
+        owner2 = ownerCells[2] # [n]
+
+        flux = mdotf[i]
+
+        if owner1 == owner2
+            phif[i] = phi[owner1]
+        else
+            if flux >= 0.0
+                phif[i] = phi[owner1]
+            else
+                phif[i] = phi[owner2]
             end
         end
     end
@@ -255,3 +298,113 @@ function interpolate!(
     end
 end
 
+
+
+
+function interpolate_limited!(phif::FaceScalarField, phi::ScalarField, grad::VectorField, mdotf, config)
+    # Extract values arrays from scalar fields 
+    vals = phi.values
+    fvals = phif.values
+
+    # Extract faces from mesh
+    mesh = phif.mesh
+    (; cells, faces) = mesh
+
+    # Launch interpolate kernel
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    ndrange = length(faces)
+    kernel! = _interpolate_limited!(_setup(backend, workgroup, ndrange)...)
+    kernel!(fvals, vals, grad, mdotf, cells, faces)
+    
+    nbfaces = length(mesh.boundary_cellsID)
+    ndrange = nbfaces
+    kernel! = _interpolate_limited_boundaries!(_setup(backend, workgroup, ndrange)...)
+    kernel!(fvals, vals, grad, mdotf, cells, faces)
+end
+
+
+
+@inline function vanLeer(r)
+    ar = abs(r)
+    return (r + ar) / ((1 + ar))
+end
+
+@kernel function _interpolate_limited!(fvals, vals, gradvals, mdotf, cells, faces)
+    i = @index(Global)
+
+    @inbounds begin
+        face = faces[i]
+        (; weight, ownerCells) = face
+        F = face.centre
+
+        c1 = ownerCells[1]
+        c2 = ownerCells[2]
+
+        flux = mdotf[i]
+
+        # Upwind (U) / Downwind (D)
+        U = ifelse(flux >= 0, c1, c2)
+        D = ifelse(flux >= 0, c2, c1)
+
+        phiU = vals[U]
+        phiD = vals[D]
+
+        # DEFAULT LINEAR INTERPOLATION
+        phiLin = weight*vals[c1] + (1.0 - weight)*vals[c2]
+
+        
+        xU = cells[U].centre
+        dUF = F - xU
+        deltaU  = dot(gradvals[U], dUF)
+        deltaUD = (phiD - phiU)
+
+        T = eltype(vals)
+        epsT = eps(T)
+
+        denom = deltaUD + copysign(epsT, deltaUD) + epsT
+
+        if abs(deltaU) > 1.0e-16
+            r = (2.0*deltaU) / denom
+        else 
+            r = 0.0
+        end
+
+        ψ = vanLeer(r)
+        
+        # ψ = 0.0
+        # ψ = min(vanLeer(r, epsT), one(T))
+        # ψ = max(ψ, zero(T))
+
+        # ψ = 1.0
+        ψ = clamp(ψ, 0.0, 1.0)
+
+
+        # Blend: upwind + limited correction toward linear
+        phiF = phiU + ψ*(phiLin - phiU)
+
+        # println(ψ)
+
+        
+        # lo = min(phiU, phiD)
+        # hi = max(phiU, phiD)
+        # fvals[i] = clamp(phiF, lo, hi)
+        fvals[i] = phiF
+    end
+end
+
+
+@kernel function _interpolate_limited_boundaries!(fvals, vals, gradvals, mdotf, cells, faces)
+    i = @index(Global)
+
+    @inbounds begin
+        face = faces[i]
+        (; weight, ownerCells) = face
+        # F = face.centre
+
+        c1 = ownerCells[1]
+        # c2 = ownerCells[2]
+
+        fvals[i] = vals[c1]
+    end
+end

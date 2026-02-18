@@ -51,14 +51,14 @@ run!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
     ) where{T,F<:Multiphase,SO,M,Tu,E,D,BI} =
 begin
-    residuals = multiphase!(
+    residuals, config = multiphase!(
         model, config, 
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops
         )
-    return residuals
+    return residuals, config
 end
 
 

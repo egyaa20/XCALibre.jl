@@ -1,6 +1,6 @@
 
 @inline function boundary_interpolation!(
-    BC::Neumann, phif::FaceScalarField, phi, boundary_cellsID, time, fID)
+    BC::Neumann, phif::FaceScalarField, phi, boundary_cellsID, time, fID, rho_field, U_field)
     @inbounds begin
         (; faces) = phi.mesh
         face = faces[fID]
@@ -13,7 +13,7 @@ end
 
 
 @inline function boundary_interpolation!(
-    BC::Neumann, psif::FaceVectorField, psi, boundary_cellsID, time, fID)
+    BC::Neumann, psif::FaceVectorField, psi, boundary_cellsID, time, fID, rho_field, U_field)
     @inbounds begin
         error("Neumann boundary condition for vector fields is not implemented yet.")
     end

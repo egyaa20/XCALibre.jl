@@ -45,7 +45,7 @@ When called, this functor will return two values `ap` and `an`, where `ap` is th
 """
 macro define_boundary(boundary, operator, definition)
     quote
-        @inline (bc::$boundary)(term::Operator{F,P,I,$operator}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I} = 
+        @inline (bc::$boundary)(term::Operator{F,P,I,$operator}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time, rho_field, U_field, gh_field) where {F,P,I} = 
         @inbounds begin
             $definition
         end
@@ -54,7 +54,7 @@ end
 
 macro define_boundary(boundary, operator, FieldType, definition)
     quote
-        @inline (bc::$boundary)(term::Operator{F,P,I,$operator}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) where {F,P<:$FieldType,I} = 
+        @inline (bc::$boundary)(term::Operator{F,P,I,$operator}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time, rho_field, U_field, gh_field) where {F,P<:$FieldType,I} = 
         @inbounds begin
             $definition
         end

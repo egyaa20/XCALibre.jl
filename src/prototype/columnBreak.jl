@@ -8,8 +8,8 @@ using CUDA
 scaling = 0.001 # make sure the domain is 1x1 m
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-# grid = "quad40.unv"
-grid = "quad100.unv"
+grid = "quad40.unv"
+# grid = "quad100.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=scaling)
 
@@ -30,8 +30,8 @@ PerfectGasModel = PerfectGas(rho=1.225, R=287.0) #air
 model = Physics(
     time = Transient(),
     fluid = Fluid{Multiphase}(
-        phases = (
-            Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3)),       #liquid
+        phases = ( #viscosityModel => mu ; #eosModel => rho
+            Phase(eosModel=ConstEos(1000.0), viscosityModel=ConstMu(1.0e-3)),       #liquid 
             Phase(eosModel=ConstEos(1.2), viscosityModel=ConstMu(1.8e-5)),          #vapour
         ),
         gravity = gravity
@@ -50,20 +50,24 @@ BCs = assign(
         U = [
             Wall(:inlet, noSlipVelocity),
             Wall(:outlet, noSlipVelocity),
-            Zerogradient(:top),
+            Zerogradient(:top), 
             Wall(:bottom, noSlipVelocity),
+            # Wall(:top, noSlipVelocity),
         ],
         p_rgh = [
             Zerogradient(:inlet),
             Zerogradient(:outlet),
             Zerogradient(:bottom),
-            Dirichlet(:top, operating_pressure),
+            # Zerogradient(:top),
+            Dirichlet(:top, 0.0),
+            # totalPressure(:top, 0.0),
         ],
         alpha = [
             Zerogradient(:inlet),
             Zerogradient(:outlet),
             Zerogradient(:bottom),
-            Zerogradient(:top, 0.0),
+            Zerogradient(:top),
+            # Dirichlet(:top, 0.0),
         ]
     )
 )
@@ -105,7 +109,8 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=10000, time_step=1.0e-4, write_interval=50)
+    iterations=14000, time_step=1.0e-4, write_interval=250)
+    # iterations=5, time_step=1.0e-4, write_interval=50)
     # iterations=30000, time_step=1.0e-9, write_interval=500)
      
 hardware = Hardware(backend=backend, workgroup=workgroup)
@@ -120,12 +125,30 @@ initialise!(model.momentum.U, noSlipVelocity)
 initialise!(model.fluid.alpha, 0.0)
 
 min_corner_vec = [0.0, 0.0, -0.5] # column
-max_corner_vec = [0.3,0.4,0.5] # column
+max_corner_vec = [0.25, 0.5, 0.5] # column
 
 
 
 
-# setField_Circle2D!(mesh=mesh, field=model.fluid.alpha, value=1.0, centre=[0.005,0.005], radius=0.0015)
+# setField_Circle2D!(mesh=mesh, field=model.fluid.alpha, value=1.0, centre=[0.005,0.005], radius=0.002)
 setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
 
-residuals = run!(model, config)
+# residuals = run!(model, config)
+@time residuals = run!(model, config)
+
+
+####################################
+# (1) New reconstruct function - two phase column test
+# (2) Surface tension implementation - turn off via sigma = 0.0; test on two phase colunn
+# (3) Debug compression function - two phase column and damBreak test; make sure particles are not created out of nothing 
+# That's it for today
+####################################
+
+# __________________________________________
+
+# Have a baseline
+
+# Surface Tension
+# Try new reconstruct function (test it)
+# Adaptive time stepping (1st PR) + Euler flux & Crank-Nicholson
+# Alpha compression debugging

@@ -86,17 +86,17 @@ end
 
 ## Gauss (uncorrected) gradient calculation
 
-function grad!(grad::Grad{Gauss,F,R,I,M}, phif, phi, BCs, time, config) where {F,R<:VectorField,I,M}
+function grad!(grad::Grad{Gauss,F,R,I,M}, phif, phi, BCs, time, config, rho_field, U_field) where {F,R<:VectorField,I,M}
     interpolate!(phif, phi, config)
-    correct_boundaries!(phif, phi, BCs, time, config)
+    correct_boundaries!(phif, phi, BCs, time, config, rho_field, U_field)
     green_gauss!(grad, phif, config)
 end
 
 # Tensor field function definition
 
-function grad!(grad::Grad{Gauss,F,R,I,M}, psif, psi, BCs, time, config) where {F,R<:TensorField,I,M}
+function grad!(grad::Grad{Gauss,F,R,I,M}, psif, psi, BCs, time, config, rho_field, U_field) where {F,R<:TensorField,I,M}
     interpolate!(psif, psi, config)
-    correct_boundaries!(psif, psi, BCs, time, config)
+    correct_boundaries!(psif, psi, BCs, time, config, rho_field, U_field)
     green_gauss!(grad, psif, config)
 end
 
@@ -245,9 +245,9 @@ end
       
 end
 
-function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs, time, config) where {F,R,I,M}
+function grad!(grad::Grad{Midpoint,F,R,I,M}, phif, phi, BCs, time, config, rho_field, U_field) where {F,R,I,M}
     interpolate_midpoint!(phif, phi, config)
-    correct_boundaries!(phif, phi, BCs, time, config)
+    correct_boundaries!(phif, phi, BCs, time, config, rho_field, U_field)
     green_gauss!(grad, phif, config)
 
     # Loop to run correction and green-gauss required number of times over all dimensions

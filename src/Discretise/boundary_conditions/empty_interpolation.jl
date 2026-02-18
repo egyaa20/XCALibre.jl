@@ -1,5 +1,5 @@
 @inline function boundary_interpolation!(
-    BC::Empty, phif::FaceScalarField, phi, boundary_cellsID, time, fID)
+    BC::Empty, phif::FaceScalarField, phi, boundary_cellsID, time, fID, rho_field, U_field)
     @inbounds begin
         phif[fID] = 0.0 
     end
@@ -8,7 +8,7 @@ end
 
 
 @inline function boundary_interpolation!(
-    BC::Empty, psif::FaceVectorField, psi, boundary_cellsID, time, fID)
+    BC::Empty, psif::FaceVectorField, psi, boundary_cellsID, time, fID, rho_field, U_field)
     @inbounds begin
         psif[fID] = SVector{3}(0.0,0.0,0.0)
     end
@@ -16,19 +16,19 @@ end
 end
 
 
-function adjust_boundary!(b_cpu, BC::Empty, phif::FaceScalarField, phi, boundaries, boundary_cellsID, time, backend, workgroup)
+function adjust_boundary!(b_cpu, BC::Empty, phif::FaceScalarField, phi, boundaries, boundary_cellsID, time, backend, workgroup, rho_field, U_field)
     phif_values = phif.values
     phi_values = phi.values
 
     kernel_range = length(b_cpu[BC.ID].IDs_range)
 
     kernel! = adjust_boundary_empty_scalar!(backend, workgroup)
-    kernel!(BC, phif, phi, boundaries, boundary_cellsID, time, phif_values, phi_values, ndrange = kernel_range)
+    kernel!(BC, phif, phi, boundaries, boundary_cellsID, time, phif_values, phi_values, ndrange = kernel_range, rho_field, U_field)
     # # KernelAbstractions.synchronize(backend)
 end
 
 # Neumann
-@kernel function adjust_boundary_empty_scalar!(BC, phif, phi, boundaries, boundary_cellsID, time, phif_values, phi_values)
+@kernel function adjust_boundary_empty_scalar!(BC, phif, phi, boundaries, boundary_cellsID, time, phif_values, phi_values, rho_field, U_field)
     i = @index(Global)
 
     @inbounds begin
@@ -42,17 +42,17 @@ end
     end
 end
 
-function adjust_boundary!(b_cpu, BC::Empty, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, time, backend, workgroup)
+function adjust_boundary!(b_cpu, BC::Empty, psif::FaceVectorField, psi::VectorField, boundaries, boundary_cellsID, time, backend, workgroup, rho_field, U_field)
     (; x, y, z) = psif
 
     kernel_range = length(b_cpu[BC.ID].IDs_range)
 
     kernel! = adjust_boundary_empty_vector!(backend, workgroup)
-    kernel!(BC, psif, psi, boundaries, boundary_cellsID, time, x, y, z, ndrange = kernel_range)
+    kernel!(BC, psif, psi, boundaries, boundary_cellsID, time, x, y, z, ndrange = kernel_range, rho_field, U_field)
     # # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function adjust_boundary_empty_vector!(BC, psif, psi, boundaries, boundary_cellsID, time, x, y, z)
+@kernel function adjust_boundary_empty_vector!(BC, psif, psi, boundaries, boundary_cellsID, time, x, y, z, rho_field, U_field)
     i = @index(Global)
 
     @inbounds begin

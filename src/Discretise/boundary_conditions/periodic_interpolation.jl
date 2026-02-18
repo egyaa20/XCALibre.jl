@@ -1,6 +1,6 @@
 @inline function boundary_interpolation!(
     BC::Union{PeriodicParent,Periodic}, phif::FaceScalarField, phi, 
-    boundary_cellsID, time, fID)
+    boundary_cellsID, time, fID, rho_field, U_field)
     @inbounds begin
         (; faces) = phif.mesh
         i = fID - BC.IDs_range.start + 1
@@ -33,7 +33,7 @@ end
 
 @inline function boundary_interpolation!(
     BC::Union{PeriodicParent,Periodic}, psif::FaceVectorField, psi, 
-    boundary_cellsID, time, fID)
+    boundary_cellsID, time, fID, rho_field, U_field)
     @inbounds begin 
         (; faces) = psif.mesh
         i = fID - BC.IDs_range.start + 1

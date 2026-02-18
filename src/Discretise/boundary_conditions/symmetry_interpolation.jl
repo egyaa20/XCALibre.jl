@@ -1,5 +1,5 @@
 @inline function boundary_interpolation!(
-    BC::Symmetry, phif::FaceScalarField, phi, boundary_cellsID, time, fID)
+    BC::Symmetry, phif::FaceScalarField, phi, boundary_cellsID, time, fID, rho_field, U_field)
     @inbounds begin
         cID = boundary_cellsID[fID]
         phif[fID] = phi[cID] 
@@ -8,7 +8,7 @@
 end
 
 @inline function boundary_interpolation!(
-    BC::Symmetry, psif::FaceVectorField, psi, boundary_cellsID, time, fID)
+    BC::Symmetry, psif::FaceVectorField, psi, boundary_cellsID, time, fID, rho_field, U_field)
     @inbounds begin
         cID = boundary_cellsID[fID]
         face = psi.mesh.faces[fID]

@@ -1,11 +1,11 @@
 @inline function boundary_interpolation!(
-    BC::Dirichlet, phif::FaceScalarField, phi, boundary_cellsID, time, fID)
+    BC::Dirichlet, phif::FaceScalarField, phi, boundary_cellsID, time, fID, rho_field, U_field)
     @inbounds phif[fID] = BC.value
     nothing
 end
 
 @inline function boundary_interpolation!(
-    BC::Dirichlet, psif::FaceVectorField, psi, boundary_cellsID, time, fID)
+    BC::Dirichlet, psif::FaceVectorField, psi, boundary_cellsID, time, fID, rho_field, U_field)
     @inbounds psif[fID] = BC.value
     nothing
 end

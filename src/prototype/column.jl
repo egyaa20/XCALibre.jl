@@ -110,8 +110,8 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=10000, time_step=1.0e-4, write_interval=50)
-    
+    iterations=1, time_step=1.0e-4, write_interval=50)
+
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
@@ -133,7 +133,8 @@ max_corner_vec = [1.0,0.5,0.5] # column
 # setField_Circle2D!(mesh=mesh, field=model.fluid.alpha, value=1.0, centre=[0.5,0.5], radius=0.25)
 setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec) #initialise water column 0.3 m wide and 0.25 m tall
 
-residuals = run!(model, config)
+@time residuals, config = run!(model, config)
+# residuals = run!(model, config)
 
 # Initially, only 30% (0.7 to 1.0) of the 1.0 m wide domain was initialised as water (alpha=1), thus avg. bottom alpha value = 0.3
 # With time, gravity pulls liquid down and soon most of the bottom boundary becomes closer to full water fraction

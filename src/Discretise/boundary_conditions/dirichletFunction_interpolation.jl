@@ -1,5 +1,5 @@
 @inline function boundary_interpolation!(
-    BC::DirichletFunction{T,Test,R}, phif::FaceScalarField, phi, boundary_cellsID, time, fID) where {T,Test<:Function,R}
+    BC::DirichletFunction{T,Test,R}, phif::FaceScalarField, phi, boundary_cellsID, time, fID, rho_field, U_field) where {T,Test<:Function,R}
     (; faces) = phi.mesh
     @inbounds begin
         face = faces[fID]
@@ -10,7 +10,7 @@
 end
 
 @inline function boundary_interpolation!(
-    BC::DirichletFunction{T,Test,R}, psif::FaceVectorField, psi, boundary_cellsID, time, fID) where {T,Test<:Function,R}
+    BC::DirichletFunction{T,Test,R}, psif::FaceVectorField, psi, boundary_cellsID, time, fID, rho_field, U_field) where {T,Test<:Function,R}
     (; faces) = psi.mesh
     @inbounds begin
         face = faces[fID]
@@ -21,7 +21,7 @@ end
 end
 
 @inline function boundary_interpolation!(
-    BC::DirichletFunction{T,Test,R}, phif::FaceScalarField, phi, boundary_cellsID, time, fID) where {T,Test<:XCALibreUserFunctor,R}
+    BC::DirichletFunction{T,Test,R}, phif::FaceScalarField, phi, boundary_cellsID, time, fID, rho_field, U_field) where {T,Test<:XCALibreUserFunctor,R}
     if BC.value.steady 
         return nothing
     end
@@ -35,7 +35,7 @@ end
 end
 
 @inline function boundary_interpolation!(
-    BC::DirichletFunction{T,Test,R}, psif::FaceVectorField, psi, boundary_cellsID, time, fID) where {T,Test<:XCALibreUserFunctor,R}
+    BC::DirichletFunction{T,Test,R}, psif::FaceVectorField, psi, boundary_cellsID, time, fID, rho_field, U_field) where {T,Test<:XCALibreUserFunctor,R}
     if BC.value.steady
         return nothing
     end

@@ -16,7 +16,7 @@ cIndex - Index of the cell based on sparse matrix. Use to index "nzval_array"
     0.0, 0.0 # add types if this approach works
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{SteadyState}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
+    term::Operator{F,P,I,Time{SteadyState}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
     0.0, 0.0
 end
 
@@ -28,15 +28,25 @@ end
     0.0, 0.0 # add types if this approach works
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
+    term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
+        volume = cell.volume
+        vol_rdt = volume/runtime.dt
+        
+        # Increment sparse and b arrays 
+        ac = vol_rdt # (rho^n * V/dt)
+        b = prev[cID]*vol_rdt
+        return ac, b
+end
+@inline scheme_source!(
+    term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:VectorField,I} = begin
         volume = cell.volume
         vol_rdt = volume/runtime.dt
 
         rho = term.flux[cID]
         
         # Increment sparse and b arrays 
-        ac = rho * vol_rdt
-        b = rho * prev[cID]*vol_rdt
+        ac = rho * vol_rdt # (rho^n * V/dt)
+        b = rho_prev[cID]*prev[cID]*vol_rdt
         return ac, b
 end
 
@@ -48,7 +58,7 @@ end
     0.0, 0.0 # add types if this approach works
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{CrankNicolson}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
+    term::Operator{F,P,I,Time{CrankNicolson}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
         volume = cell.volume
         vol_rdt = volume/runtime.dt
         
@@ -88,7 +98,7 @@ end
     return ac, an
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Laplacian{Linear}}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
+    term::Operator{F,P,I,Laplacian{Linear}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
     0.0, 0.0
 end
 
@@ -121,7 +131,7 @@ end
     return ac, an
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Divergence{Linear}}, cell, cID, cIndex, prev, runtime) where {F,P,I} = begin
+    term::Operator{F,P,I,Divergence{Linear}}, cell, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
     0.0, 0.0
 end
 
@@ -137,7 +147,7 @@ end
     return ac, an
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Divergence{Upwind}}, cell, cID, cIndex, prev, runtime) where {F,P,I} = begin
+    term::Operator{F,P,I,Divergence{Upwind}}, cell, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
     0.0, 0.0
 end
 
@@ -172,7 +182,7 @@ end
     return ac, an
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Divergence{LUST}}, cell, cID, cIndex, prev, runtime) where {F,P,I} = begin
+    term::Operator{F,P,I,Divergence{LUST}}, cell, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
     0.0, 0.0
 end
 
@@ -189,7 +199,7 @@ end
     return ac, an
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Divergence{BoundedUpwind}}, cell, cID, cIndex, prev, runtime) where {F,P,I} = begin
+    term::Operator{F,P,I,Divergence{BoundedUpwind}}, cell, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
     0.0, 0.0
 end
 
@@ -202,7 +212,7 @@ end
     0.0, 0.0
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Si}, cell, cID, cIndex, prev, runtime)  where {F,P,I} = begin
+    term::Operator{F,P,I,Si}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
     
     # Retrieve and calculate flux for cell 
     flux = term.sign*term.flux[cID]*cell.volume # indexed with cID

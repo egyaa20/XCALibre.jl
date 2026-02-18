@@ -8,7 +8,7 @@
 # end
 
 @inline function boundary_interpolation!(
-    BC::RotatingWall, psif::FaceVectorField, psi, boundary_cellsID, time, fID)
+    BC::RotatingWall, psif::FaceVectorField, psi, boundary_cellsID, time, fID, rho_field, U_field)
     mesh = psi.mesh 
     faces = mesh.faces
     @inbounds psif[fID] = BC.value(faces[fID])

@@ -1,5 +1,5 @@
 @inline function boundary_interpolation!(
-    BC::NeumannFunction{T,Test,R}, phif::FaceScalarField, phi, boundary_cellsID, time, fID) where {T,Test<:Function,R}
+    BC::NeumannFunction{T,Test,R}, phif::FaceScalarField, phi, boundary_cellsID, time, fID, rho_field, U_field) where {T,Test<:Function,R}
     (; faces) = phi.mesh
     @inbounds begin
         # face = faces[fID]
@@ -12,7 +12,7 @@
 end
 
 @inline function boundary_interpolation!(
-    BC::NeumannFunction{T,Test,R}, psif::FaceVectorField, psi, boundary_cellsID, time, fID) where {T,Test<:Function,R}
+    BC::NeumannFunction{T,Test,R}, psif::FaceVectorField, psi, boundary_cellsID, time, fID, rho_field, U_field) where {T,Test<:Function,R}
     (; faces) = psi.mesh
     @inbounds begin
         # face = faces[fID]
@@ -25,7 +25,7 @@ end
 end
 
 @inline function boundary_interpolation!(
-    BC::NeumannFunction{T,Test,R}, phif::FaceScalarField, phi, boundary_cellsID, time, fID) where {T,Test<:XCALibreUserFunctor,R}
+    BC::NeumannFunction{T,Test,R}, phif::FaceScalarField, phi, boundary_cellsID, time, fID, rho_field, U_field) where {T,Test<:XCALibreUserFunctor,R}
     (; faces) = phi.mesh
     @inbounds begin
         # face = faces[fID]
@@ -38,7 +38,7 @@ end
 end
 
 @inline function boundary_interpolation!(
-    BC::NeumannFunction{T,Test,R}, psif::FaceVectorField, psi, boundary_cellsID, time, fID) where {T,Test<:XCALibreUserFunctor,R}
+    BC::NeumannFunction{T,Test,R}, psif::FaceVectorField, psi, boundary_cellsID, time, fID, rho_field, U_field) where {T,Test<:XCALibreUserFunctor,R}
     (; faces) = psi.mesh
     @inbounds begin
         # face = faces[fID]
