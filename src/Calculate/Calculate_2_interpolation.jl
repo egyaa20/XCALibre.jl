@@ -1,6 +1,8 @@
 # export correct_boundaries!
 export interpolate!
 export interpolate_harmonic!
+export interpolate_upwind!
+
 
 # Temporary functions to extract boundary array
 function to_cpu(boundaries::AbstractArray)
@@ -78,6 +80,92 @@ end
 end
 
 
+## UPWIND SCALAR INTERPOLATION
+
+function interpolate_upwind!(phif::FaceScalarField, phi::ScalarField, mdotf, config)
+    # Extract values arrays from scalar fields 
+    vals = phi.values
+    fvals = phif.values
+
+    # Extract faces from mesh
+    mesh = phif.mesh
+    (; cells, faces) = mesh
+
+    # Launch interpolate kernel
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    ndrange = length(faces)
+    kernel! = _interpolate_upwind!(_setup(backend, workgroup, ndrange)...)
+    kernel!(fvals, vals, mdotf, faces)
+    # # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _interpolate_upwind!(fvals, vals, mdotf, faces)
+    i = @index(Global)
+
+    @inbounds begin
+        face = faces[i]
+        (; weight, ownerCells, normal) = face
+        F = face.centre
+
+        owner1 = ownerCells[1] # [o]
+        owner2 = ownerCells[2] # [n]
+
+        flux = mdotf[i]
+
+        if owner1 == owner2
+            fvals[i] = vals[owner1]
+        else
+            if flux >= 0.0
+                fvals[i] = vals[owner1]
+            else
+                fvals[i] = vals[owner2]
+            end
+        end
+    end
+end
+
+
+## UPWIND VECTOR INTERPOLATION
+
+function interpolate_upwind!(phif::FaceVectorField, phi::VectorField, mdotf, config)
+    # Extract faces from mesh
+    mesh = phif.mesh
+    (; cells, faces) = mesh
+
+    # Launch interpolate kernel
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    ndrange = length(faces)
+    kernel! = _interpolate_upwind!(_setup(backend, workgroup, ndrange)...)
+    kernel!(phif, phi, mdotf, faces)
+    # # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _interpolate_upwind!(phif, phi, mdotf, faces)
+    i = @index(Global)
+
+    @inbounds begin
+        face = faces[i]
+        (; weight, ownerCells, normal) = face
+        # F = face.centre
+
+        owner1 = ownerCells[1] # [o]
+        owner2 = ownerCells[2] # [n]
+
+        flux = mdotf[i]
+
+        if owner1 == owner2 #unnecesary line!
+            phif[i] = phi[owner1]
+        else
+            if flux >= 0.0
+                phif[i] = phi[owner1]
+            else
+                phif[i] = phi[owner2]
+            end
+        end
+    end
+end
 
 ## HARMONIC SCALAR INTERPOLATION
 
