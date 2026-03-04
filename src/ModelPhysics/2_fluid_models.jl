@@ -14,6 +14,7 @@ abstract type AbstractModel end
 abstract type AbstractEosModel <: AbstractModel end
 abstract type AbstractViscosityModel <: AbstractModel end
 
+
 Base.show(io::IO, fluid::AbstractFluid) = print(io, typeof(fluid).name.wrapper)
 
 
@@ -164,13 +165,6 @@ end
 end
 
 
-
-
-
-
-########
-
-
 """
     Phase <: AbstractPhase
 
@@ -221,7 +215,6 @@ function build_phase(phase_setup::Phase, mesh)
         beta=beta
     )
 end
-
 
 
 """
