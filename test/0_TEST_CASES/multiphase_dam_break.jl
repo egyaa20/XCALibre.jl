@@ -1,11 +1,13 @@
 # This test case is the mini dam-break which ensures correct development of alpha field with time under the influence of gravity
 
 using XCALibre
+using Test
 
-scaling = 0.001
+scaling = 0.001*0.05
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "quad40.unv"
+# grid = "quad40.unv"
+grid = "quad100.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=scaling)
 
@@ -22,15 +24,21 @@ model = Physics(
     time = Transient(),
     fluid = Fluid{Multiphase}(
         phases = (
+            # rho !
             Phase(density=1000.0, mu=1.0e-3), # Higher density phase always comes first
             Phase(density=1.2, mu=1.8e-5),
         ),
+        # solver = VOF, # dispatch thingy
+        # explicit = false,
+        #explicit = true by default; otherwise explicict = false
         gravity = gravity
     ),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
     )
+
+# if typeof ===  free check for performance
 
 operating_pressure = 0.0
 
@@ -96,8 +104,8 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=5000, time_step=1.0e-3, write_interval=1000)
-     
+    iterations=5000, time_step=5.0e-5, write_interval=50)
+
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(
@@ -110,9 +118,10 @@ initialise!(model.momentum.U, noSlipVelocity)
 initialise!(model.fluid.alpha, 0.0)
 
 min_corner_vec = [0.0, 0.0, -0.5] # column
-max_corner_vec = [0.3, 0.2, 0.5] # column
+max_corner_vec = [0.35, 0.6, 0.5] # column (was 0.3, 0.4 previously)
 
-setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
+# setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
+setField_Circle2D!(mesh=mesh, field=model.fluid.alpha, value=1.0, centre=[0.5*0.05, 0.5*0.05], radius=0.15*0.05)
 
 alpha_avg_before = boundary_average(:bottom, model.fluid.alpha, config.boundaries.alpha, config)
 @time residuals = run!(model, config)
@@ -120,5 +129,10 @@ alpha_avg_after = boundary_average(:bottom, model.fluid.alpha, config.boundaries
 alpha_top = boundary_average(:top, model.fluid.alpha, config.boundaries.alpha, config)
 
 @test isapprox(alpha_avg_before, 0.3; rtol=0.01)
-@test alpha_avg_after > 0.5
+@test alpha_avg_after > 0.75
 @test alpha_top < 1.0e-4
+
+println(alpha_avg_after)
+
+
+#SURFACE TENSION TEST : BUBBLE
