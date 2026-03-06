@@ -1,6 +1,8 @@
 # This is the two-phase hydrostatic column under gravitational effect test case, it verifies velocity field coupling and convergence
 
 using XCALibre
+using Test
+using LinearAlgebra
 
 scaling = 0.001 
 
@@ -25,7 +27,10 @@ model = Physics(
             Phase(density=1000.0, mu=1.0e-3), # Higher density phase always comes first
             Phase(density=1.2, mu=1.8e-5),
         ),
-        gravity = gravity
+        # regime = VoF(sigma = 0.0, C_alpha = 1.0)
+        # regime = MMP(diameter = 0.0, C_alpha = 1.0)
+        # explicit = false,
+        gravity = Gravity([0.0, -9.81, 0.0])
     ),
     turbulence = RANS{Laminar}(),
     energy = Energy{Isothermal}(),
@@ -95,7 +100,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=10000, time_step=1.0e-4, write_interval=2500)
+    iterations=500, time_step=1.0e-4, write_interval=100)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 

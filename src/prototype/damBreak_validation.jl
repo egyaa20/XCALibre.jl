@@ -8,9 +8,9 @@ using CUDA
 scaling = 1.0 # make sure the domain is 1x1 m
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "damBreak_coarse.unv"
-# grid = "damBreak_medium.unv"
-# grid = "quad100.unv"[]
+# grid = "damBreak_coarse.unv"
+grid = "damBreak_fine.unv"
+# grid = "dambreak_validation_44k.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=scaling)
     
@@ -86,7 +86,7 @@ solvers = (
         convergence = 1e-7,
         relax       = 1.0,
         rtol        = 0.0,
-        atol        = 1.0e-5
+        atol        = 1.0e-6
     ),
     p_rgh = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres(), Cg()
@@ -94,7 +94,7 @@ solvers = (
         convergence = 1e-7,
         relax       = 1.0,
         rtol        = 0.0,
-        atol        = 1.0e-5
+        atol        = 1.0e-6
     ),
     alpha = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres(), Cg()
@@ -102,13 +102,13 @@ solvers = (
         convergence = 1e-7,
         relax       = 1.0,
         rtol        = 0.0,
-        atol        = 1.0e-5
+        atol        = 1.0e-6
     )
 )
 
 runtime = Runtime(
-    iterations=14000, time_step=1.0e-4, write_interval=500)
-    # iterations=35000, time_step=2.5e-5, write_interval=500)
+    # iterations=14000, time_step=1.0e-4, write_interval=500)
+    iterations=35000, time_step=2.5e-5, write_interval=500)
      
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
