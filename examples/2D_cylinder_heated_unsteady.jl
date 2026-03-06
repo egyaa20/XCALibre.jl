@@ -45,24 +45,24 @@ BCs =assign(
     (
         U = [
             Dirichlet(:inlet, velocity),
-            Zerogradient(:outlet),
+            Zerogradient(:outlet, 0.0),
             Wall(:cylinder, noSlip),
-            Zerogradient(:bottom),
-            Zerogradient(:top)
+            Zerogradient(:bottom, 0.0),
+            Zerogradient(:top, 0.0)
         ],
         p = [
-            Zerogradient(:inlet),
+            Zerogradient(:inlet, 0.0),
             Dirichlet(:outlet, pressure),
-            Wall(:cylinder),
-            Zerogradient(:bottom),
-            Zerogradient(:top)
+            Zerogradient(:cylinder, 0.0),
+            Zerogradient(:bottom, 0.0),
+            Zerogradient(:top, 0.0)
         ],
         h = [
             FixedTemperature(:inlet, T=temp, Enthalpy(cp=cp, Tref=288.15)),
-            Zerogradient(:outlet),
+            Zerogradient(:outlet, 0.0),
             FixedTemperature(:cylinder, T=330.0, Enthalpy(cp=cp, Tref=288.15)),
-            Zerogradient(:bottom),
-            Zerogradient(:top)
+            Zerogradient(:bottom, 0.0),
+            Zerogradient(:top, 0.0)
         ]
     )
 )

@@ -121,7 +121,7 @@ AdaptiveTimeStepping(;
     maxGrow=1.2
 ) = AdaptiveTimeStepping(float(maxCo), float(maxAlphaCo), float(minShrink), float(maxGrow))
 
-struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A}
+struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping}}
     iterations::I
     dt::V
     write_interval::I
@@ -135,7 +135,8 @@ Adapt.@adapt_structure Runtime
 
             iterations::I, 
             write_interval::I, 
-            time_step::N
+            time_step::N,
+            adaptive::A
         ) where {I<:Integer,N<:Number} = begin
         
         # returned Runtime struct
@@ -143,7 +144,8 @@ Adapt.@adapt_structure Runtime
             (
                 iterations=iterations, 
                 dt=time_step, 
-                write_interval=write_interval
+                write_interval=write_interval,
+                adaptive=adaptive
             )
     end
 
@@ -154,6 +156,7 @@ This is a convenience function to set the top-level runtime information. The inp
 - `iterations::Integer`: specifies the number of iterations in a simulation run.
 - `write_interval::Integer`: defines how often simulation results are written to file (on the current working directory). The interval is currently based on number of iterations. Set to `-1` to run without writing results to file.
 - `time_step::AbstractFloat`: the time step to use in the simulation. Notice that for steady solvers this is simply a counter and it is recommended to simply use `1`.
+- `adaptive::Union{Nothing, AdaptiveTimeStepping}`: optionally enables adaptive time stepping. Pass an `AdaptiveTimeStepping` object to automatically adjust `dt` based on the Courant number during transient simulations. Defaults to `nothing`, meaning a fixed time step is used.
 
 # Example
 
@@ -216,6 +219,9 @@ function solve_equation!(
 
     discretise!(eqn, phi, config, rho_prev)
     apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
+    if length(eqn.model.terms) == 1 && typeof(eqn.model.terms[1]) <: Laplacian
+        make_symmetric!(eqn, config) # added this to test stability of periodic boundaries
+    end
     setReference!(eqn, ref, 1, config)
     if !isnothing(irelax)
         implicit_relaxation!(eqn, phi.values, irelax, nothing, config)
@@ -450,12 +456,44 @@ function residual(eqn, component, config)
 
     # Previous definition
     Fx .= A * values
-    # @inbounds @. R = (b - Fx)^2
     xcal_foreach(R, config) do i 
-            R[i] = (b[i] - Fx[i])^2
+            @inbounds R[i] = (b[i] - Fx[i])^2
     end
     normb = norm(b)
-    denominator = ifelse(normb>0,normb, 1)
-    Residual = sqrt(mean(R)) / denominator
+    denominator = ifelse(normb > eps(normb), normb, one(normb))
+    Residual = sqrt(sum(R)) / denominator
     return Residual
+end
+
+function make_symmetric!(eqn, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    (; b, A) = eqn.equation
+    mesh = get_phi(eqn).mesh
+    (; faces) = mesh
+    nzval = _nzval(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
+
+    nbfaces = mesh.boundary_cellsID |> length
+    ndrange = length(faces) - nbfaces
+    kernel! = _make_symmetric!(_setup(backend, workgroup, ndrange)...)
+    kernel!(colval, rowptr, nzval, faces, nbfaces)
+end
+
+@kernel function _make_symmetric!(colval, rowptr, nzval, faces, nbfaces)
+    i = @index(Global)
+    fID = i + nbfaces
+
+    face = faces[fID]
+    (; ownerCells) = face 
+    cID1 = ownerCells[1]
+    cID2 = ownerCells[2]
+
+    cIndex1 = spindex(rowptr, colval, cID1, cID2)
+    cIndex2 = spindex(rowptr, colval, cID2, cID1)
+
+    Apn = nzval[cIndex1]
+    nzval[cIndex2] = Apn
+
 end
