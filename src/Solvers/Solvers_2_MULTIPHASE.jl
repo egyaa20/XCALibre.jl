@@ -183,6 +183,15 @@ function MULTIPHASE(
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
+    
+    if typeof(runtime.adaptive) <: Nothing
+        maxAlphaCo = 0.75
+    else
+        (; maxCo, maxAlphaCo, maxGrow, minShrink) = runtime.adaptive
+    end
+
+    dt_cpu = zeros(_get_float(mesh), 1)
+    copyto!(dt_cpu, config.runtime.dt)
 
     phases = model.fluid.phases
     
@@ -192,7 +201,7 @@ function MULTIPHASE(
     rho1f = FaceScalarField(mesh)
     rho2f = FaceScalarField(mesh)
 
-    postprocess = convert_time_to_iterations(postprocess,model,dt[1],iterations)
+    postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
 
     # nueff = get_flux(U_eqn, 3)
     nueff = FaceScalarField(mesh) #Apparently doing this makes the difference in hydrostatic column test and lets U converge
@@ -221,8 +230,8 @@ function MULTIPHASE(
     
     F_final = FaceScalarField(mesh)
 
-    # sigma = 71.1e-3
-    sigma = 0.0
+    sigma = 71.1e-3
+    # sigma = 0.0
     
     nhatf_prep = FaceVectorField(mesh)
     kappa = ScalarField(mesh)
@@ -266,28 +275,62 @@ function MULTIPHASE(
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
+    sub_cycle = false
+
 
     @time for iteration ∈ 1:iterations
-        time += config.runtime.dt[1]
+        copyto!(dt_cpu, config.runtime.dt)
+        time += dt_cpu[1]
+        
+        if sub_cycle
+            courant = max_courant_number!(cellsCourant, model, config)
+            alphaCourant = max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, model, config, dt_cpu[1])
 
-        @. alpha_prev.values = alpha.values
-        grad!(∇alpha, alphaf, alpha, time, config)
-        limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
+            n_sub = ceil(Int, alphaCourant / maxAlphaCo)
+            n_sub = clamp(n_sub, 1, 10) # Ensure at least 1 step and max of 10 steps
 
-        interpolate!(alphaf_HO, alpha, config)
-        interpolate!(∇alphaf_HO, ∇alpha.result, config)
-        interpolate_upwind!(alphaf_upwind, alpha, mdotf, config)
-        interpolate_upwind!(∇alphaf_upwind, ∇alpha.result, mdotf, config)
+            println("AlphaCo: $(alphaCourant); maxAlphaCo: $(maxAlphaCo); Co: $courant;  Number of cycles: ($n_sub)")
+            sub_dt = dt_cpu[1] / n_sub
+            current_time_sum = 0.0
 
-        # @. alphaf_HO.values = clamp(alpha.values, 0.0, 1.0)
-        # @. alphaf_upwind.values = clamp(alpha.values, 0.0, 1.0)
+            for sub_step in 1:n_sub
+                # Correction for the final step to kill floating point error in dt division
+                if sub_step == n_sub
+                    real_sub_dt = dt_cpu[1] - current_time_sum
+                else
+                    real_sub_dt = sub_dt
+                end
 
-        alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt[1], config, alphaf_upwind, alphaf_HO, ∇alphaf_upwind, ∇alphaf_HO, F_final)
-        # interpolate!(alphaf, alpha, config)
-        # interpolate_upwind!(alphaf, alpha, mdotf, config)
+                t_sub = time - dt_cpu[1] + current_time_sum + real_sub_dt
 
-        @. alpha.values = clamp(alpha.values, 0.0, 1.0)
-        @. alphaf.values = clamp(alphaf.values, 0.0, 1.0)
+                @. alpha_prev.values = alpha.values
+                grad!(∇alpha, alphaf, alpha, time, config)
+                limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
+
+                interpolate!(alphaf_HO, alpha, config)
+                interpolate!(∇alphaf_HO, ∇alpha.result, config)
+                interpolate_upwind!(alphaf_upwind, alpha, mdotf, config)
+                interpolate_upwind!(∇alphaf_upwind, ∇alpha.result, mdotf, config)
+                
+                alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt_cpu[1], config, alphaf_upwind, alphaf_HO, ∇alphaf_upwind, ∇alphaf_HO, F_final)
+
+                current_time_sum += real_sub_dt
+            end
+        else
+            @. alpha_prev.values = alpha.values
+            grad!(∇alpha, alphaf, alpha, time, config)
+            limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
+
+            interpolate!(alphaf_HO, alpha, config)
+            interpolate!(∇alphaf_HO, ∇alpha.result, config)
+            interpolate_upwind!(alphaf_upwind, alpha, mdotf, config)
+            interpolate_upwind!(∇alphaf_upwind, ∇alpha.result, mdotf, config)
+
+            alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt_cpu[1], config, alphaf_upwind, alphaf_HO, ∇alphaf_upwind, ∇alphaf_HO, F_final)
+
+            # @. alpha.values = clamp(alpha.values, 0.0, 1.0)
+            # @. alphaf.values = clamp(alphaf.values, 0.0, 1.0)
+        end
 
         grad!(∇alpha, alphaf, alpha, time, config)
         limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
@@ -296,9 +339,6 @@ function MULTIPHASE(
 
         # ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config, rho_prev; time=time)
         # interpolate_upwind!(alphaf, alpha, mdotf, config)
-
-        update_phase_thermodynamics!(phase_eos[1], Val(1), nueff, T_field, model, config)
-        update_phase_thermodynamics!(phase_eos[2], Val(2), nueff, T_field, model, config)
 
         @. rho_prev.values = rho.values
 
@@ -314,9 +354,8 @@ function MULTIPHASE(
         grad!(∇rho, rhof, rho, time, config)
         limit_gradient!(schemes.p_rgh.limiter, ∇rho, rho, config)
 
-        # @. rhoPhi.values = mdotf.values * rhof.values
         @. rhoPhi.values = F_final.values * (rho1f.values - rho2f.values) + mdotf.values * rho2f.values
-
+        
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, rho_prev; time=time)
 
@@ -342,13 +381,7 @@ function MULTIPHASE(
             interpolate!(kappaf, kappa, config)
             surface_tension_flux!(rDf, sigma, kappaf, alpha, ∇alphaf_HO, phi_gf, config)
             
-            # println("Interface nhat_prep : $(nhatf_prep[200].y)")
-            # println("Interface kappaf : $(kappaf[200])")
-            # println("Interface kappa_20 : $(kappa[20])")
-            # println("Interface kappa_21 : $(kappa[21])")
-
-            # 860 : 1779, 1857, 1858, 1859
-            # 861 : 1781, 1859, 1860, 1861
+            
             reconstruct_operation!(phi_g, phi_gf, config)
             @. mdotf.values += phi_gf.values
 
@@ -360,7 +393,8 @@ function MULTIPHASE(
             grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config) 
             limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
             
-            correct_mass_flux(mdotf, p_rgh, rDf, config)
+            # correct_mass_flux1(mdotf, p_rgh, rDf, config)
+            correct_mass_flux(mdotf, p_eqn, config)
             
             pressure_grad!(p_rgh, ∇p_rghf_deconstructed, phi_gf, rDf, config)
             reconstruct_operation!(∇p_rghf_reconstructed, ∇p_rghf_deconstructed, config) # reconstruction for velocity correction
@@ -374,9 +408,10 @@ function MULTIPHASE(
     update_nueff!(nueff, nuf, model.turbulence, config)
 
     courant = max_courant_number!(cellsCourant, model, config)
-    alphaCourant = max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, model, config, dt[1])
+    alphaCourant = max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, model, config, dt_cpu[1])
     
     update_dt!(config.runtime, courant, alphaCourant)
+    # update_dt!(config.runtime, courant)
 
     R_ux[iteration] = rx
     R_uy[iteration] = ry
@@ -386,7 +421,7 @@ function MULTIPHASE(
 
     ProgressMeter.next!(
         progress, showvalues = [
-            (:dt, config.runtime.dt[1]),
+            (:dt, dt_cpu[1]),
             (:time, time),
             (:Courant, courant),
             (:AlphaCourant, alphaCourant),
@@ -409,6 +444,40 @@ function MULTIPHASE(
     end # end for loop
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end
+
+
+function correct_mass_flux1(mdotf, p, rDf, config)
+    # sngrad = FaceScalarField(mesh)
+    (; faces, cells, boundary_cellsID) = mdotf.mesh
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    n_faces = length(faces)
+    n_bfaces = length(boundary_cellsID)
+    n_ifaces = n_faces - n_bfaces
+
+    ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
+    kernel! = _correct_mass_flux1(_setup(backend, workgroup, ndrange)...)
+    kernel!(mdotf, p, rDf, faces, cells, n_bfaces)
+    # KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _correct_mass_flux1(mdotf, p, rDf, faces, cells, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+
+    @inbounds begin 
+        face = faces[fID]
+        (; area, normal, ownerCells, delta) = face 
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        p1 = p[cID1]
+        p2 = p[cID2]
+        face_grad = area*(p2 - p1)/delta # best option so far!
+        mdotf[fID] -= face_grad*rDf[fID]
+    end
+end
+
 
 
 function nhat_prep!(nhatf_prep, alpha, ∇alphaf, config)
@@ -499,7 +568,7 @@ function alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt, config, alph
 
     ndrange = length(F_corr)
     kernel! = _compute_F_compression(_setup(backend, workgroup, ndrange)...)
-    kernel!(F_compression_upwind, F_compression_HO, ∇alphaf_upwind, ∇alphaf_HO, alphaf_upwind, alphaf_HO, mdotf)
+    kernel!(F_compression_upwind, F_compression_HO, ∇alphaf_upwind, ∇alphaf_HO, alphaf_upwind, alphaf_HO, mdotf, nbfaces)
 
     ndrange = length(F_corr)
     kernel! = _compute_alpha_flux(_setup(backend, workgroup, ndrange)...)
@@ -577,34 +646,26 @@ end
     (; area, normal) = faces[i]
     TF = eltype(F_compression_upwind)
 
-    if i <= n_bfaces
-        F_compression_upwind[i] = zero(TF)
-        F_compression_HO[i] = zero(TF)
-    else
+    # if i <= n_bfaces
+    #     F_compression_upwind[i] = zero(TF)
+    #     F_compression_HO[i] = zero(TF)
+    # else
 
-        C_alpha = 0.0
-        Sf = normal * area
+    C_alpha = 1.7
+    Sf = normal * area
 
-        phic_upwind = C_alpha * abs(mdotf[i]) / (area + eps(TF))
-        phic_HO = C_alpha * abs(mdotf[i]) / (area + eps(TF))
+    phic_upwind = C_alpha * abs(mdotf[i]) / (area + eps(TF))
+    phic_HO = C_alpha * abs(mdotf[i]) / (area + eps(TF))
 
-        n_hat_upwind = ∇alphaf_upwind[i] / (norm(∇alphaf_upwind[i]) + 1e-8)
-        n_hat_HO = ∇alphaf_HO[i] / (norm(∇alphaf_HO[i]) + 1e-8)
+    n_hat_upwind = ∇alphaf_upwind[i] / (norm(∇alphaf_upwind[i]) + 1e-8)
+    n_hat_HO = ∇alphaf_HO[i] / (norm(∇alphaf_HO[i]) + 1e-8)
 
-        phi_r_upwind = phic_upwind * (n_hat_upwind ⋅ Sf)
-        phi_r_HO = phic_HO * (n_hat_upwind ⋅ Sf)  # use HO normal for HO flux
+    phi_r_upwind = phic_upwind * (n_hat_upwind ⋅ Sf)
+    phi_r_HO = phic_HO * (n_hat_upwind ⋅ Sf)  # use HO normal for HO flux
 
-        F_compression_upwind[i] = phi_r_upwind * alphaf_upwind[i] * (1.0 - alphaf_upwind[i])
-        F_compression_HO[i] = phi_r_HO * alphaf_HO[i] * (1.0 - alphaf_HO[i])
-    end
-
-    # n_hat_upwind = ∇alphaf_upwind[i]/(norm(∇alphaf_upwind[i])+eps())
-    # phi_r_upwind = C_alpha * (mdotf[i]) * (n_hat_upwind ⋅ Sf_hat)
-    # F_compression_upwind[i] = phi_r_upwind * alphaf_upwind[i] * (1.0 - alphaf_upwind[i])
-
-    # n_hat_HO = ∇alphaf_HO[i]/(norm(∇alphaf_HO[i])+eps())
-    # phi_r_HO = C_alpha * (mdotf[i]) * * (n_hat_upwind ⋅ Sf_hat) # TRY NHAT HO
-    # F_compression_HO[i] = phi_r_HO * alphaf_HO[i] * (1.0 - alphaf_HO[i])
+    F_compression_upwind[i] = phi_r_upwind * alphaf_upwind[i] * (1.0 - alphaf_upwind[i])
+    F_compression_HO[i] = phi_r_HO * alphaf_HO[i] * (1.0 - alphaf_HO[i])
+    # end
 end
 @kernel inbounds=true function _alpha_divergence(divergence_result, mdotf, alphaf, flux)
     i = @index(Global)
@@ -673,61 +734,6 @@ end
     end
 end
 
-
-
-
-function compute_compression!(compressionFlux, mdotf, alphaf, ∇alphaf, config)
-    (; hardware) = config
-    (; faces, cells, boundary_cellsID) = mdotf.mesh
-    backend = hardware.backend
-    workgroup = hardware.workgroup
-
-    n_faces = length(faces)
-    n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces
-    
-    ndrange = n_ifaces #try all faces!
-
-    uMax = maximum(abs.(mdotf.values/faces[1].area))#if mesh is not the same size then this needs to be something like "max(mdotf.values/area.values)" e.g. the ratio
-
-    # ndrange = length(mdotf)
-    kernel! = _compute_compression!(_setup(backend, workgroup, ndrange)...)
-    kernel!(compressionFlux, mdotf, alphaf, ∇alphaf, faces, n_bfaces, uMax)
-
-    
-    ndrange = n_bfaces
-    kernel! = _compute_compression_boundaries!(_setup(backend, workgroup, ndrange)...)
-    kernel!(compressionFlux, mdotf, alphaf, ∇alphaf, faces, n_bfaces, uMax)
-
-end
-
-@kernel inbounds=true function _compute_compression!(compressionFlux, mdotf, alphaf, ∇alphaf, faces, n_bfaces, uMax)
-    fID = @index(Global)
-    i = fID + n_bfaces
-    (; area, normal) = faces[i]
-    TF = eltype(compressionFlux)
-
-    C_alpha = 1.0
-
-    # nHat = ∇alphaf[i] / (norm(∇alphaf[i]) + eps(TF))
-    nHat = ∇alphaf[i] / (norm(∇alphaf[i]) + 1.0e-8)
-
-    phic = abs(mdotf[i]) / (area + eps(TF))
-    uC = min(C_alpha * phic, uMax)
-
-    Sf = normal * area
-    phi_r = uC * (nHat ⋅ Sf)
-
-    compressionFlux[i] = phi_r * (alphaf[i] * (1.0 - alphaf[i]))
-end
-
-@kernel inbounds=true function _compute_compression_boundaries!(compressionFlux, mdotf, alphaf, ∇alphaf, faces, n_bfaces, uMax)
-    i = @index(Global)
-    (; area, normal) = faces[i]
-    TF = eltype(compressionFlux)
-    
-    compressionFlux[i] = 0.0
-end
 
 
 function update_phase_thermodynamics!(EoS::AbstractEosModel, phaseIndex::Val{N}, nueff, T, model, config) where {N}

@@ -9,11 +9,11 @@ scaling = 1.0 # make sure the domain is 1x1 m
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "damBreak_coarse.unv"
-# grid = "damBreak_medium.unv"
+# grid = "damBreak_fine.unv"
 # grid = "quad100.unv"[]
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=scaling)
-    
+
 backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
 # backend = CUDABackend(); workgroup=32
 
@@ -105,6 +105,15 @@ solvers = (
         atol        = 1.0e-5
     )
 )
+
+
+adaptive = AdaptiveTimeStepping(
+        maxCo=0.8,
+        maxAlphaCo=0.5,
+        minShrink=0.1,
+        maxGrow=1.2
+    )
+    
 
 runtime = Runtime(
     iterations=14000, time_step=1.0e-4, write_interval=500)

@@ -3,11 +3,11 @@
 using XCALibre
 using Test
 
-scaling = 0.001*0.05
+scaling = 0.001#*0.05
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-# grid = "quad40.unv"
-grid = "quad100.unv"
+grid = "quad40.unv"
+# grid = "quad100.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=scaling)
 
@@ -104,7 +104,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=5000, time_step=5.0e-5, write_interval=50)
+    iterations=15000, time_step=1.0e-4, write_interval=500)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -118,10 +118,10 @@ initialise!(model.momentum.U, noSlipVelocity)
 initialise!(model.fluid.alpha, 0.0)
 
 min_corner_vec = [0.0, 0.0, -0.5] # column
-max_corner_vec = [0.35, 0.6, 0.5] # column (was 0.3, 0.4 previously)
+max_corner_vec = [0.3, 0.4, 0.5] # column (was 0.3, 0.4 previously)
 
-# setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
-setField_Circle2D!(mesh=mesh, field=model.fluid.alpha, value=1.0, centre=[0.5*0.05, 0.5*0.05], radius=0.15*0.05)
+setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
+# setField_Circle2D!(mesh=mesh, field=model.fluid.alpha, value=1.0, centre=[0.5*0.05, 0.5*0.05], radius=0.15*0.05)
 
 alpha_avg_before = boundary_average(:bottom, model.fluid.alpha, config.boundaries.alpha, config)
 @time residuals = run!(model, config)
