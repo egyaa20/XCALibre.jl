@@ -56,8 +56,8 @@ BCs = assign(
             Zerogradient(:leftWall),
             Zerogradient(:rightWall),
             Zerogradient(:lowerWall),
-            # Zerogradient(:top),
-            Dirichlet(:upperWall, 0.0),
+            Zerogradient(:upperWall),
+            # Dirichlet(:upperWall, 0.0),
             # totalPressure(:top, 0.0),
         ],
         alpha = [
@@ -131,9 +131,9 @@ initialise!(model.momentum.U, noSlipVelocity)
 initialise!(model.fluid.alpha, 0.0)
 
 min_corner_vec = [0.0, 0.0, -0.5] # column
-max_corner_vec = [0.6, 0.3, 0.5] # column
+max_corner_vec = [0.6, 0.35, 0.5] # column
 
 
 setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
 
-residuals = run!(model, config)
+residuals = run!(model, config, pref=0.0)

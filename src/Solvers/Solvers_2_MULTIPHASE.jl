@@ -281,56 +281,69 @@ function MULTIPHASE(
     @time for iteration ∈ 1:iterations
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
+        @. alpha_prev.values = alpha.values
+        grad!(∇alpha, alphaf, alpha, time, config)
+        limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
+
+        interpolate!(alphaf_HO, alpha, config)
+        interpolate!(∇alphaf_HO, ∇alpha.result, config)
+        interpolate_upwind!(alphaf_upwind, alpha, mdotf, config)
+        interpolate_upwind!(∇alphaf_upwind, ∇alpha.result, mdotf, config)
+
+        alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt_cpu[1], config, alphaf_upwind, alphaf_HO, ∇alphaf_upwind, ∇alphaf_HO, F_final)
+
+        @. alpha.values = clamp(alpha.values, 0.0, 1.0)
+        @. alphaf.values = clamp(alphaf.values, 0.0, 1.0)
         
-        if sub_cycle
-            courant = max_courant_number!(cellsCourant, model, config)
-            alphaCourant = max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, model, config, dt_cpu[1])
+        # if sub_cycle
+        # #     courant = max_courant_number!(cellsCourant, model, config)
+        # #     alphaCourant = max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, model, config, dt_cpu[1])
 
-            n_sub = ceil(Int, alphaCourant / maxAlphaCo)
-            n_sub = clamp(n_sub, 1, 10) # Ensure at least 1 step and max of 10 steps
+        # #     n_sub = ceil(Int, alphaCourant / maxAlphaCo)
+        # #     n_sub = clamp(n_sub, 1, 10) # Ensure at least 1 step and max of 10 steps
 
-            println("AlphaCo: $(alphaCourant); maxAlphaCo: $(maxAlphaCo); Co: $courant;  Number of cycles: ($n_sub)")
-            sub_dt = dt_cpu[1] / n_sub
-            current_time_sum = 0.0
+        # #     println("AlphaCo: $(alphaCourant); maxAlphaCo: $(maxAlphaCo); Co: $courant;  Number of cycles: ($n_sub)")
+        # #     sub_dt = dt_cpu[1] / n_sub
+        # #     current_time_sum = 0.0
 
-            for sub_step in 1:n_sub
-                # Correction for the final step to kill floating point error in dt division
-                if sub_step == n_sub
-                    real_sub_dt = dt_cpu[1] - current_time_sum
-                else
-                    real_sub_dt = sub_dt
-                end
+        # #     for sub_step in 1:n_sub
+        # #         # Correction for the final step to kill floating point error in dt division
+        # #         if sub_step == n_sub
+        # #             real_sub_dt = dt_cpu[1] - current_time_sum
+        # #         else
+        # #             real_sub_dt = sub_dt
+        # #         end
 
-                t_sub = time - dt_cpu[1] + current_time_sum + real_sub_dt
+        # #         t_sub = time - dt_cpu[1] + current_time_sum + real_sub_dt
 
-                @. alpha_prev.values = alpha.values
-                grad!(∇alpha, alphaf, alpha, time, config)
-                limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
+        # #         @. alpha_prev.values = alpha.values
+        # #         grad!(∇alpha, alphaf, alpha, time, config)
+        # #         limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
 
-                interpolate!(alphaf_HO, alpha, config)
-                interpolate!(∇alphaf_HO, ∇alpha.result, config)
-                interpolate_upwind!(alphaf_upwind, alpha, mdotf, config)
-                interpolate_upwind!(∇alphaf_upwind, ∇alpha.result, mdotf, config)
+        # #         interpolate!(alphaf_HO, alpha, config)
+        # #         interpolate!(∇alphaf_HO, ∇alpha.result, config)
+        # #         interpolate_upwind!(alphaf_upwind, alpha, mdotf, config)
+        # #         interpolate_upwind!(∇alphaf_upwind, ∇alpha.result, mdotf, config)
                 
-                alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt_cpu[1], config, alphaf_upwind, alphaf_HO, ∇alphaf_upwind, ∇alphaf_HO, F_final)
+        # #         alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt_cpu[1], config, alphaf_upwind, alphaf_HO, ∇alphaf_upwind, ∇alphaf_HO, F_final)
 
-                current_time_sum += real_sub_dt
-            end
-        else
-            @. alpha_prev.values = alpha.values
-            grad!(∇alpha, alphaf, alpha, time, config)
-            limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
+        # #         current_time_sum += real_sub_dt
+        # #     end
+        # # else
+        # #     @. alpha_prev.values = alpha.values
+        # #     grad!(∇alpha, alphaf, alpha, time, config)
+        # #     limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
 
-            interpolate!(alphaf_HO, alpha, config)
-            interpolate!(∇alphaf_HO, ∇alpha.result, config)
-            interpolate_upwind!(alphaf_upwind, alpha, mdotf, config)
-            interpolate_upwind!(∇alphaf_upwind, ∇alpha.result, mdotf, config)
+        # #     interpolate!(alphaf_HO, alpha, config)
+        # #     interpolate!(∇alphaf_HO, ∇alpha.result, config)
+        # #     interpolate_upwind!(alphaf_upwind, alpha, mdotf, config)
+        # #     interpolate_upwind!(∇alphaf_upwind, ∇alpha.result, mdotf, config)
 
-            alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt_cpu[1], config, alphaf_upwind, alphaf_HO, ∇alphaf_upwind, ∇alphaf_HO, F_final)
+        # #     alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt_cpu[1], config, alphaf_upwind, alphaf_HO, ∇alphaf_upwind, ∇alphaf_HO, F_final)
 
-            # @. alpha.values = clamp(alpha.values, 0.0, 1.0)
-            # @. alphaf.values = clamp(alphaf.values, 0.0, 1.0)
-        end
+        # #     # @. alpha.values = clamp(alpha.values, 0.0, 1.0)
+        # #     # @. alphaf.values = clamp(alphaf.values, 0.0, 1.0)
+        # # end
 
         grad!(∇alpha, alphaf, alpha, time, config)
         limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
@@ -346,7 +359,7 @@ function MULTIPHASE(
         blend_properties!(nu, alpha, phases[1].nu, phases[2].nu)
 
         blend_properties_at_faces!(rhof, alphaf, phases[1].density.rho, phases[2].density.rho)
-        blend_properties_at_faces!(nuf, alphaf, phases[2].mu.mu / phases[1].density.rho, phases[2].mu.mu / phases[2].density.rho)
+        blend_properties_at_faces!(nuf, alphaf, phases[1].mu.mu / phases[1].density.rho, phases[2].mu.mu / phases[2].density.rho)
 
         interpolate!(rho1f, rho1, config)
         interpolate!(rho2f, rho2, config)
@@ -651,7 +664,7 @@ end
     #     F_compression_HO[i] = zero(TF)
     # else
 
-    C_alpha = 1.7
+    C_alpha = 1.0
     Sf = normal * area
 
     phic_upwind = C_alpha * abs(mdotf[i]) / (area + eps(TF))
