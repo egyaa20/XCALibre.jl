@@ -263,3 +263,10 @@ function grad!(grad::Grad{Gauss,F,R,I,M}, phif, phi, time, config) where {F,R<:V
     # correct_boundaries!(phif, phi, BCs, time, config)
     green_gauss!(grad, phif, config)
 end
+
+
+function grad!(grad::Grad{Gauss,F,R,I,M}, psif, psi, time, config) where {F,R<:TensorField,I,M}
+    # interpolate!(psif, psi, config)
+    # correct_boundaries!(psif, psi, BCs, time, config)
+    green_gauss!(grad, psif, config)
+end
