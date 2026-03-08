@@ -121,9 +121,9 @@ function setup_multiphase_solvers(
     compute_gh!(gh, g, config)
     compute_ghf!(ghf, g, config)
 
-    y_centres = [cell.centre[2] for cell in mesh.cells]
-    @. p_rgh.values = rho.values * 9.81 * (0.01 - y_centres)
-    @. p.values = p_rgh.values
+    # y_centres = [cell.centre[2] for cell in mesh.cells]
+    # @. p_rgh.values = rho.values * 9.81 * (0.01 - y_centres)
+    # @. p.values = p_rgh.values
 
     grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config)
     limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
@@ -144,7 +144,7 @@ function setup_multiphase_solvers(
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         ==
         - Source(∇p_rgh.result)
-        + Source(rho_g)
+        # + Source(rho_g)
     ) → VectorEquation(U, boundaries.U)
 
     alpha_eqn = (
@@ -170,7 +170,7 @@ function setup_multiphase_solvers(
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-        model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, mdotf, rhoPhi, gh, ghf, phi_g, phi_gf, rho_g, config;
+        model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, mdotf, rhoPhi, gh, ghf, phi_g, phi_gf, rho_g, nueff, config;
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
@@ -182,7 +182,7 @@ end # end function
 
 
 function MULTIPHASE(
-    model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, mdotf, rhoPhi, gh, ghf, phi_g, phi_gf, rho_g, config;
+    model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, mdotf, rhoPhi, gh, ghf, phi_g, phi_gf, rho_g, nueff, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2)
     
     (; U, p, Uf, pf) = model.momentum
@@ -203,7 +203,7 @@ function MULTIPHASE(
     postprocess = convert_time_to_iterations(postprocess,model,dt[1],iterations)
 
     # nueff = get_flux(U_eqn, 3)
-    nueff = FaceScalarField(mesh) #Apparently doing this makes the difference in hydrostatic column test and lets U converge
+    # nueff = FaceScalarField(mesh) #Apparently doing this makes the difference in hydrostatic column test and lets U converge
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
@@ -421,7 +421,8 @@ function MULTIPHASE(
         end # corrector loop end
         
     # @. rhoPhi.values = mdotf.values * rhof.values
-    @. p.values = p_rgh.values + (rho.values * gh.values)
+    # @. p.values = p_rgh.values + (rho.values * gh.values)
+    @. p.values = p_rgh.values
 
     turbulence!(turbulenceModel, model, S, prev, time, config)
     update_nueff!(nueff, nuf, model.turbulence, config)
@@ -935,8 +936,8 @@ end
     i = @index(Global)
     (; centre) = cells[i]
 
-    gh[i] = (g ⋅ (centre))
-    # gh[i] = ([0.0, -9.81, 0.0] ⋅ (centre))
+    # gh[i] = (g ⋅ (centre))
+    gh[i] = ([0.0, -9.81, 0.0] ⋅ (centre))
 end
 
 """
@@ -959,8 +960,8 @@ end
     i = @index(Global)
     (; centre) = faces[i]
 
-    ghf[i] = (g ⋅ (centre))
-    # ghf[i] = ([0.0, -9.81, 0.0] ⋅ (centre))
+    # ghf[i] = (g ⋅ (centre))
+    ghf[i] = ([0.0, -9.81, 0.0] ⋅ (centre))
 end
 
 """
