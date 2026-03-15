@@ -8,9 +8,7 @@ using CUDA
 scaling = 1.0 # make sure the domain is 1x1 m
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-grid = "damBreak_coarse.unv"
-# grid = "damBreak_medium.unv"
-# grid = "damBreak_square.unv"
+grid = "1to4ratio.unv"
 # grid = "damBreak_fine.unv"
 # grid = "quad100.unv"[]
 mesh_file = joinpath(grids_dir, grid)
@@ -48,28 +46,25 @@ BCs = assign(
     region = mesh_dev,
     (
         U = [
-            Wall(:leftWall, noSlipVelocity),
-            Wall(:rightWall, noSlipVelocity),
-            Zerogradient(:upperWall), 
-            # Wall(:lowerWall, noSlipVelocity),
-            Wall(:lowerWall, noSlipVelocity),
+            Wall(:inlet, noSlipVelocity),
+            Wall(:outlet, noSlipVelocity),
+            Zerogradient(:top), 
+            Wall(:bottom, noSlipVelocity),
             # Wall(:top, noSlipVelocity),
         ],
         p_rgh = [
-            Zerogradient(:leftWall),
-            Zerogradient(:rightWall),
-            # Zerogradient(:lowerWall),
-            Zerogradient(:lowerWall),
-            # Zerogradient(:upperWall),
-            Dirichlet(:upperWall, 0.0),
+            Zerogradient(:inlet),
+            Zerogradient(:outlet),
+            Zerogradient(:bottom),
+            Zerogradient(:top),
+            # Dirichlet(:upperWall, 0.0),
             # totalPressure(:top, 0.0),
         ],
         alpha = [
-            Zerogradient(:leftWall),
-            Zerogradient(:rightWall),
-            # Zerogradient(:lowerWall),
-            Zerogradient(:lowerWall),
-            Zerogradient(:upperWall),
+            Zerogradient(:inlet),
+            Zerogradient(:outlet),
+            Zerogradient(:bottom),
+            Zerogradient(:top),
             # Dirichlet(:top, 0.0),
         ]
     )
@@ -121,7 +116,7 @@ adaptive = AdaptiveTimeStepping(
     
 
 runtime = Runtime(
-    iterations=14000, time_step=1.0e-4, write_interval=50)
+    iterations=14000, time_step=1.0e-4, write_interval=5)
     # iterations=35000, time_step=2.5e-5, write_interval=500)
      
 hardware = Hardware(backend=backend, workgroup=workgroup)
@@ -138,7 +133,6 @@ initialise!(model.fluid.alpha, 0.0)
 min_corner_vec = [0.0, 0.0, -0.5] # column
 max_corner_vec = [0.6, 0.3, 0.5] # column
 
-# 0.3 ?
 
 setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
 

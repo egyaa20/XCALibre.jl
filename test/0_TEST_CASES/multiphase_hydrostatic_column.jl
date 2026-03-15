@@ -41,14 +41,15 @@ BCs = assign(
         U = [
             Wall(:inlet, noSlipVelocity),
             Wall(:outlet, noSlipVelocity),
-            Zerogradient(:top),
+            Zerogradient(:top), 
             Wall(:bottom, noSlipVelocity),
         ],
         p_rgh = [
             Zerogradient(:inlet),
             Zerogradient(:outlet),
             Zerogradient(:bottom),
-            Dirichlet(:top, operating_pressure),
+            Zerogradient(:top),
+            # Dirichlet(:top, 0.0),
         ],
         alpha = [
             Zerogradient(:inlet),
@@ -95,7 +96,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=10000, time_step=1.0e-4, write_interval=2500)
+    iterations=10000, time_step=0.001, write_interval=1000)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -113,8 +114,11 @@ max_corner_vec = [1.0,0.5,0.5]
 
 setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
 
-@time residuals = run!(model, config)
+@time residuals = run!(model, config, pref=0.0)
 
 upperWallVelocity = boundary_average(:top, model.momentum.U, BCs.U, config)
 
 @test norm(upperWallVelocity) < 1e-9
+        # regime = VoF(sigma = 0.0, C_alpha = 1.0)
+        # regime = MMP(diameter = 0.0, C_alpha = 1.0)
+        # explicit = false,
