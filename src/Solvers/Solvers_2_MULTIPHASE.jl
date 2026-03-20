@@ -262,7 +262,8 @@ function MULTIPHASE(
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     
     flux!(mdotf, Uf, config)
-    @. rhoPhi.values = mdotf.values * rhof.values
+    # @. rhoPhi.values = mdotf.values * rhof.values
+    @. rhoPhi.values = F_final.values * (rho1f.values - rho2f.values) + mdotf.values * rho2f.values
 
     phase_eos = [phases[1].density, phases[2].density]
     T_field = model.energy.T
@@ -355,19 +356,25 @@ function MULTIPHASE(
 
         @. rho_prev.values = rho.values
 
-        blend_properties!(rho, alpha, rho1, rho2)
-        blend_properties!(nu, alpha, phases[1].nu, phases[2].nu)
+        # blend_properties!(rho, alpha, rho1, rho2)
+        # blend_properties!(nu, alpha, phases[1].nu, phases[2].nu)
+        # blend_properties_at_faces!(rhof, alphaf, phases[1].density.rho, phases[2].density.rho)
+        # blend_properties_at_faces!(nuf, alphaf, phases[1].mu.mu, phases[2].mu.mu) #removed division by rho
+        # interpolate!(rho1f, rho1, config)
+        # interpolate!(rho2f, rho2, config)
 
-        blend_properties_at_faces!(rhof, alphaf, phases[1].density.rho, phases[2].density.rho)
-        blend_properties_at_faces!(nuf, alphaf, phases[1].mu.mu / phases[1].density.rho, phases[2].mu.mu / phases[2].density.rho)
-
+        blend_properties!(rho, alpha, rho2, rho1)
+        blend_properties!(nu, alpha, phases[2].nu, phases[1].nu)
+        blend_properties_at_faces!(rhof, alphaf, phases[2].density.rho, phases[1].density.rho)
+        blend_properties_at_faces!(nuf, alphaf, phases[2].mu.mu, phases[1].mu.mu)
         interpolate!(rho1f, rho1, config)
         interpolate!(rho2f, rho2, config)
 
         grad!(∇rho, rhof, rho, time, config)
         limit_gradient!(schemes.p_rgh.limiter, ∇rho, rho, config)
 
-        @. rhoPhi.values = F_final.values * (rho1f.values - rho2f.values) + mdotf.values * rho2f.values
+        # @. rhoPhi.values = F_final.values * (rho1f.values - rho2f.values) + mdotf.values * rho2f.values
+        @. rhoPhi.values = F_final.values * (rho2f.values - rho1f.values) + mdotf.values * rho1f.values
         
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, rho_prev; time=time)
@@ -707,9 +714,10 @@ end
     i = @index(Global)
 
     # we will do ifelse just for testing
+    alpha_up_clamped = clamp(alpha_up[i], 0.0, 1.0) # Check if this makes any difference
 
-    increase_term = (1.0 - alpha_up[i])/(alpha_corr[i]+eps())
-    decrease_term = alpha_up[i]/(-alpha_corr[i]+eps())
+    increase_term = (1.0 - alpha_up_clamped)/(alpha_corr[i]+eps())
+    decrease_term = alpha_up_clamped/(-alpha_corr[i]+eps())
 
     if abs(alpha_corr[i]) < 1.0e-8
         lambda[i] = 1.0
@@ -999,7 +1007,7 @@ end
         rho1 = rho[cID1]
         rho2 = rho[cID2]
 
-        face_grad = area*(rho2 - rho1)/delta
+        face_grad = area*(rho2 - rho1)/delta #swapping rho1 and rho2 kinda improved it
 
         phi_gf[fID] = -ghf[fID] * face_grad * rDf[fID]
     end
