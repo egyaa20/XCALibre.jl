@@ -7,6 +7,8 @@ export StrainRate, Vorticity, Dev, Sqr, MagSqr
 export _mesh
 export initialise!
 
+export FaceTensorField # Not sure if this works well
+
 struct ScalarFloat{DTYPE}
     zero::DTYPE 
 end 
@@ -400,3 +402,76 @@ function initialise!(s::AbstractScalarField, value::V) where V
     end
     nothing
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+struct FaceTensorField{S1,S2,S3,S4,S5,S6,S7,S8,S9,M} <: AbstractTensorField
+    xx::S1
+    xy::S2
+    xz::S3 
+    yx::S4 
+    yy::S5 
+    yz::S6 
+    zx::S7 
+    zy::S8
+    zz::S9
+    mesh::M
+end
+Adapt.@adapt_structure FaceTensorField
+
+FaceTensorField(mesh::AbstractMesh) = begin
+    FaceTensorField(
+        FaceScalarField(mesh, store_mesh=false),
+        FaceScalarField(mesh, store_mesh=false),
+        FaceScalarField(mesh, store_mesh=false),
+        FaceScalarField(mesh, store_mesh=false),
+        FaceScalarField(mesh, store_mesh=false),
+        FaceScalarField(mesh, store_mesh=false),
+        FaceScalarField(mesh, store_mesh=false),
+        FaceScalarField(mesh, store_mesh=false),
+        FaceScalarField(mesh, store_mesh=false),
+        mesh
+    )
+end
+
+Base.getindex(T::FaceTensorField, i::Integer) = begin
+    Tf = eltype(T.xx.values)
+    SMatrix{3,3,Tf,9}(
+        T.xx[i],
+        T.yx[i],
+        T.zx[i],
+        T.xy[i],
+        T.yy[i],
+        T.zy[i],
+        T.xz[i],
+        T.yz[i],
+        T.zz[i],
+        )
+end
+
+Base.setindex!(T::FaceTensorField, t::SMatrix{3,3,F,9}, i::Integer) where F = begin
+    T.xx[i] = t[1,1]
+    T.yx[i] = t[2,1]
+    T.zx[i] = t[3,1]
+    T.xy[i] = t[1,2]
+    T.yy[i] = t[2,2]
+    T.zy[i] = t[3,2]
+    T.xz[i] = t[1,3]
+    T.yz[i] = t[2,3]
+    T.zz[i] = t[3,3]
+end
+
+Base.length(t::FaceTensorField) = length(t.xx)
+Base.eachindex(t::FaceTensorField) = eachindex(t.xx)
+KA.get_backend(t::FaceTensorField) = KA.get_backend(t.xx)

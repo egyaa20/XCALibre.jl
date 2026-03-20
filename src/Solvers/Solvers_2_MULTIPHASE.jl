@@ -88,10 +88,13 @@ function setup_multiphase_solvers(
     compressionFlux = FaceScalarField(mesh)
 
     rho_g = VectorField(mesh)
+    slip_momentum_term = FaceTensorField(mesh)
+    div_slip_momentum = VectorField(mesh)
 
     interpolate_upwind!(alphaf, alpha, mdotf, config)
 
     # Needs to be defined before energyModel
+    drhodt = ScalarField(mesh)
     p_eqn = (
         - Laplacian{schemes.p.laplacian}(rDf, p_rgh)
         ==
@@ -144,7 +147,8 @@ function setup_multiphase_solvers(
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         ==
         - Source(∇p_rgh.result)
-        # + Source(rho_g)
+        + Source(rho_g)
+        - Source(div_slip_momentum)
     ) → VectorEquation(U, boundaries.U)
 
     alpha_eqn = (
@@ -170,7 +174,7 @@ function setup_multiphase_solvers(
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-        model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, mdotf, rhoPhi, gh, ghf, phi_g, phi_gf, rho_g, nueff, config;
+        model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, mdotf, rhoPhi, gh, ghf, phi_g, phi_gf, rho_g, nueff, slip_momentum_term, div_slip_momentum, config;
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
@@ -182,7 +186,7 @@ end # end function
 
 
 function MULTIPHASE(
-    model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, mdotf, rhoPhi, gh, ghf, phi_g, phi_gf, rho_g, nueff, config;
+    model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, mdotf, rhoPhi, gh, ghf, phi_g, phi_gf, rho_g, nueff, slip_momentum_term, div_slip_momentum, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2)
     
     (; U, p, Uf, pf) = model.momentum
@@ -244,13 +248,17 @@ function MULTIPHASE(
     Urf_HO = FaceVectorField(mesh)
     ∇U = Grad{schemes.U.gradient}(U)
 
-    net_force_y = ScalarField(mesh)
-    @. net_force_y.values = -∇p_rgh.result.y.values .+ rho.values .* 9.81
-    max_val, max_id = findmax(abs.(net_force_y.values))
-    println("Max net body force at t=0: ", max_val, " at cell ID: ", max_id)
-    println("  Cell centre: ", mesh.cells[max_id].centre)
-    println("  rho at cell: ", rho.values[max_id])
-    println("  ∇p_rgh_y:    ", ∇p_rgh.result.y.values[max_id])
+    drhodt = ScalarField(mesh)
+    # Particle relaxation time: τ_d = ρ_d d² / 18μ_c
+    tau_d = (phases[2].density.rho * diameter^2) / (18 * phases[1].mu.mu + eps())
+
+    # net_force_y = ScalarField(mesh)
+    # @. net_force_y.values = -∇p_rgh.result.y.values .+ rho.values .* 9.81
+    # max_val, max_id = findmax(abs.(net_force_y.values))
+    # println("Max net body force at t=0: ", max_val, " at cell ID: ", max_id)
+    # println("  Cell centre: ", mesh.cells[max_id].centre)
+    # println("  rho at cell: ", rho.values[max_id])
+    # println("  ∇p_rgh_y:    ", ∇p_rgh.result.y.values[max_id])
     ## MMP
 
     
@@ -337,13 +345,17 @@ function MULTIPHASE(
         interpolate_upwind!(∇alphaf_upwind, ∇alpha.result, mdotf, config)
 
         compute_DUmDt!(DUmDt, U, U_prev, ∇U, dt[1], config)
-        compute_Ur!(Ur, alpha, rho, g_, DUmDt, phases[1].density.rho, phases[2].density.rho, phases[1].mu.mu, diameter, config)
+        compute_Ur!(Ur, alpha, rho, g_, DUmDt, phases[1].density.rho, phases[2].density.rho, phases[1].mu.mu, diameter, tau_d, config)
         
         # interpolate_upwind!(Urf_upwind, Ur, mdotf, config)
         interpolate!(Urf_HO, Ur, config)
         # println("Urf_HO max: ", maximum(abs.(Urf_HO.y.values)))
         
         alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt[1], config, alphaf_upwind, alphaf_HO, ∇alphaf_upwind, ∇alphaf_HO, F_final, divergence_result, alpha_up, alpha_corr, lambda, lambdaf, F_corr, F_upwind, F_comp, F_compression_upwind, F_compression_HO, Urf_upwind, Urf_HO)
+
+        @. alpha.values = clamp(alpha.values, 0.0, 1.0)
+        @. alphaf.values = clamp(alphaf.values, 0.0, 1.0)
+
         # interpolate!(alphaf, alpha, config)
         # interpolate_upwind!(alphaf, alpha, mdotf, config)
 
@@ -361,7 +373,7 @@ function MULTIPHASE(
         blend_properties!(nu, alpha, phases[1].nu, phases[2].nu)
 
         blend_properties_at_faces!(rhof, alphaf, phases[1].density.rho, phases[2].density.rho)
-        blend_properties_at_faces!(nuf, alphaf, phases[2].mu.mu / phases[1].density.rho, phases[2].mu.mu / phases[2].density.rho)
+        blend_properties_at_faces!(nuf, alphaf, phases[1].mu.mu / phases[1].density.rho, phases[2].mu.mu / phases[2].density.rho)
 
         interpolate!(rho1f, rho1, config)
         interpolate!(rho2f, rho2, config)
@@ -370,14 +382,29 @@ function MULTIPHASE(
         limit_gradient!(schemes.p_rgh.limiter, ∇rho, rho, config)
 
         # @. rhoPhi.values = mdotf.values * rhof.values
-        @. rhoPhi.values = F_final.values * (rho1f.values - rho2f.values) + mdotf.values * rho2f.values
+        # @. rhoPhi.values = F_final.values * (rho1f.values - rho2f.values) + mdotf.values * rho2f.values
+
+        interpolate!(rhof, rho, config)   # already done above — use it
+        @. rhoPhi.values = mdotf.values * rhof.values   
 
         @. rho_g.x.values = rho.values * g_[1]
         @. rho_g.y.values = rho.values * g_[2]
         @. rho_g.z.values = rho.values * g_[3]
 
+        compute_tensor_term!(alphaf, rhof, rho1f, rho2f, Urf_HO, slip_momentum_term, config)
+        div_tensor!(div_slip_momentum, slip_momentum_term, config)
+
+        # @. slip_momentum_term.x.values = -alpha.values * (1.0 - alpha.values) * (rho2.values - rho.values) * Ur.x.values #/ (tau_d+eps())
+        # @. slip_momentum_term.y.values = -alpha.values * (1.0 - alpha.values) * (rho2.values - rho.values) * Ur.y.values #/ (tau_d+eps())
+        # @. slip_momentum_term.z.values = -alpha.values * (1.0 - alpha.values) * (rho2.values - rho.values) * Ur.z.values #/ (tau_d+eps())
+
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, rho_prev; time=time)
+
+        println("Ur max:")
+        println(maximum(Ur.y.values))
+        println("U max:")
+        println(maximum(U.y.values))
 
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -406,6 +433,8 @@ function MULTIPHASE(
             @. mdotf.values += phi_gf.values
 
             div!(divHv, mdotf, config)
+            @. drhodt.values = (rho.values - rho_prev.values) / dt
+
             
             @. prev = p_rgh.values
             rp = solve_equation!(p_eqn, p_rgh, boundaries.p_rgh, solvers.p_rgh, config, rho_prev; ref=0.0, time=time)
@@ -464,6 +493,45 @@ function MULTIPHASE(
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end
 
+function compute_tensor_term!(alphaf, rhof, rho1f, rho2f, Urf_HO, slip_momentum_term, config)
+    (; hardware) = config
+    backend = hardware.backend
+    workgroup = hardware.workgroup
+
+    ndrange = length(alphaf)
+    kernel! = _compute_tensor_term!(_setup(backend, workgroup, ndrange)...)
+    kernel!(alphaf, rhof, rho1f, rho2f, Urf_HO, slip_momentum_term)
+end
+
+@kernel inbounds=true function _compute_tensor_term!(alphaf, rhof, rho1f, rho2f, Urf_HO, slip_momentum_term)
+    i = @index(Global)
+
+    TF = eltype(alphaf)
+
+    alpha_f = alphaf[i]
+    rho_m_f = rhof[i]
+    rho1_f = rho1f[i]
+    rho2_f = rho2f[i]
+    
+    vdr_x = Urf_HO.x[i]
+    vdr_y = Urf_HO.y[i]
+    vdr_z = Urf_HO.z[i]
+    
+    coeff = (alpha_f * (one(TF) - alpha_f) * (rho1_f + rho2_f)) / (rho_m_f + eps(TF))
+    
+    slip_momentum_term.xx[i] = coeff * vdr_x * vdr_x
+    slip_momentum_term.xy[i] = coeff * vdr_x * vdr_y
+    slip_momentum_term.xz[i] = coeff * vdr_x * vdr_z
+    
+    slip_momentum_term.yx[i] = coeff * vdr_y * vdr_x
+    slip_momentum_term.yy[i] = coeff * vdr_y * vdr_y
+    slip_momentum_term.yz[i] = coeff * vdr_y * vdr_z
+    
+    slip_momentum_term.zx[i] = coeff * vdr_z * vdr_x
+    slip_momentum_term.zy[i] = coeff * vdr_z * vdr_y
+    slip_momentum_term.zz[i] = coeff * vdr_z * vdr_z
+end
+
 
 function compute_DUmDt!(DUmDt, U, U_prev, gradU, dt, config)
     (; hardware) = config
@@ -499,16 +567,16 @@ end
     DUmDt[i] = dUdt + Uconv
 end
 
-function compute_Ur!(Ur, alpha, rho, g, DUmDt, rho1, rho2, mu1, diameter, config)
+function compute_Ur!(Ur, alpha, rho, g, DUmDt, rho1, rho2, mu1, diameter, tau_d, config)
     (; hardware) = config
     backend = hardware.backend
     workgroup = hardware.workgroup
 
     ndrange = length(Ur)
     kernel! = _compute_Ur!(_setup(backend, workgroup, ndrange)...)
-    kernel!(Ur, alpha, rho, g, DUmDt, rho1, rho2, mu1, diameter)
+    kernel!(Ur, alpha, rho, g, DUmDt, rho1, rho2, mu1, diameter, tau_d)
 end
-@kernel inbounds=true function _compute_Ur!(Ur, alpha, rho, g, DUmDt, rho1_val, rho2_val, mu1_val, d)
+@kernel inbounds=true function _compute_Ur!(Ur, alpha, rho, g, DUmDt, rho1_val, rho2_val, mu1_val, d, tau_d)
     i = @index(Global)
 
     TF = eltype(rho.values)
@@ -519,9 +587,6 @@ end
     rho_c = rho1_val   # water — continuous
     rho_d = rho2_val   # air   — dispersed
     mu_c  = mu1_val    # water viscosity
-
-    # Particle relaxation time: τ_d = ρ_d d² / 18μ_c
-    tau_d = (rho_d * d^2) / (18 * mu_c + eps(TF))
 
     # Schiller-Naumann drag — lagged Ur magnitude
     Ur_mag = norm(Ur[i])
@@ -539,7 +604,13 @@ end
 
     # Buoyancy factor: air is lighter than mixture, so Ur points upward
     # (ρ_d - ρ_m) is negative when rho_m > rho_d (bubbly regime) → Ur antiparallel to g
-    buoyancy = (rho_d - rho_m) / (rho_d + eps(TF))   # denominator rho_m, not rho_d
+    # buoyancy = (rho_d - rho_m) / (rho_d + eps(TF))   # denominator rho_m, not rho_d
+    
+    # buoyancy = (rho_c - rho_m) / (rho_c + eps(TF))   # denominator rho_m, not rho_d
+    # buoyancy = (rho_d - rho_c) / (rho_c + eps(TF))
+
+    buoyancy = (rho_d - rho_m) / (rho_d + eps(TF))
+    # buoyancy = (rho_c - rho_m) / (rho_c + eps(TF))
 
     Ur[i] = (tau_d / (f_drag + eps(TF))) * buoyancy * a_eff
 end
@@ -657,10 +728,10 @@ function alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt, config, alph
 
     
 
-    ndrange = length(divergence_result)
-    kernel! = _alpha_divergence(_setup(backend, workgroup, ndrange)...)
-    kernel!(divergence_result, mdotf, alphaf, F_compression_HO)
-    ndrange = nbfaces
+    # ndrange = length(divergence_result)
+    # kernel! = _alpha_divergence(_setup(backend, workgroup, ndrange)...)
+    # kernel!(divergence_result, mdotf, alphaf, F_compression_HO)
+    # ndrange = nbfaces
 end
 
 @kernel inbounds=true function _compute_alpha_flux(mdotf, alphaf_upwind, alphaf_HO, F_corr, F_upwind, F_compression_upwind, F_compression_HO)
@@ -936,8 +1007,8 @@ end
     i = @index(Global)
     (; centre) = cells[i]
 
-    # gh[i] = (g ⋅ (centre))
-    gh[i] = ([0.0, -9.81, 0.0] ⋅ (centre))
+    gh[i] = (g ⋅ (centre))
+    # gh[i] = ([0.0, -9.81, 0.0] ⋅ (centre))
 end
 
 """
@@ -960,8 +1031,8 @@ end
     i = @index(Global)
     (; centre) = faces[i]
 
-    # ghf[i] = (g ⋅ (centre))
-    ghf[i] = ([0.0, -9.81, 0.0] ⋅ (centre))
+    ghf[i] = (g ⋅ (centre))
+    # ghf[i] = ([0.0, -9.81, 0.0] ⋅ (centre))
 end
 
 """
