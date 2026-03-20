@@ -1,6 +1,8 @@
 # This is the two-phase hydrostatic column under gravitational effect test case, it verifies velocity field coupling and convergence
 
 using XCALibre
+using Test
+using LinearAlgebra
 
 scaling = 0.001 
 
@@ -22,8 +24,8 @@ model = Physics(
     time = Transient(),
     fluid = Fluid{Multiphase}(
         phases = (
-            Phase(density=1000.0, mu=1.0e-3), # Higher density phase always comes first
             Phase(density=1.2, mu=1.8e-5),
+            Phase(density=1000.0, mu=1.0e-3)
         ),
         gravity = gravity
     ),
@@ -96,7 +98,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=10000, time_step=0.001, write_interval=1000)
+    iterations=10000, time_step=0.001, write_interval=100)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -107,12 +109,12 @@ GC.gc()
 
 initialise!(model.fluid.p_rgh, 0.0)
 initialise!(model.momentum.U, noSlipVelocity)
-initialise!(model.fluid.alpha, 0.0)
+initialise!(model.fluid.alpha, 1.0)
 
 min_corner_vec = [0.0, 0.0, -0.5]
 max_corner_vec = [1.0,0.5,0.5]
 
-setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
+setField_Box!(mesh=mesh, field=model.fluid.alpha, value=0.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
 
 @time residuals = run!(model, config, pref=0.0)
 

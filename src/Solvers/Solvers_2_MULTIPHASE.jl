@@ -110,7 +110,7 @@ function setup_multiphase_solvers(
     blend_properties!(nu, alpha, phases[1].nu, phases[2].nu)
 
     blend_properties_at_faces!(rhof, alphaf, phases[1].density.rho, phases[2].density.rho)
-    blend_properties_at_faces!(nuf, alphaf, phases[2].mu.mu / phases[1].density.rho, phases[2].mu.mu / phases[2].density.rho)
+    blend_properties_at_faces!(nuf, alphaf, phases[1].mu.mu / phases[1].density.rho, phases[2].mu.mu / phases[2].density.rho)
 
     gh = model.fluid.physics_properties.gravity.gh
     ghf = model.fluid.physics_properties.gravity.ghf
@@ -230,8 +230,8 @@ function MULTIPHASE(
     
     F_final = FaceScalarField(mesh)
 
-    sigma = 71.1e-3
-    # sigma = 0.0
+    # sigma = 71.1e-3
+    sigma = 0.0
     
     nhatf_prep = FaceVectorField(mesh)
     kappa = ScalarField(mesh)
@@ -632,15 +632,7 @@ function alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt, config, alph
     kernel!(divergence_result, mdotf, alphaf, F_compression_HO)
     ndrange = nbfaces
 end
-@kernel inbounds=true function _test_flux(n_bfaces, mdotf, alphaf_upwind, F_final)
-    fID = @index(Global)
-    i = fID + n_bfaces
-    (; area, normal, ownerCells) = faces[i]
 
-    mesh = mdotf.mesh
-    owner_P = F_final[ownerCells[1]]
-    owner_N = F_final[ownerCells[2]]
-end
 @kernel inbounds=true function _compute_alpha_flux(mdotf, alphaf_upwind, alphaf_HO, F_corr, F_upwind, F_compression_upwind, F_compression_HO)
     i = @index(Global)
 
@@ -664,7 +656,7 @@ end
     #     F_compression_HO[i] = zero(TF)
     # else
 
-    C_alpha = 1.0
+    C_alpha = 0.0
     Sf = normal * area
 
     phic_upwind = C_alpha * abs(mdotf[i]) / (area + eps(TF))
