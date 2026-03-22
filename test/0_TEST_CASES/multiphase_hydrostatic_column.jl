@@ -100,7 +100,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=500, time_step=1.0e-4, write_interval=100)
+    iterations=25000, time_step=1.0e-4, write_interval=100)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
