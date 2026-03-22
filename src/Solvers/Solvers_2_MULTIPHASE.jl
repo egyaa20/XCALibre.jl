@@ -55,7 +55,10 @@ function setup_multiphase_solvers(
 
     phases = model.fluid.phases
     props = model.fluid.physics_properties
+
     volume_fraction = model.fluid.volume_fraction
+    main = model.fluid.volume_fraction
+    secondary = 3-volume_fraction
     
 
     backend = hardware.backend
@@ -104,11 +107,9 @@ function setup_multiphase_solvers(
 
     T_field = model.energy.T
 
-    blend_properties!(rho, alpha, phases[volume_fraction].rho.values, phases[3-volume_fraction].rho.values)
-    blend_properties!(rhof, alphaf, phases[volume_fraction].rho.values, phases[3-volume_fraction].rho.values)
-    
-    blend_properties!(nu, alpha, phases[volume_fraction].mu.values / phases[volume_fraction].rho.values, phases[3-volume_fraction].mu.values / phases[3-volume_fraction].rho.values)
-    blend_properties!(nuf, alphaf, phases[volume_fraction].mu.values / phases[volume_fraction].rho.values, phases[3-volume_fraction].mu.values / phases[3-volume_fraction].rho.values)
+    blend_properties!(rho, alpha, phases[main].rho[1], phases[secondary].rho[1])
+    blend_properties!(rhof, alphaf, phases[main].rho[1], phases[secondary].rho[1])
+    blend_properties!(nuf, alphaf, phases[main].mu[1] / phases[main].rho[1], phases[secondary].mu[1] / phases[secondary].rho[1])
 
 
     gh = model.fluid.physics_properties.gravity.gh
@@ -193,10 +194,13 @@ function MULTIPHASE(
     copyto!(dt_cpu, config.runtime.dt)
 
     phases = model.fluid.phases
+
     volume_fraction = model.fluid.volume_fraction
+    main = model.fluid.volume_fraction
+    secondary = 3-volume_fraction
     
-    rho1 = phases[volume_fraction].rho
-    rho2 = phases[3-volume_fraction].rho
+    rho1 = phases[main].rho
+    rho2 = phases[secondary].rho
 
     rho1f = FaceScalarField(mesh)
     rho2f = FaceScalarField(mesh)
@@ -227,11 +231,23 @@ function MULTIPHASE(
 
     ∇alphaf_upwind = FaceVectorField(mesh)
     ∇alphaf_HO = FaceVectorField(mesh)
-    
+
+    alpha_smooth = ScalarField(mesh)
+    alpha_smoothf = FaceScalarField(mesh)
+    ∇alpha_smooth = Grad{schemes.alpha.gradient}(alpha_smooth) # ????????????
+    ∇alpha_smoothf = FaceVectorField(mesh)
+        
+    lap = ScalarField(mesh)
+    lap_flux = FaceScalarField(mesh)
+
     F_final = FaceScalarField(mesh)
 
     # sigma = 71.1e-3
     sigma = 0.0
+    sigma = 0.01 # RTI
+    sigma = 1.22625
+    # sigma = 1.0
+    # sigma = 2.0
     
     nhatf_prep = FaceVectorField(mesh)
     kappa = ScalarField(mesh)
@@ -262,7 +278,7 @@ function MULTIPHASE(
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     
     flux!(mdotf, Uf, config)
-    
+
     @. rhoPhi.values = F_final.values * (rho1f.values - rho2f.values) + mdotf.values * rho2f.values
 
     T_field = model.energy.T
@@ -289,27 +305,30 @@ function MULTIPHASE(
         interpolate!(∇alphaf_HO, ∇alpha.result, config)
         interpolate_upwind!(alphaf_upwind, alpha, mdotf, config)
         interpolate_upwind!(∇alphaf_upwind, ∇alpha.result, mdotf, config)
+        
 
-        alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt_cpu[1], config, alphaf_upwind, alphaf_HO, ∇alphaf_upwind, ∇alphaf_HO, F_final)
+        smooth_alpha!(alpha_smooth, lap, lap_flux, alpha, config; n_smooth=0, lambda=0.5)
+        interpolate!(alpha_smoothf, alpha_smooth, config)
+        grad!(∇alpha_smooth, alpha_smoothf, alpha_smooth, time, config)
+        interpolate!(∇alpha_smoothf, ∇alpha_smooth.result, config)
+        
 
-        # @. alpha.values = clamp(alpha.values, 0.0, 1.0)
-        # @. alphaf.values = clamp(alphaf.values, 0.0, 1.0)
+        alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt_cpu[1], config, alphaf_upwind, alphaf_HO, ∇alphaf_upwind, ∇alphaf_HO, ∇alpha_smoothf, F_final)
+
+        # CLAMPING MAKES A DIFFERENCE!
+        @. alpha.values = clamp(alpha.values, 0.0, 1.0)
+        @. alphaf.values = clamp(alphaf.values, 0.0, 1.0)
 
         grad!(∇alpha, alphaf, alpha, time, config)
         limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
         interpolate!(∇alphaf_HO, ∇alpha.result, config)
         interpolate_upwind!(∇alphaf_upwind, ∇alpha.result, mdotf, config)
 
-        # ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config, rho_prev; time=time)
-        # interpolate_upwind!(alphaf, alpha, mdotf, config)
+        @. rho_prev.values = rho.values     
 
-        @. rho_prev.values = rho.values
-
-        blend_properties!(rho, alpha, phases[volume_fraction].rho.values, phases[3-volume_fraction].rho.values)
-        blend_properties!(rhof, alphaf, phases[volume_fraction].rho.values, phases[3-volume_fraction].rho.values)
-    
-        blend_properties!(nu, alpha, phases[volume_fraction].mu.values / phases[volume_fraction].rho.values, phases[3-volume_fraction].mu.values / phases[3-volume_fraction].rho.values)
-        blend_properties!(nuf, alphaf, phases[volume_fraction].mu.values / phases[volume_fraction].rho.values, phases[3-volume_fraction].mu.values / phases[3-volume_fraction].rho.values)
+        blend_properties!(rho, alpha, phases[main].rho[1], phases[secondary].rho[1])
+        blend_properties!(rhof, alphaf, phases[main].rho[1], phases[secondary].rho[1])
+        blend_properties!(nuf, alphaf, phases[main].mu[1] / phases[main].rho[1], phases[secondary].mu[1] / phases[secondary].rho[1])
 
         interpolate!(rho1f, rho1, config)
         interpolate!(rho2f, rho2, config)
@@ -338,6 +357,11 @@ function MULTIPHASE(
             flux!(mdotf, Uf, config)
 
             phi_gf!(phi_gf, rho, ghf, rDf, model, config)
+
+            nhat_prep!(nhatf_prep, alpha_smooth, ∇alpha_smoothf, config)
+            div!(kappa, nhatf_prep, config)
+            interpolate!(kappaf, kappa, config)
+            surface_tension_flux!(rDf, sigma, kappaf, alpha, ∇alphaf_HO, phi_gf, config)
 
             # nhat_prep!(nhatf_prep, alpha, ∇alphaf_HO, config) #must be HO
             # div!(kappa, nhatf_prep, config)
@@ -406,6 +430,86 @@ function MULTIPHASE(
 end
 
 
+function smooth_alpha!(alpha_smooth, lap, lap_flux, alpha, config; n_smooth=2, lambda=0.5)
+    (; hardware) = config
+    mesh = alpha.mesh
+    (; faces, boundary_cellsID) = mesh
+    backend = hardware.backend
+    workgroup = hardware.workgroup
+    nbfaces = length(boundary_cellsID)
+
+    @. alpha_smooth.values = alpha.values
+
+    for _ in 1:n_smooth
+        initialise!(lap, 0.0)
+        initialise!(lap_flux, 0.0)
+
+        ndrange = length(faces)
+        kernel! = _smooth_face_flux!(_setup(backend, workgroup, ndrange)...)
+        kernel!(lap_flux, alpha_smooth, faces)
+
+        ndrange = length(mesh.cells)
+        kernel2! = _smooth_divergence!(_setup(backend, workgroup, ndrange)...)
+        kernel2!(lap, lap_flux, alpha_smooth)
+
+        ndrange = nbfaces
+        kernel3! = _smooth_divergence_boundaries!(_setup(backend, workgroup, ndrange)...)
+        kernel3!(lap, lap_flux, alpha_smooth)
+
+        ndrange = length(mesh.cells)
+        kernel4! = _smooth_apply!(_setup(backend, workgroup, ndrange)...)
+        kernel4!(alpha_smooth, lap, lambda)
+    end
+end
+
+@kernel inbounds=true function _smooth_face_flux!(lap_flux, alpha_smooth, faces)
+    i = @index(Global)
+    face = faces[i]
+    (; area, delta, ownerCells) = face
+    cID1 = ownerCells[1]
+    cID2 = ownerCells[2]
+    lap_flux[i] = (alpha_smooth[cID2] - alpha_smooth[cID1]) / delta * area
+end
+
+@kernel inbounds=true function _smooth_divergence!(lap, lap_flux, alpha_smooth)
+    i = @index(Global)
+
+    mesh = alpha_smooth.mesh
+    cells = mesh.cells
+    cell_faces = mesh.cell_faces
+    cell_nsign = mesh.cell_nsign
+
+    T = eltype(lap.values)
+    sum = zero(T)
+    volume = cells[i].volume
+
+    fr = cells[i].faces_range
+    @inbounds for k in fr
+        pointer = cell_faces[k]
+        sum += lap_flux[pointer] * cell_nsign[k]
+    end
+
+    lap[i] = sum / volume
+end
+
+@kernel inbounds=true function _smooth_divergence_boundaries!(lap, lap_flux, alpha_smooth)
+    i = @index(Global)
+
+    mesh = alpha_smooth.mesh
+    cells = mesh.cells
+    faces = mesh.faces
+    cID = faces[i].ownerCells[1]
+    volume = cells[cID].volume
+
+    lap[cID] += lap_flux[i] / volume
+end
+
+@kernel inbounds=true function _smooth_apply!(alpha_smooth, lap, lambda)
+    i = @index(Global)
+    alpha_smooth[i] += lambda * lap[i]
+end
+
+
 function correct_mass_flux1(mdotf, p, rDf, config)
     # sngrad = FaceScalarField(mesh)
     (; faces, cells, boundary_cellsID) = mdotf.mesh
@@ -439,14 +543,13 @@ end
 end
 
 
-
 function nhat_prep!(nhatf_prep, alpha, ∇alphaf, config)
     (; hardware) = config
     (; faces, cells, boundary_cellsID) = alpha.mesh
     backend = hardware.backend
     workgroup = hardware.workgroup
 
-    ndrange = length(nhatf_prep.x) # ?
+    ndrange = length(nhatf_prep.x)
     kernel! = _nhat_prep!(_setup(backend, workgroup, ndrange)...)
     kernel!(nhatf_prep, alpha, faces, ∇alphaf)
 end
@@ -489,7 +592,7 @@ end
 end
 
 
-function alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt, config, alphaf_upwind, alphaf_HO, ∇alphaf_upwind, ∇alphaf_HO, F_final)
+function alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt, config, alphaf_upwind, alphaf_HO, ∇alphaf_upwind, ∇alphaf_HO, ∇alpha_smoothf, F_final)
     (; hardware) = config
     mesh = rho.mesh
     backend = hardware.backend
@@ -497,6 +600,7 @@ function alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt, config, alph
     cells = rho.mesh.cells
 
     nbfaces = length(mesh.boundary_cellsID)
+
 
     divergence_result = ScalarField(mesh)
     alpha_up = ScalarField(mesh)
@@ -514,7 +618,9 @@ function alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt, config, alph
 
     ndrange = length(F_corr)
     kernel! = _compute_F_compression(_setup(backend, workgroup, ndrange)...)
-    kernel!(F_compression_upwind, F_compression_HO, ∇alphaf_upwind, ∇alphaf_HO, alphaf_upwind, alphaf_HO, mdotf, nbfaces)
+    # kernel!(F_compression_upwind, F_compression_HO, ∇alphaf_upwind, ∇alphaf_HO, alphaf_upwind, alphaf_HO, mdotf)
+    kernel!(F_compression_upwind, F_compression_HO, ∇alpha_smoothf, alphaf_upwind, alphaf_HO, mdotf)
+
 
     ndrange = length(F_corr)
     kernel! = _compute_alpha_flux(_setup(backend, workgroup, ndrange)...)
@@ -544,10 +650,6 @@ function alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt, config, alph
     kernel! = _lambdaf_calc(_setup(backend, workgroup, ndrange)...)
     kernel!(lambda, lambdaf, F_final, F_upwind, F_corr, nbfaces)
 
-    # ndrange = length(lambdaf)
-    # kernel! = _test_flux(_setup(backend, workgroup, ndrange)...)
-    # kernel!(n_bfaces, mdotf, alphaf_upwind, F_final)
-
     ndrange = length(divergence_result)
     kernel! = _alpha_divergence(_setup(backend, workgroup, ndrange)...)
     kernel!(divergence_result, mdotf, alphaf, F_final)
@@ -575,7 +677,8 @@ end
     F_HO = (mdotf[i] * alphaf_HO[i]) + F_compression_HO[i]
     F_corr[i] = F_HO - F_upwind[i]
 end
-@kernel inbounds=true function _compute_F_compression(F_compression_upwind, F_compression_HO, ∇alphaf_upwind, ∇alphaf_HO, alphaf_upwind, alphaf_HO, mdotf, n_bfaces)
+# @kernel inbounds=true function _compute_F_compression(F_compression_upwind, F_compression_HO, ∇alphaf_upwind, ∇alphaf_HO, alphaf_upwind, alphaf_HO, mdotf)
+@kernel inbounds=true function _compute_F_compression(F_compression_upwind, F_compression_HO, ∇alpha_smoothf, alphaf_upwind, alphaf_HO, mdotf)
     i = @index(Global)
 
     mesh = mdotf.mesh
@@ -584,21 +687,30 @@ end
     (; area, normal) = faces[i]
     TF = eltype(F_compression_upwind)
 
-    C_alpha = 0.0
+
+
+    C_alpha = 1.0
     Sf = normal * area
 
-    phic_upwind = C_alpha * abs(mdotf[i]) / (area + eps(TF))
-    phic_HO = C_alpha * abs(mdotf[i]) / (area + eps(TF))
+    phic = C_alpha * abs(mdotf[i]) / (area + eps(TF))
 
-    n_hat_upwind = ∇alphaf_upwind[i] / (norm(∇alphaf_upwind[i]) + 1e-8)
-    n_hat_HO = ∇alphaf_HO[i] / (norm(∇alphaf_HO[i]) + 1e-8)
+    n_hat = ∇alpha_smoothf[i] / (norm(∇alpha_smoothf[i]) + 1e-8)
 
-    phi_r_upwind = phic_upwind * (n_hat_upwind ⋅ Sf)
-    phi_r_HO = phic_HO * (n_hat_upwind ⋅ Sf)  # use HO normal for HO flux
+    phi_r = phic * (n_hat ⋅ Sf)
 
-    F_compression_upwind[i] = phi_r_upwind * alphaf_upwind[i] * (1.0 - alphaf_upwind[i])
-    F_compression_HO[i] = phi_r_HO * alphaf_HO[i] * (1.0 - alphaf_HO[i])
-    
+    F_compression_upwind[i] = phi_r * alphaf_upwind[i] * (1.0 - alphaf_upwind[i])
+    F_compression_HO[i] = phi_r * alphaf_HO[i] * (1.0 - alphaf_HO[i])
+
+    # C_alpha = 1.0
+    # Sf = normal * area
+    # phic_upwind = C_alpha * abs(mdotf[i]) / (area + eps(TF))
+    # phic_HO = C_alpha * abs(mdotf[i]) / (area + eps(TF))
+    # n_hat_upwind = ∇alphaf_upwind[i] / (norm(∇alphaf_upwind[i]) + 1e-8)
+    # n_hat_HO = ∇alphaf_HO[i] / (norm(∇alphaf_HO[i]) + 1e-8)
+    # phi_r_upwind = phic_upwind * (n_hat_upwind ⋅ Sf)
+    # phi_r_HO = phic_HO * (n_hat_upwind ⋅ Sf)  # use HO normal for HO flux
+    # F_compression_upwind[i] = phi_r_upwind * alphaf_upwind[i] * (1.0 - alphaf_upwind[i])
+    # F_compression_HO[i] = phi_r_HO * alphaf_HO[i] * (1.0 - alphaf_HO[i])
 end
 @kernel inbounds=true function _alpha_divergence(divergence_result, mdotf, alphaf, flux)
     i = @index(Global)
@@ -768,6 +880,7 @@ end
     end
 end
 
+
 function pressure_grad!(p_rgh, ∇p_rghf_deconstructed, phi_gf, rDf, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -793,16 +906,11 @@ end
 end
 
 
-"""
-    blend_properties!(property_field, alpha_field, property_0, property_1)
-
-Blends a property between two phases using the phase fraction `alpha_field`.
-Formula: `prop = (prop0 * alpha) + (prop1 * (1 - alpha))`
-"""
 function blend_properties!(property_field, alpha_field, property_0, property_1)
-    @. property_field.values = (property_0 * alpha_field.values) + (property_1 * (1.0 - alpha_field.values)) # would not work with ScalarField
+    @. property_field.values = (property_0 * alpha_field.values) + (property_1 * (1.0 - alpha_field.values))
     nothing
 end
+
 
 """
     compute_gh!(gh, g, config)
