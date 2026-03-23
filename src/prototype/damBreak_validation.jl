@@ -9,7 +9,7 @@ scaling = 1.0 # make sure the domain is 1x1 m
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 # grid = "damBreak_coarse.unv"
-grid = "damBreak_fine.unv"
+grid = "damBreak_medium.unv"
 # grid = "dambreak_validation_44k.unv"
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=scaling)

@@ -171,45 +171,45 @@ end
 Configuration structure for a single fluid phase.
 
 ### Fields
-- 'eosModel'       -- Equation of State model for the phase.
-- 'mu' -- Viscosity model for the phase.
+- `rho` -- Density model (Equation of State) for the phase.
+- `mu`  -- Viscosity model for the phase.
 """
 struct Phase{E<:AbstractEosModel, V<:AbstractViscosityModel} <: AbstractPhase
-    density::E
+    rho::E
     mu::V
 end
 
-function Phase(; density, mu) # Covers all combinations e.g. mu=1.8e-5 or mu=SutherlandModel() etc
-    density_type = density isa AbstractFloat ? ConstEos(density) : density
-    mu_type = mu isa AbstractFloat ? ConstMu(mu) : mu
-    
-    return Phase(density_type, mu_type)
+function Phase(; rho, mu) # Covers all combinations e.g. mu=1.8e-5 or mu=SutherlandModel() etc
+    rho_model = rho isa AbstractFloat ? ConstEos(rho) : rho
+    mu_model = mu  isa AbstractFloat ? ConstMu(mu) : mu
+    return Phase(rho_model, mu_model)
 end
 
 @kwdef struct PhaseState{E<:AbstractEosModel, V<:AbstractViscosityModel, S1,S2,S3,S4,S5} <: AbstractPhase
-    density::E
-    mu::V
+    rho_model::E
+    mu_model::V
 
     rho::S1
-    nu::S2
+    mu::S2
     k::S3
     cp::S4
     beta::S5
 end
 Adapt.@adapt_structure PhaseState
 
+
 function build_phase(phase_setup::Phase, mesh)
-    rho   = ScalarField(mesh)
-    nu    = ScalarField(mesh)
+    rho   = phase_setup.rho isa ConstEos ? ConstantScalar(phase_setup.rho.rho) : ScalarField(mesh)
+    mu    = phase_setup.mu  isa ConstMu ? ConstantScalar(phase_setup.mu.mu) : ScalarField(mesh)
     k     = ScalarField(mesh)
     cp    = ScalarField(mesh)
     beta  = ScalarField(mesh)
 
     return PhaseState(
-        density=phase_setup.density,
-        mu=phase_setup.mu,
+        rho_model = phase_setup.rho,
+        mu_model = phase_setup.mu,
         rho=rho,
-        nu=nu,
+        mu=mu,
         k=k,
         cp=cp,
         beta=beta
@@ -225,6 +225,7 @@ Multiphase fluid model containing multiple phases and their interaction properti
 ### Fields
 - 'phases'             -- Tuple of PhaseState structures.
 - 'physics_properties' -- NamedTuple of physical models (drag, surface tension, etc.).
+- 'volume_fraction'    -- Index of the phase tracked by the volume fraction field.
 - 'alpha'              -- Volume fraction ScalarField.
 - 'alphaf'             -- Volume fraction FaceScalarField.
 - 'rho'                -- Mixture density ScalarField.
@@ -237,6 +238,7 @@ Multiphase fluid model containing multiple phases and their interaction properti
 @kwdef struct Multiphase{P1,P2,S1,F1,S2,F2,S3,F3,S4,F4} <: AbstractMultiphase
     phases::P1
     physics_properties::P2
+    volume_fraction::Int
     alpha::S1
     alphaf::F1
     rho::S2
@@ -248,7 +250,7 @@ Multiphase fluid model containing multiple phases and their interaction properti
 end
 Adapt.@adapt_structure Multiphase
 
-Fluid{Multiphase}(; phases::Tuple, kwargs...) = begin
+Fluid{Multiphase}(; phases::NamedTuple, kwargs...) = begin
     coeffs = (; phases, kwargs...)
     ARG = typeof(coeffs)
     Fluid{Multiphase, ARG}(coeffs)
@@ -257,17 +259,25 @@ end
 
 (fluid::Fluid{Multiphase, ARG})(mesh) where {ARG} = begin
     coeffs = fluid.args
-
     physics_properties = Base.structdiff(coeffs, (phases = nothing,))
 
-    build_multiphase(coeffs.phases, physics_properties, mesh)
+    phases_nt = coeffs.phases
+    @assert phases_nt isa NamedTuple "Phases must be a NamedTuple with named phases, e.g. (water=Phase(...), air=Phase(...))"
+    @assert haskey(phases_nt, :alpha) "Volume fraction definition must be assigned via alpha = , e.g. alpha=:water"
+
+    alpha_name = phases_nt.alpha
+    phase_keys = filter(!=(:alpha), keys(phases_nt))
+    phase_setups = map(k -> phases_nt[k], phase_keys)
+    volume_fraction = findfirst(==(alpha_name), phase_keys)
+
+    build_multiphase(phase_setups, physics_properties, mesh, volume_fraction)
 end
 
 
 build_property(property, mesh) = property
 build_property(setup::Gravity, mesh) = build_gravityModel(setup, mesh)
 
-function build_multiphase(phase_setups::Tuple{<:AbstractPhase, <:AbstractPhase}, physics_properties_setup::NamedTuple, mesh)
+function build_multiphase(phase_setups::Tuple{<:AbstractPhase, <:AbstractPhase}, physics_properties_setup::NamedTuple, mesh, volume_fraction::Int)
     phases = map(setup -> build_phase(setup, mesh), phase_setups)
 
     built_properties = map(prop_setup -> build_property(prop_setup, mesh), physics_properties_setup)
@@ -284,5 +294,5 @@ function build_multiphase(phase_setups::Tuple{<:AbstractPhase, <:AbstractPhase},
     p_rgh  = ScalarField(mesh)
     p_rghf = FaceScalarField(mesh)
     
-    Multiphase(phases=phases, physics_properties=built_properties, alpha=alpha, alphaf=alphaf, rho=rho, rhof=rhof, nu=nu, nuf=nuf, p_rgh=p_rgh, p_rghf=p_rghf)
+    Multiphase(phases=phases, physics_properties=built_properties, volume_fraction=volume_fraction, alpha=alpha, alphaf=alphaf, rho=rho, rhof=rhof, nu=nu, nuf=nuf, p_rgh=p_rgh, p_rghf=p_rghf)
 end

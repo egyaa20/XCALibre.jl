@@ -40,7 +40,7 @@ end
 
 ## SCALAR INTERPOLATION
 
-function interpolate!(phif::FaceScalarField, phi::ScalarField, config)
+function interpolate!(phif::FaceScalarField, phi::Union{ScalarField, ConstantScalar}, config)
     # Extract values arrays from scalar fields 
     vals = phi.values
     fvals = phif.values
