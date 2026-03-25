@@ -244,8 +244,8 @@ function MULTIPHASE(
 
     # sigma = 71.1e-3
     sigma = 0.0
-    sigma = 0.01 # RTI
-    sigma = 1.22625
+    # sigma = 0.01 # RTI
+    # sigma = 1.22625
     # sigma = 1.0
     # sigma = 2.0
     

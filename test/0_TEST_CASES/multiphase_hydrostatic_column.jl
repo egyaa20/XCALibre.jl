@@ -36,9 +36,8 @@ model = Physics(
     time = Transient(),
     fluid = Fluid{Multiphase}(
         phases = (
-            water = Phase(rho=1000.0, mu=1.0e-3),
-            air = Phase(rho=1.2, mu=1.8e-5),
-            alpha = :water
+            Phase(rho=1.2, mu=1.8e-5),
+            Phase(rho=1000.0, mu=1.0e-3),
         ),
         gravity = gravity
     ),
@@ -56,7 +55,7 @@ BCs = assign(
         U = [
             Wall(:inlet, noSlipVelocity),
             Wall(:outlet, noSlipVelocity),
-            Zerogradient(:top), 
+            Extrapolated(:top), 
             Wall(:bottom, noSlipVelocity),
         ],
         p_rgh = [
@@ -70,7 +69,7 @@ BCs = assign(
             Zerogradient(:inlet),
             Zerogradient(:outlet),
             Zerogradient(:bottom),
-            Zerogradient(:top),
+            Extrapolated(:top),
         ]
     )
 )
@@ -111,7 +110,7 @@ solvers = (
 )
 
 runtime = Runtime(
-    iterations=15000, time_step=0.0001, write_interval=100)
+    iterations=15000, time_step=0.001, write_interval=100)
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
@@ -122,12 +121,12 @@ GC.gc()
 
 initialise!(model.fluid.p_rgh, 0.0)
 initialise!(model.momentum.U, noSlipVelocity)
-initialise!(model.fluid.alpha, 0.0)
+initialise!(model.fluid.alpha, 1.0)
 
 min_corner_vec = [0.0, 0.0, -0.5]
 max_corner_vec = [1.0,0.5,0.5]
 
-setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
+setField_Box!(mesh=mesh, field=model.fluid.alpha, value=0.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
 
 # @time residuals = run!(model, config, pref=0.0)
 @time residuals = run!(model, config)
