@@ -1,6 +1,25 @@
 
 export multiphase!
 
+function check_boundary_zeros(field::FaceScalarField, name::String)
+    mesh = field.mesh
+    boundary_range = mesh.boundaries[1].IDs_range.start:mesh.boundaries[end].IDs_range.stop
+    nonzero = filter(v -> v != 0, [field.values[i] for i in boundary_range])
+    if !isempty(nonzero)
+        @warn "Non-zero boundary face values detected in '$name'" nonzero
+    end
+end
+
+function check_boundary_zeros(field::FaceVectorField, name::String)
+    mesh = field.mesh
+    boundary_range = mesh.boundaries[1].IDs_range.start:mesh.boundaries[end].IDs_range.stop
+    nonzero = filter(v -> v != SVector(0, 0, 0), [SVector(field.x.values[i], field.y.values[i], field.z.values[i]) for i in boundary_range])
+    if !isempty(nonzero)
+        @warn "Non-zero boundary face values detected in '$name'" nonzero
+    end
+end
+
+
 """
     multiphase!(model, config; 
         output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0)
@@ -335,7 +354,12 @@ function MULTIPHASE(
         
         interpolate_upwind!(Urf_upwind, Ur, mdotf, config)
         interpolate!(Urf_HO, Ur, config)
-        zero_wall_drift_velocity!(Urf_HO, Urf_upwind, config)
+
+        zero_wall_drift_velocity!(Urf_HO, Urf_upwind, config) # Please do not zero Dirichlet U patch !!
+        
+        zero_boundaries_vector!(∇alpha_smoothf, config) # Please do not zero Dirichlet U patch !!
+        zero_boundaries_vector!(∇alphaf_HO, config) # Please do not zero Dirichlet U patch !!
+        zero_boundaries_vector!(∇alphaf_upwind, config) # Please do not zero Dirichlet U patch !!
 
         alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt_cpu[1], config, alphaf_upwind, alphaf_HO, ∇alphaf_upwind, ∇alphaf_HO, F_final, divergence_result, alpha_up, alpha_corr, lambda, lambdaf, F_corr, F_upwind, F_comp, F_compression_upwind, F_compression_HO, Urf_upwind, Urf_HO, ∇alpha_smoothf)
 
@@ -346,6 +370,10 @@ function MULTIPHASE(
         limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
         interpolate!(∇alphaf_HO, ∇alpha.result, config)
         interpolate_upwind!(∇alphaf_upwind, ∇alpha.result, mdotf, config)
+
+        zero_boundaries_vector!(∇alpha_smoothf, config) # Please do not zero Dirichlet U patch !!
+        zero_boundaries_vector!(∇alphaf_HO, config) # Please do not zero Dirichlet U patch !!
+        zero_boundaries_vector!(∇alphaf_upwind, config) # Please do not zero Dirichlet U patch !!
 
         blend_properties!(rho, alpha, phases[main].rho[1], phases[secondary].rho[1])
         blend_properties!(rhof, alphaf, phases[main].rho[1], phases[secondary].rho[1])
@@ -358,6 +386,10 @@ function MULTIPHASE(
         limit_gradient!(schemes.p_rgh.limiter, ∇rho, rho, config)
 
         interpolate!(rhof, rho, config)
+
+        # maybe alpha smoothing for UrfHO ? or not just HO? upwind?
+        compute_tensor_term!(alphaf, rhof, rho1f, rho2f, Urf_HO, slip_momentum_term, config)
+        div_tensor!(div_slip_momentum, slip_momentum_term, config)
 
         @. rhoPhi.values = F_final.values * (rho1f.values - rho2f.values) + mdotf.values * rho2f.values
 
@@ -387,6 +419,7 @@ function MULTIPHASE(
             # nhat_prep!(nhatf_prep, alpha, ∇alphaf_HO, config) #must be HO
             div!(kappa, nhatf_prep, config)
             interpolate!(kappaf, kappa, config)
+            zero_boundaries_scalar!(kappaf, config) # Please do not zero Dirichlet U patch !!
             surface_tension_flux!(rDf, sigma, kappaf, alpha, ∇alphaf_HO, phi_gf, config)
 
             reconstruct_operation!(phi_g, phi_gf, config)
@@ -408,6 +441,26 @@ function MULTIPHASE(
             reconstruct_operation!(∇p_rghf_reconstructed, ∇p_rghf_deconstructed, config) # reconstruction for velocity correction
             correct_velocity_rgh!(U, Hv, ∇p_rghf_reconstructed, rD, phi_g, config)
         end # corrector loop end
+
+        check_boundary_zeros(phi_gf, "phi_gf")
+        check_boundary_zeros(Urf_HO, "Urf_HO")
+        check_boundary_zeros(Urf_upwind, "Urf_upwind")
+        check_boundary_zeros(∇alpha_smoothf, "∇alpha_smoothf")
+        check_boundary_zeros(∇alphaf_HO, "∇alphaf_HO")
+        check_boundary_zeros(∇alphaf_upwind, "∇alphaf_upwind")
+        # check_boundary_zeros(alphaf, "alphaf")
+        check_boundary_zeros(kappaf, "kappaf")
+        check_boundary_zeros(lambdaf, "lambdaf")
+        check_boundary_zeros(F_corr, "F_corr")
+        # check_boundary_zeros(F_upwind, "F_upwind")
+        # check_boundary_zeros(F_comp, "F_comp")
+        check_boundary_zeros(F_compression_upwind, "F_compression_upwind")
+        check_boundary_zeros(F_compression_HO, "F_compression_HO")
+        # check_boundary_zeros(rho1f, "rho1f")
+        # check_boundary_zeros(rho2f, "rho2f")
+        # check_boundary_zeros(rhof, "rhof")
+
+        
         
         @. p.values = p_rgh.values + (rho.values * gh.values)
 
@@ -459,6 +512,44 @@ function zero_wall_drift_velocity!(Urf_HO, Urf_upwind, config)
     ndrange = nbfaces
     kernel! = _zero_wall_drift_velocity!(_setup(backend, workgroup, ndrange)...)
     kernel!(Urf_HO, Urf_upwind)
+end
+
+
+function zero_boundaries_scalar!(field_to_zero, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    nbfaces = length(field_to_zero.mesh.boundary_cellsID)
+    ndrange = nbfaces
+    kernel! = _zero_boundaries_scalar!(_setup(backend, workgroup, ndrange)...)
+    kernel!(field_to_zero)
+end
+function zero_boundaries_vector!(field_to_zero, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    nbfaces = length(field_to_zero.mesh.boundary_cellsID)
+    ndrange = nbfaces
+    kernel! = _zero_boundaries_vector!(_setup(backend, workgroup, ndrange)...)
+    kernel!(field_to_zero)
+end
+
+@kernel inbounds=true function _zero_boundaries_scalar!(field_to_zero)
+    i = @index(Global)
+
+    TF = eltype(field_to_zero)
+
+    field_to_zero[i] = zero(TF)
+end
+
+@kernel inbounds=true function _zero_boundaries_vector!(field_to_zero)
+    i = @index(Global)
+
+    TF = eltype(field_to_zero.x)
+
+    field_to_zero.x[i] = zero(TF)
+    field_to_zero.y[i] = zero(TF)
+    field_to_zero.z[i] = zero(TF)
 end
 
 @kernel inbounds=true function _zero_wall_drift_velocity!(Urf_HO, Urf_upwind)
@@ -800,23 +891,9 @@ end
     (; area, normal) = faces[i]
     TF = eltype(F_compression_upwind)
 
-
     # C_alpha = 0.0
     Sf = normal * area
 
-    # phic_upwind = C_alpha * abs(mdotf[i]) / (area + eps(TF))
-    # phic_HO = C_alpha * abs(mdotf[i]) / (area + eps(TF))
-
-    # n_hat_upwind = ∇alphaf_upwind[i] / (norm(∇alphaf_upwind[i]) + 1e-8)
-    # n_hat_HO = ∇alphaf_HO[i] / (norm(∇alphaf_HO[i]) + 1e-8)
-
-    # phi_r_upwind = phic_upwind * (n_hat_upwind ⋅ Sf)
-    # phi_r_HO = phic_HO * (n_hat_upwind ⋅ Sf)  # use HO normal for HO flux
-
-    # F_compression_upwind[i] = phi_r_upwind * alphaf_upwind[i] * (1.0 - alphaf_upwind[i])
-    # F_compression_HO[i] = phi_r_HO * alphaf_HO[i] * (1.0 - alphaf_HO[i])
-
-    
     # Urf_upwind
     F_compression_upwind[i] = (Urf_upwind[i] ⋅ Sf) * alphaf_upwind[i] * (1.0 - alphaf_upwind[i]) # MMP
     F_compression_HO[i] = (Urf_HO[i] ⋅ Sf) * alphaf_HO[i] * (1.0 - alphaf_HO[i]) # MMP
@@ -881,7 +958,7 @@ end
     (; ownerCells) = face
 
     if i <= n_bfaces
-        lambdaf[i] = 1.0
+        lambdaf[i] = 0.0
         F_final[i] = F_upwind[i]
     else
         lambda_P = lambda[ownerCells[1]]
