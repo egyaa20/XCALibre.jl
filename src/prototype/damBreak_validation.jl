@@ -1,18 +1,11 @@
 using XCALibre
 using CUDA
 
-# grids_dir = pkgdir(XCALibre, "src", "prototype", "polyMesh_dam/")
-# mesh = FOAM3D_mesh(grids_dir, scale=1.0)
-
-# scaling = 0.00001 # make sure the domain is 1x1 m * 0.01
 scaling = 1.0 # make sure the domain is 1x1 m
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "damBreak_coarse.unv"
-# grid = "damBreak_medium.unv"
-# grid = "damBreak_square.unv"
-# grid = "damBreak_fine.unv"
-# grid = "quad100.unv"[]
+
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=scaling)
 
@@ -31,8 +24,8 @@ model = Physics(
     time = Transient(),
     fluid = Fluid{Multiphase}(
         phases = (
-            Phase(density=1000.0, mu=1.0e-3),       #liquid
-            Phase(density=1.2, mu=1.8e-5),          #vapour
+            Phase(rho=1000.0, mu=1.0e-3),       #liquid
+            Phase(rho=1.2, mu=1.8e-5),          #vapour
         ),
         gravity = gravity
     ),
@@ -60,8 +53,8 @@ BCs = assign(
             Zerogradient(:rightWall),
             # Zerogradient(:lowerWall),
             Zerogradient(:lowerWall),
-            # Zerogradient(:upperWall),
-            Dirichlet(:upperWall, 0.0),
+            Zerogradient(:upperWall),
+            # Dirichlet(:upperWall, 0.0),
             # totalPressure(:top, 0.0),
         ],
         alpha = [

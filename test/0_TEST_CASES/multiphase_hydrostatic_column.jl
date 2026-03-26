@@ -20,24 +20,13 @@ noSlipVelocity = [0.0, 0.0, 0.0]
 
 gravity = Gravity([0.0, -9.81, 0.0]) # Define gravity direction and magnitude
 
-# API CHANGE from:
-        # phases = (
-        #     Phase(rho=1000.0, mu=1.0e-3),
-        #     Phase(rho=1.2, mu=1.8e-5),
-        # ),
-# To:
-        # phases = (
-        #     water = Phase(rho=1000.0, mu=1.0e-3),
-        #     air = Phase(rho=1.2, mu=1.8e-5),
-        #     alpha = :water
-        # ),
 
 model = Physics(
     time = Transient(),
     fluid = Fluid{Multiphase}(
         phases = (
-            Phase(rho=1.2, mu=1.8e-5),
             Phase(rho=1000.0, mu=1.0e-3),
+            Phase(rho=1.2, mu=1.8e-5),
         ),
         gravity = gravity
     ),
@@ -121,12 +110,12 @@ GC.gc()
 
 initialise!(model.fluid.p_rgh, 0.0)
 initialise!(model.momentum.U, noSlipVelocity)
-initialise!(model.fluid.alpha, 1.0)
+initialise!(model.fluid.alpha, 0.0)
 
 min_corner_vec = [0.0, 0.0, -0.5]
 max_corner_vec = [1.0,0.5,0.5]
 
-setField_Box!(mesh=mesh, field=model.fluid.alpha, value=0.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
+setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0, min_corner=min_corner_vec, max_corner=max_corner_vec)
 
 # @time residuals = run!(model, config, pref=0.0)
 @time residuals = run!(model, config)
@@ -134,9 +123,3 @@ setField_Box!(mesh=mesh, field=model.fluid.alpha, value=0.0, min_corner=min_corn
 upperWallVelocity = boundary_average(:top, model.momentum.U, BCs.U, config)
 
 @test norm(upperWallVelocity) < 1e-9
-
-
-
-        # regime = VoF(sigma = 0.0, C_alpha = 1.0)
-        # regime = MMP(diameter = 0.0, C_alpha = 1.0)
-        # explicit = false,

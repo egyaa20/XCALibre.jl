@@ -245,7 +245,7 @@ function MULTIPHASE(
     # sigma = 71.1e-3
     sigma = 0.0
     # sigma = 0.01 # RTI
-    # sigma = 1.22625
+    # sigma = 1.225 # double bubble? or RTI or whatever!
     # sigma = 1.0
     # sigma = 2.0
     
@@ -307,7 +307,7 @@ function MULTIPHASE(
         interpolate_upwind!(∇alphaf_upwind, ∇alpha.result, mdotf, config)
         
 
-        smooth_alpha!(alpha_smooth, lap, lap_flux, alpha, config; n_smooth=0, lambda=0.5)
+        smooth_alpha!(alpha_smooth, lap, lap_flux, alpha, config; n_smooth=2, lambda=0.5)
         interpolate!(alpha_smoothf, alpha_smooth, config)
         grad!(∇alpha_smooth, alpha_smoothf, alpha_smooth, time, config)
         interpolate!(∇alpha_smoothf, ∇alpha_smooth.result, config)
@@ -660,7 +660,6 @@ function alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt, config, alph
     @. alpha.values = alpha_prev.values - (dt) * divergence_result.values
     @. alphaf.values = alphaf_upwind.values + lambdaf.values * (alphaf_HO.values - alphaf_upwind.values)
 
-    
 
     ndrange = length(divergence_result)
     kernel! = _alpha_divergence(_setup(backend, workgroup, ndrange)...)
@@ -677,7 +676,7 @@ end
     F_HO = (mdotf[i] * alphaf_HO[i]) + F_compression_HO[i]
     F_corr[i] = F_HO - F_upwind[i]
 end
-# @kernel inbounds=true function _compute_F_compression(F_compression_upwind, F_compression_HO, ∇alphaf_upwind, ∇alphaf_HO, alphaf_upwind, alphaf_HO, mdotf)
+
 @kernel inbounds=true function _compute_F_compression(F_compression_upwind, F_compression_HO, ∇alpha_smoothf, alphaf_upwind, alphaf_HO, mdotf)
     i = @index(Global)
 
@@ -701,16 +700,6 @@ end
     F_compression_upwind[i] = phi_r * alphaf_upwind[i] * (1.0 - alphaf_upwind[i])
     F_compression_HO[i] = phi_r * alphaf_HO[i] * (1.0 - alphaf_HO[i])
 
-    # C_alpha = 1.0
-    # Sf = normal * area
-    # phic_upwind = C_alpha * abs(mdotf[i]) / (area + eps(TF))
-    # phic_HO = C_alpha * abs(mdotf[i]) / (area + eps(TF))
-    # n_hat_upwind = ∇alphaf_upwind[i] / (norm(∇alphaf_upwind[i]) + 1e-8)
-    # n_hat_HO = ∇alphaf_HO[i] / (norm(∇alphaf_HO[i]) + 1e-8)
-    # phi_r_upwind = phic_upwind * (n_hat_upwind ⋅ Sf)
-    # phi_r_HO = phic_HO * (n_hat_upwind ⋅ Sf)  # use HO normal for HO flux
-    # F_compression_upwind[i] = phi_r_upwind * alphaf_upwind[i] * (1.0 - alphaf_upwind[i])
-    # F_compression_HO[i] = phi_r_HO * alphaf_HO[i] * (1.0 - alphaf_HO[i])
 end
 @kernel inbounds=true function _alpha_divergence(divergence_result, mdotf, alphaf, flux)
     i = @index(Global)
