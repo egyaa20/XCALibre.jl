@@ -247,7 +247,7 @@ function MULTIPHASE(
     # sigma = 0.01 # RTI
     # sigma = 1.225 # double bubble? or RTI or whatever!
     # sigma = 1.0
-    # sigma = 2.0
+    sigma = 2.0
     
     nhatf_prep = FaceVectorField(mesh)
     kappa = ScalarField(mesh)
@@ -307,7 +307,7 @@ function MULTIPHASE(
         interpolate_upwind!(∇alphaf_upwind, ∇alpha.result, mdotf, config)
         
 
-        smooth_alpha!(alpha_smooth, lap, lap_flux, alpha, config; n_smooth=2, lambda=0.5)
+        smooth_alpha!(alpha_smooth, lap, lap_flux, alpha, config; n_smooth=0, lambda=0.5)
         interpolate!(alpha_smoothf, alpha_smooth, config)
         grad!(∇alpha_smooth, alpha_smoothf, alpha_smooth, time, config)
         interpolate!(∇alpha_smoothf, ∇alpha_smooth.result, config)
