@@ -156,18 +156,14 @@ function setup_multiphase_solvers(
         ==
         - Source(∇p_rgh.result)
         # + Source(rho_g)
-        - Source(div_slip_momentum)
+        # - Source(div_slip_momentum)
     ) → VectorEquation(U, boundaries.U)
-
-    tempField1 = FaceVectorField(mesh)
-    tempField2 = ScalarField(mesh)
 
     alpha_eqn = (
         Time{schemes.alpha.time}(alpha)
         + Divergence{schemes.alpha.divergence}(mdotf, alpha)
         == 
         - Source(ConstantScalar(0.0))
-        - Source(tempField2)
     ) → ScalarEquation(alpha, boundaries.alpha)
 
     @info "Initialising preconditioners..."
@@ -186,7 +182,7 @@ function setup_multiphase_solvers(
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-        model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, tempField1, tempField2, mdotf, rhoPhi, gh, ghf, phi_g, phi_gf, rho_g, nueff, slip_momentum_term, div_slip_momentum, config;
+        model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, mdotf, rhoPhi, gh, ghf, phi_g, phi_gf, rho_g, nueff, slip_momentum_term, div_slip_momentum, config;
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
@@ -197,7 +193,7 @@ end
 
 
 function MULTIPHASE(
-    model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, tempField1, tempField2, mdotf, rhoPhi, gh, ghf, phi_g, phi_gf, rho_g, nueff, slip_momentum_term, div_slip_momentum, config;
+    model, turbulenceModel, ∇p, ∇p_rgh, ∇rho, ∇alpha, U_eqn, p_eqn, alpha_eqn, mdotf, rhoPhi, gh, ghf, phi_g, phi_gf, rho_g, nueff, slip_momentum_term, div_slip_momentum, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2)
     
     (; U, p, Uf, pf) = model.momentum
@@ -372,21 +368,13 @@ function MULTIPHASE(
         zero_boundaries_vector!(∇alphaf_HO, config) # Please do not zero Dirichlet U patch !!
         zero_boundaries_vector!(∇alphaf_upwind, config) # Please do not zero Dirichlet U patch !!
 
-        @. tempField1.x.values = Urf_HO.x.values * alphaf_HO.values * (1.0 - alphaf_HO.values)
-        @. tempField1.y.values = Urf_HO.y.values * alphaf_HO.values * (1.0 - alphaf_HO.values)
-        @. tempField1.z.values = Urf_HO.z.values * alphaf_HO.values * (1.0 - alphaf_HO.values)
-
-        div!(tempField2, tempField1, config)
-
-        ralpha = solve_equation!(alpha_eqn, alpha, boundaries.alpha, solvers.alpha, config, rho_prev; ref=pref, time=time)
-
-        # alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt_cpu[1], config, alphaf_upwind, alphaf_HO, ∇alphaf_upwind, ∇alphaf_HO, F_final, divergence_result, alpha_up, alpha_corr, lambda, lambdaf, F_corr, F_upwind, F_comp, F_compression_upwind, F_compression_HO, Urf_upwind, Urf_HO, ∇alpha_smoothf)
+        alpha_explicit!(alpha_prev, alpha, alphaf, mdotf, rho, dt_cpu[1], config, alphaf_upwind, alphaf_HO, ∇alphaf_upwind, ∇alphaf_HO, F_final, divergence_result, alpha_up, alpha_corr, lambda, lambdaf, F_corr, F_upwind, F_comp, F_compression_upwind, F_compression_HO, Urf_upwind, Urf_HO, ∇alpha_smoothf)
 
         # try to sole alpha after PISO loop-ish
         # discuss this in the dissertation
 
-        # @. alpha.values = clamp(alpha.values, 0.0, 1.0)
-        # @. alphaf.values = clamp(alphaf.values, 0.0, 1.0)
+        @. alpha.values = clamp(alpha.values, 0.0, 1.0)
+        @. alphaf.values = clamp(alphaf.values, 0.0, 1.0)
 
         grad!(∇alpha, alphaf, alpha, boundaries.alpha, time, config)
         limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
@@ -415,8 +403,8 @@ function MULTIPHASE(
         compute_tensor_term!(alphaf, rhof, rho1f, rho2f, Urf_HO, slip_momentum_term, config)
         div_tensor!(div_slip_momentum, slip_momentum_term, config)
 
-        # @. rhoPhi.values = F_final.values * (rho1f.values - rho2f.values) + mdotf.values * rho2f.values
-        @. rhoPhi.values = mdotf.values * rhof.values
+        @. rhoPhi.values = F_final.values * (rho1f.values - rho2f.values) + mdotf.values * rho2f.values
+        # @. rhoPhi.values = mdotf.values * rhof.values
 
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, rho_prev; time=time)
@@ -439,12 +427,13 @@ function MULTIPHASE(
 
             phi_gf!(phi_gf, rho, ghf, rDf, model, config)
 
-            # nhat_prep!(nhatf_prep, alpha_smooth, ∇alpha_smoothf, config)
+            
+            nhat_prep!(nhatf_prep, alpha_smooth, ∇alpha_smoothf, config)
             # nhat_prep!(nhatf_prep, alpha, ∇alphaf_HO, config) #must be HO
-            # div!(kappa, nhatf_prep, config)
-            # interpolate!(kappaf, kappa, config)
-            # zero_boundaries_scalar!(kappaf, config) # Please do not zero Dirichlet U patch !!
-            # surface_tension_flux!(rDf, sigma, kappaf, alpha, ∇alphaf_HO, phi_gf, config)
+            div!(kappa, nhatf_prep, config)
+            interpolate!(kappaf, kappa, config)
+            zero_boundaries_scalar!(kappaf, config) # Please do not zero Dirichlet U patch !!
+            surface_tension_flux!(rDf, sigma, kappaf, alpha, ∇alphaf_HO, phi_gf, config)
 
             reconstruct_operation!(phi_g, phi_gf, config)
 
@@ -895,8 +884,8 @@ end
     mesh = mdotf.mesh
 
     F_upwind[i] = (mdotf[i] * alphaf_upwind[i]) - F_compression_upwind[i] # COMMENTING OUT DOES MAKE A DIFFERENCE - NEED TO TAKE A CLOSER LOOK!!!
-    F_HO = 0.0#(mdotf[i] * alphaf_HO[i]) - F_compression_HO[i]
-    F_corr[i] = F_upwind[i]#F_HO - F_upwind[i]
+    # F_HO = 0.0#(mdotf[i] * alphaf_HO[i]) - F_compression_HO[i]
+    # F_corr[i] = F_upwind[i]#F_HO - F_upwind[i]
 
 
     # Well it seems like this one works : 
@@ -918,8 +907,8 @@ end
     Sf = normal * area
 
     # Urf_upwind
-    # F_compression_upwind[i] = (Urf_upwind[i] ⋅ Sf) * alphaf_upwind[i] * (1.0 - alphaf_upwind[i]) # MMP
-    # F_compression_HO[i] = (Urf_HO[i] ⋅ Sf) * alphaf_HO[i] * (1.0 - alphaf_HO[i]) # MMP
+    F_compression_upwind[i] = (Urf_upwind[i] ⋅ Sf) * alphaf_upwind[i] * (1.0 - alphaf_upwind[i]) # MMP
+    F_compression_HO[i] = (Urf_HO[i] ⋅ Sf) * alphaf_HO[i] * (1.0 - alphaf_HO[i]) # MMP
 
 
     # PLEASE TRY SMOOTHING !
@@ -981,7 +970,7 @@ end
     (; ownerCells) = face
 
     if i <= n_bfaces
-        lambdaf[i] = 1.0
+        lambdaf[i] = 0.0
         F_final[i] = F_upwind[i]
     else
         lambda_P = lambda[ownerCells[1]]
