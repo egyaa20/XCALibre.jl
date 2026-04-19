@@ -177,8 +177,6 @@ function MULTIPHASE(
     Qminus          = ScalarField(mesh)
     Rplus           = ScalarField(mesh)
     Rminus          = ScalarField(mesh)
-    alphaMaxLocal   = ScalarField(mesh)      # per-cell neighbour-stencil max(α_prev)
-    alphaMinLocal   = ScalarField(mesh)      # per-cell neighbour-stencil min(α_prev)
     C_alpha         = 1.0                    # interFOAM cAlpha (sharpening strength)
 
     # Surface tension (CSF) working fields — σ κ ∇α injected into phi_gf
@@ -192,11 +190,10 @@ function MULTIPHASE(
     nhatf_prep      = FaceVectorField(mesh)
     kappa           = ScalarField(mesh)
     kappaf          = FaceScalarField(mesh)
-    grad_alpha_mag  = ScalarField(mesh)       # |∇α| at cell centres for κ interpolation
+    ∇kappa          = Grad{schemes.alpha.gradient}(kappa)
     alpha_smooth    = ScalarField(mesh)       # Laplacian-smoothed α for curvature
     alpha_smooth_tmp = ScalarField(mesh)      # ping-pong buffer for smoothing passes
-    n_smooth        = 0                       # Laplacian smoothing passes (production path)
-    use_csf_smoothed = false                  # experimental path (see csf_flux_smoothed!)
+    n_smooth        = 0                       # number of Laplacian smoothing passes
 
     phases = model.fluid.phases
     volume_fraction = model.fluid.volume_fraction
@@ -248,7 +245,7 @@ function MULTIPHASE(
         # leaves [0,1]; final α = α_LO − dt/V · div(limited Δf).
         @. alpha_prev.values = alpha.values
 
-        grad!(∇alpha, alphaf, alpha, boundaries.alpha, time, config)
+        grad!(∇alpha, alphaf, alpha, time, config)
         limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
         interpolate!(∇alphaf, ∇alpha.result, config)
 
@@ -268,7 +265,6 @@ function MULTIPHASE(
 
         mules_limit!(phiAf, alpha_prev, phiLf,
                      Pplus, Pminus, Qplus, Qminus, Rplus, Rminus,
-                     alphaMaxLocal, alphaMinLocal,
                      dt_cpu[1], mesh, config)
 
         @. alpha_fluxf.values = phiLf.values + phiAf.values
@@ -280,7 +276,6 @@ function MULTIPHASE(
         # Refresh cell-centred and face properties from the new α.
         # interpolate_upwind!(alphaf, alpha, mdotf, config)
         interpolate_vanleer!(alphaf, alpha, ∇alpha, mdotf, config) # the shape is so much better with this
-        correct_boundaries!(alphaf, alpha, boundaries.alpha, time, config)
 
         blend_properties!(rho,  alpha,  phases[main].rho[1], phases[secondary].rho[1])
         blend_properties!(rhof, alphaf, phases[main].rho[1], phases[secondary].rho[1])
@@ -303,18 +298,15 @@ function MULTIPHASE(
 
         remove_pressure_source!(U_eqn, ∇p_rgh, config)
 
-        # Compute κ once per outer iteration. With n_smooth = 0 the smoother is
-        # a no-op and the production path uses raw α throughout. Face κ is built
-        # with |∇α|-weighted interpolation so near-wall / bulk cells (small |∇α|,
-        # noisy κ) don't bleed into the interface force.
+        # Compute κ once per outer iteration from a Laplacian-smoothed α.
+        # Smoothing reduces curvature noise that drives parasitic currents.
         laplacian_smooth!(alpha_smooth, alpha_smooth_tmp, alpha, n_smooth, config)
-        grad!(∇alpha, alphaf, alpha_smooth, boundaries.alpha, time, config)
+        grad!(∇alpha, alphaf, alpha_smooth, time, config)
         limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha_smooth, config)
         interpolate!(∇alphaf, ∇alpha.result, config)
         nhat_prep!(nhatf_prep, alpha_smooth, ∇alphaf, config)
         div!(kappa, nhatf_prep, config)
-        cell_grad_magnitude!(grad_alpha_mag, ∇alpha, config)
-        interpolate_weighted!(kappaf, kappa, grad_alpha_mag, config)
+        interpolate!(kappaf, kappa, config)
 
         rp = 0.0
         for i ∈ 1:inner_loops
@@ -327,11 +319,7 @@ function MULTIPHASE(
 
             # Gravity + frozen CSF injected into face flux, then reconstructed.
             phi_gf!(phi_gf, rho, ghf, rDf, model, config)
-            if use_csf_smoothed
-                csf_flux_smoothed!(phi_gf, rDf, sigma, kappaf, alpha_smooth, config)
-            else
-                surface_tension_flux!(rDf, sigma, kappaf, alpha, phi_gf, config)
-            end
+            surface_tension_flux!(rDf, sigma, kappaf, alpha, ∇alphaf, phi_gf, config)
 
             reconstruct_operation!(phi_g, phi_gf, config)
             @. mdotf.values += phi_gf.values
@@ -346,14 +334,9 @@ function MULTIPHASE(
 
             correct_mass_flux(mdotf, p_eqn, config)
 
-            # Refresh αf with van Leer against the just-corrected mdotf so rhof /
-            # rhoPhi reflect the current pressure-corrected mass flux direction.
-            interpolate_vanleer!(alphaf, alpha, ∇alpha, mdotf, config)
-            correct_boundaries!(alphaf, alpha, boundaries.alpha, time, config)
+            interpolate_upwind!(alphaf, alpha, mdotf, config)
             blend_properties!(rhof, alphaf, phases[main].rho[1], phases[secondary].rho[1])
-            # Consistent rhoPhi: density flux = mdotf · (αf·(ρ1−ρ2) + ρ2).
-            # Using alpha_fluxf here would couple current mdotf to a stale α face flux.
-            @. rhoPhi.values = mdotf.values * (alphaf.values * (rho1 - rho2) + rho2)
+            @. rhoPhi.values = alpha_fluxf.values * (rho1 - rho2) + mdotf.values * rho2
 
             pressure_grad!(p_rgh, ∇p_rghf_deconstructed, phi_gf, rDf, config)
             reconstruct_operation!(∇p_rghf_reconstructed, ∇p_rghf_deconstructed, config)
@@ -577,20 +560,15 @@ end
 @kernel inbounds=true function _compression_flux!(phirf, ∇alphaf, mdotf, faces, C_alpha, phimax)
     i = @index(Global)
     face = faces[i]
-    (; area, normal, delta) = face
-    TF = eltype(phirf.values)
+    (; area, normal) = face
 
     Sf = area * normal
     g  = ∇alphaf[i]
     mag = norm(g)
 
-    # deltaN: dimensional threshold on |∇α| (units 1/length). Below this, the
-    # gradient is numerical noise and n̂ is meaningless — zero it out rather than
-    # normalising a random direction into a compression flux.
-    deltaN = TF(1e-8) / delta
-    nhat = mag > deltaN ? g / mag : zero(g)
+    nhat = mag > eps(eltype(phirf.values)) ? g / mag : zero(g)
 
-    phi_over_S = abs(mdotf[i]) / (area + eps(TF))
+    phi_over_S = abs(mdotf[i]) / (area + eps(eltype(phirf.values)))
     compr_speed = min(C_alpha * phi_over_S, phimax)
 
     phirf[i] = compr_speed * (nhat ⋅ Sf)
@@ -630,7 +608,6 @@ end
 
 function mules_limit!(phiAf, alpha_prev, phiLf,
                       Pplus, Pminus, Qplus, Qminus, Rplus, Rminus,
-                      alphaMaxLocal, alphaMinLocal,
                       dt, mesh, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -644,23 +621,13 @@ function mules_limit!(phiAf, alpha_prev, phiLf,
     fill!(Pplus.values,  0)
     fill!(Pminus.values, 0)
 
-    # 0) Local-extrema bounds: αMax_i = min(1, max(α_prev over cell i + its
-    #    face neighbours)), αMin_i = max(0, min(...)). This is interFOAM's
-    #    monotone bound: no new local extrema are allowed, so bulk cells with
-    #    α_prev ≈ 0 can't be pushed up to 0.99 by anti-diffusive noise and you
-    #    don't grow phantom droplets in the wake.
-    ndrange = n_cells
-    kernel! = _mules_local_bounds!(_setup(backend, workgroup, ndrange)...)
-    kernel!(cells, cell_faces, faces, alpha_prev, alphaMaxLocal, alphaMinLocal)
-
     # 1) Accumulate low-order α* implicitly by computing Q± from α_prev and the
     #    bounded flux, and P± from signed anti-diffusive contributions.
     ndrange = n_cells
     kernel! = _mules_cell_accum!(_setup(backend, workgroup, ndrange)...)
     kernel!(cells, cell_faces, cell_nsign, faces,
             alpha_prev, phiLf, phiAf,
-            Pplus, Pminus, Qplus, Qminus,
-            alphaMaxLocal, alphaMinLocal, dt)
+            Pplus, Pminus, Qplus, Qminus, dt)
 
     # 2) Form R± = min(1, Q±/P±) per cell.
     ndrange = n_cells
@@ -673,31 +640,9 @@ function mules_limit!(phiAf, alpha_prev, phiLf,
     kernel!(phiAf, faces, Rplus, Rminus, nbfaces)
 end
 
-@kernel inbounds=true function _mules_local_bounds!(
-    cells::AbstractArray{Cell{TF,SV,UR}}, cell_faces, faces,
-    alpha_prev, alphaMaxLocal, alphaMinLocal
-) where {TF,SV,UR}
-    i = @index(Global)
-    (; faces_range) = cells[i]
-    aMax = alpha_prev[i]
-    aMin = alpha_prev[i]
-    for fi in faces_range
-        fID = cell_faces[fi]
-        oc = faces[fID].ownerCells
-        j = ifelse(oc[1] == i, oc[2], oc[1])     # boundary: j = i (harmless)
-        aj = alpha_prev[j]
-        aMax = max(aMax, aj)
-        aMin = min(aMin, aj)
-    end
-    # Intersect with global physical bounds [0, 1] as a safety cap.
-    alphaMaxLocal[i] = min(one(TF),  aMax)
-    alphaMinLocal[i] = max(zero(TF), aMin)
-end
-
 @kernel inbounds=true function _mules_cell_accum!(
     cells::AbstractArray{Cell{TF,SV,UR}}, cell_faces, cell_nsign, faces,
-    alpha_prev, phiLf, phiAf, Pplus, Pminus, Qplus, Qminus,
-    alphaMaxLocal, alphaMinLocal, dt
+    alpha_prev, phiLf, phiAf, Pplus, Pminus, Qplus, Qminus, dt
 ) where {TF,SV,UR}
     i = @index(Global)
     (; volume, faces_range) = cells[i]
@@ -728,13 +673,11 @@ end
     Pplus[i]  = sum_A_pos
     Pminus[i] = sum_A_neg
 
-    # Q±: room to the LOCAL neighbour-stencil bounds, not hard [0,1]. This is
-    # the monotone TVD condition: the limiter forbids α from overshooting any
-    # value in its neighbourhood, which prevents spurious droplets / parasitic
-    # peaks from forming in the wake. Clamped to ≥ 0 in case α* is already
-    # outside its bound (non-orthogonal / boundary flux).
-    Qplus[i]  = max(zero(TF), (alphaMaxLocal[i] - alpha_star)) * volume / dt
-    Qminus[i] = max(zero(TF), (alpha_star - alphaMinLocal[i])) * volume / dt
+    # Q±: room to bounds [0,1]. Clamp to zero — if α* has already overshot the
+    # bounds (e.g. due to non-orthogonal correction or boundary flux), R± would
+    # otherwise go negative and the limiter would amplify Δf instead of damping.
+    Qplus[i]  = max(zero(TF), (one(TF) - alpha_star)) * volume / dt
+    Qminus[i] = max(zero(TF), alpha_star) * volume / dt
 end
 
 @kernel inbounds=true function _mules_ratios!(Pplus, Pminus, Qplus, Qminus, Rplus, Rminus)
@@ -819,84 +762,6 @@ end
 end
 
 
-## |∇α|-weighted face interpolation of κ
-##
-## kappaf[f] = (κ_c1·w_c1 + κ_c2·w_c2) / (w_c1 + w_c2 + ε), w_c = |∇α|_c.
-## At interfaces both weights are large → κf ≈ average. In bulk both weights
-## are ~0 → κf ≈ 0 (harmless since the force carries ∇α which is also ~0 there).
-## Near walls, the wall-adjacent cell has smaller |∇α| than its interior
-## neighbour → neighbour κ dominates, which suppresses wall-bias contamination.
-
-function cell_grad_magnitude!(mag_field, grad, config)
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-    mesh = mag_field.mesh
-    ndrange = length(mesh.cells)
-    kernel! = _cell_grad_magnitude!(_setup(backend, workgroup, ndrange)...)
-    kernel!(mag_field, grad.result)
-end
-
-@kernel inbounds=true function _cell_grad_magnitude!(mag_field, grad_result)
-    i = @index(Global)
-    mag_field.values[i] = norm(grad_result[i])
-end
-
-function interpolate_weighted!(phif::FaceScalarField, phi::ScalarField,
-                                 weight_field::ScalarField, config)
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-    mesh = phif.mesh
-    (; faces) = mesh
-    ndrange = length(faces)
-    kernel! = _interpolate_weighted!(_setup(backend, workgroup, ndrange)...)
-    kernel!(phif, phi, weight_field, faces)
-end
-
-@kernel inbounds=true function _interpolate_weighted!(phif, phi, w, faces)
-    i = @index(Global)
-    face = faces[i]
-    (; ownerCells) = face
-    c1 = ownerCells[1]
-    c2 = ownerCells[2]
-    TF = eltype(phif.values)
-    w1 = w.values[c1]
-    w2 = w.values[c2]
-    denom = w1 + w2 + eps(TF)
-    phif[i] = (phi.values[c1] * w1 + phi.values[c2] * w2) / denom
-end
-
-
-## Experimental: fully-smoothed CSF (uses alpha_smooth for BOTH κ and the force)
-##
-## The production surface_tension_flux! uses raw α for the face gradient
-## (α2-α1)/δ to stay consistent with the p_rgh pressure discretisation.
-## This experimental variant pushes the smoothed α through the force term too,
-## so you can check whether Laplacian smoothing reduces parasitic currents end
-## to end. Set `use_csf_smoothed = true` and `n_smooth >= 1` to activate.
-
-function csf_flux_smoothed!(phi_gf, rDf, sigma, kappaf, alpha_smooth, config)
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-    faces = phi_gf.mesh.faces
-    ndrange = length(phi_gf)
-    kernel! = _csf_flux_smoothed!(_setup(backend, workgroup, ndrange)...)
-    kernel!(phi_gf, rDf, sigma, kappaf, alpha_smooth, faces)
-end
-
-@kernel inbounds=true function _csf_flux_smoothed!(phi_gf, rDf, sigma, kappaf, alpha_smooth, faces)
-    i = @index(Global)
-    face = faces[i]
-    (; area, normal, ownerCells, delta) = face
-    Sf = area * normal
-    c1 = ownerCells[1]
-    c2 = ownerCells[2]
-    as1 = alpha_smooth[c1]
-    as2 = alpha_smooth[c2]
-    ∇αf_vec = normal * ((as2 - as1) / delta)
-    phi_gf[i] -= sigma * kappaf[i] * (∇αf_vec ⋅ Sf) * rDf[i]
-end
-
-
 ## CSF surface tension helpers
 
 function nhat_prep!(nhatf_prep, alpha, ∇alphaf, config)
@@ -930,29 +795,26 @@ end
     i = @index(Global)
     fID = i + nbfaces
     face = faces[fID]
-    (; delta) = face
+    (; area) = face
 
     g = ∇alphaf_[fID]
     mag = norm(g)
 
-    # Units: |∇α| is 1/length, so deltaN must be 1/length too. Using 1/delta
-    # (not 1/area) makes the threshold scale-invariant and consistent with
-    # interFOAM's 1e-8/V̄^(1/3).
-    deltaN = 1e-8 / delta
+    deltaN = 1e-8 / area
 
     nhatf_prep[fID] = mag < deltaN ? SVector(0.0, 0.0, 0.0) : g / mag
 end
 
-function surface_tension_flux!(rDf, sigma, kappaf, alpha, phi_gf, config)
+function surface_tension_flux!(rDf, sigma, kappaf, alpha, ∇alphaf, phi_gf, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
     faces = phi_gf.mesh.faces
 
     ndrange = length(phi_gf)
     kernel! = _surface_tension_flux!(_setup(backend, workgroup, ndrange)...)
-    kernel!(rDf, sigma, kappaf, alpha, phi_gf, faces)
+    kernel!(rDf, sigma, kappaf, alpha, ∇alphaf, phi_gf, faces)
 end
-@kernel inbounds=true function _surface_tension_flux!(rDf, sigma, kappaf, alpha, phi_gf, faces)
+@kernel inbounds=true function _surface_tension_flux!(rDf, sigma, kappaf, alpha, ∇alphaf, phi_gf, faces)
     i = @index(Global)
     face = faces[i]
     (; area, normal, ownerCells, delta) = face
