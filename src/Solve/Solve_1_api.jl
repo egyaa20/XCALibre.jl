@@ -435,8 +435,18 @@ end
 
     @inbounds begin
         cIndex = spindex(rowptr, colval, cellID, cellID)
-        b[cellID] = nzval[cIndex]*pRef
-        nzval[cIndex] += nzval[cIndex]
+        # Classical big-number Dirichlet pin: add a dominant value to the
+        # diagonal and the matching term to the RHS. With M ≫ ||A||,
+        # x[cellID] → pRef to machine precision, the matrix stays SPD, and
+        # the sparse structure is untouched. Strictly stronger than the
+        # previous "double the diagonal" soft pin, which left the pinned
+        # cell weakly anchored and allowed the constant-nullspace drift that
+        # breaks symmetry on all-Neumann p_rgh systems (FixedFluxPressure
+        # outlet + walls).
+        T = eltype(nzval)
+        M = T(1.0e15)
+        nzval[cIndex] += M
+        b[cellID]    += M * pRef
     end
 end
 

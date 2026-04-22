@@ -68,7 +68,7 @@ function setup_incompressible_solvers(
     U_eqn = (
         Time{schemes.U.time}(U)
         + Divergence{schemes.U.divergence}(mdotf, U) 
-        - Laplacian{schemes.U.laplacian}(nueff, U) 
+        - Laplacian{schemes.U.laplacian}(nueff, U)
         == 
         - Source(∇p.result)
     ) → VectorEquation(U, boundaries.U)

@@ -3,6 +3,7 @@ export Fluid
 export Incompressible, WeaklyCompressible, Compressible
 export Phase, Fluid, Multiphase
 export AbstractModel, AbstractEosModel, AbstractViscosityModel
+export AbstractMultiphaseModel, VOF, Mixture
 
 abstract type AbstractFluid end
 abstract type AbstractIncompressible <: AbstractFluid end
@@ -218,6 +219,44 @@ end
 
 
 """
+    AbstractMultiphaseModel
+
+Tag type for multiphase interface/coupling models. Concrete subtypes (`VOF`,
+`Mixture`) carry the solver-specific knobs and are used to dispatch inside the
+multiphase solver (e.g. `model.fluid.model isa VOF`).
+"""
+abstract type AbstractMultiphaseModel end
+
+"""
+    VOF(; sigma=0.0, cAlpha=1.0) <: AbstractMultiphaseModel
+
+Volume-of-Fluid interface-capturing settings.
+
+### Fields
+- `sigma`  -- Surface tension coefficient [N/m].
+- `cAlpha` -- Interface compression coefficient (MULES).
+"""
+@kwdef struct VOF{T1,T2} <: AbstractMultiphaseModel
+    sigma::T1  = 0.0
+    cAlpha::T2 = 1.0
+end
+Adapt.@adapt_structure VOF
+
+"""
+    Mixture(; diameter=1.0e-6) <: AbstractMultiphaseModel
+
+Manninen drift-flux mixture-model settings.
+
+### Fields
+- `diameter` -- Dispersed-phase particle/bubble diameter [m].
+"""
+@kwdef struct Mixture{T1} <: AbstractMultiphaseModel
+    diameter::T1 = 1.0e-6
+end
+Adapt.@adapt_structure Mixture
+
+
+"""
     Multiphase <: AbstractMultiphase
 
 Multiphase fluid model containing multiple phases and their interaction properties.
@@ -235,7 +274,8 @@ Multiphase fluid model containing multiple phases and their interaction properti
 - 'p_rgh'              -- Dynamic pressure ScalarField.
 - 'p_rghf'             -- Dynamic pressure FaceScalarField.
 """
-@kwdef struct Multiphase{P1,P2,S1,F1,S2,F2,S3,F3,S4,F4} <: AbstractMultiphase
+@kwdef struct Multiphase{M,P1,P2,S1,F1,S2,F2,S3,F3,S4,F4} <: AbstractMultiphase
+    model::M
     phases::P1
     physics_properties::P2
     volume_fraction::Int
@@ -250,34 +290,28 @@ Multiphase fluid model containing multiple phases and their interaction properti
 end
 Adapt.@adapt_structure Multiphase
 
-Fluid{Multiphase}(; phases::NamedTuple, kwargs...) = begin
-    coeffs = (; phases, kwargs...)
+Fluid{Multiphase}(; phases::NTuple{2, Phase}, model::AbstractMultiphaseModel = Mixture(), kwargs...) = begin
+    coeffs = (; phases, model, kwargs...)
     ARG = typeof(coeffs)
     Fluid{Multiphase, ARG}(coeffs)
 end
 
-
 (fluid::Fluid{Multiphase, ARG})(mesh) where {ARG} = begin
     coeffs = fluid.args
-    physics_properties = Base.structdiff(coeffs, (phases = nothing,))
+    physics_properties = Base.structdiff(coeffs, (phases = nothing, model = nothing))
 
-    phases_nt = coeffs.phases
-    @assert phases_nt isa NamedTuple "Phases must be a NamedTuple with named phases, e.g. (water=Phase(...), air=Phase(...))"
-    @assert haskey(phases_nt, :alpha) "Volume fraction definition must be assigned via alpha = , e.g. alpha=:water"
+    phase_setups = coeffs.phases
+    @assert phase_setups isa Tuple{Phase, Phase} "Phases must be a plain Tuple of exactly two Phase objects, e.g. (Phase(...), Phase(...))"
 
-    alpha_name = phases_nt.alpha
-    phase_keys = filter(!=(:alpha), keys(phases_nt))
-    phase_setups = map(k -> phases_nt[k], phase_keys)
-    volume_fraction = findfirst(==(alpha_name), phase_keys)
+    volume_fraction = 1  # First phase is always the tracked phase
 
-    build_multiphase(phase_setups, physics_properties, mesh, volume_fraction)
+    build_multiphase(coeffs.model, phase_setups, physics_properties, mesh, volume_fraction)
 end
-
 
 build_property(property, mesh) = property
 build_property(setup::Gravity, mesh) = build_gravityModel(setup, mesh)
 
-function build_multiphase(phase_setups::Tuple{<:AbstractPhase, <:AbstractPhase}, physics_properties_setup::NamedTuple, mesh, volume_fraction::Int)
+function build_multiphase(model::AbstractMultiphaseModel, phase_setups::Tuple{<:AbstractPhase, <:AbstractPhase}, physics_properties_setup::NamedTuple, mesh, volume_fraction::Int)
     phases = map(setup -> build_phase(setup, mesh), phase_setups)
 
     built_properties = map(prop_setup -> build_property(prop_setup, mesh), physics_properties_setup)
@@ -293,6 +327,6 @@ function build_multiphase(phase_setups::Tuple{<:AbstractPhase, <:AbstractPhase},
 
     p_rgh  = ScalarField(mesh)
     p_rghf = FaceScalarField(mesh)
-    
-    Multiphase(phases=phases, physics_properties=built_properties, volume_fraction=volume_fraction, alpha=alpha, alphaf=alphaf, rho=rho, rhof=rhof, nu=nu, nuf=nuf, p_rgh=p_rgh, p_rghf=p_rghf)
+
+    Multiphase(model=model, phases=phases, physics_properties=built_properties, volume_fraction=volume_fraction, alpha=alpha, alphaf=alphaf, rho=rho, rhof=rhof, nu=nu, nuf=nuf, p_rgh=p_rgh, p_rghf=p_rghf)
 end

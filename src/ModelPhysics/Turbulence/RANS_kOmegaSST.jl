@@ -334,3 +334,21 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
     )
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
+
+
+function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F<:Multiphase,SO,M,Tu<:KOmegaSST,E,D,BI}
+
+    args = (
+        ("U", model.momentum.U), 
+        ("p", model.momentum.p),
+        ("alpha", model.fluid.alpha),
+        ("rho", model.fluid.rho),
+        ("p_rgh", model.fluid.p_rgh),
+        ("k", model.turbulence.k),
+        ("omega", model.turbulence.omega),
+        ("nut", model.turbulence.nut),
+        ("y", model.turbulence.y),
+    )
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+end
