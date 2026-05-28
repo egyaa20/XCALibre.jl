@@ -5,34 +5,40 @@ export NeumannFunction
 """
     NeumannFunction(ID, value) <: AbstractNeumann
 
-Neumann boundary condition defined with user-provided function.
+Fixed-flux-density boundary condition driven by a user-supplied function,
+mirroring `DirichletFunction` for fixed-value BCs. The function returns
+the diffusive flux density at the face (e.g. heat flux q [W/m²] when the
+equation being solved is a temperature transport equation), and the
+discrete contribution to the Laplacian boundary integral is
 
-# Input
-- `ID` Name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
-- `value` Custom function defining the desired Neumann boundary condition.
+    ∫_face flux · n dA  ≈  value(face.centre, time, i) · area
 
-# Function requirements
+The diffusion coefficient at the face does not enter the BC — the user
+asserts the physical flux density directly.
 
-The function passed to this boundary condition has not yet been implemented. However, users can pass a custom struct to specialise the internal implementations of many functions. By default, at present, this function will assign a zero gradient boundary condition.
+# Inputs
+- `ID`    Name of the boundary patch (e.g. `:left_heated`).
+- `value` Function `(coords, time, faceID) -> q` returning the flux density.
+
+# Example
+    # Heat flux of 10 W/m² into the domain through `:left_heated`
+    q_left(coords, time, faceID) = 10.0
+    NeumannFunction(:left_heated, q_left)
 """
 struct NeumannFunction{I,V,R<:UnitRange} <: AbstractNeumann
-    ID::I 
+    ID::I
     value::V
     IDs_range::R
 end
 Adapt.@adapt_structure NeumannFunction
 
-@define_boundary NeumannFunction Laplacian{Linear} begin
-    # For now this is hard-coded as zero-gradient. To-do extension to any input gradient
-    phi = term.phi 
-    values = get_values(phi, component)
-    J = term.flux[fID]
-    (; area, delta) = face 
-    flux = -J*area/delta
-    ap = term.sign*(flux)
-    ap, ap*values[cellID] # original
-    0.0, 0.0 
-    # 0.0, -flux*delta*bc.value # draft implementation to test!
+@define_boundary NeumannFunction Laplacian{Linear} ScalarField begin
+    # Boundary contribution to b: + q(face,time) · area
+    # a_p = 0 (no coupling to the cell value); no dependence on the face
+    # diffusion coefficient.
+    (; centre, area) = face
+    q = bc.value(centre, time, i)
+    0.0, q * area
 end
 
 @define_boundary NeumannFunction Divergence{Linear} begin

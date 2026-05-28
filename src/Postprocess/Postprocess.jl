@@ -7,6 +7,7 @@ using SparseMatricesCSR
 # using ThreadedSparseCSR
 
 using Adapt
+import JLD2
 using XCALibre.Multithread
 using XCALibre.Mesh
 using XCALibre.Fields
@@ -20,5 +21,6 @@ include("Postprocess_functions.jl")
 include("Postprocess_0_field_average.jl")
 include("Postprocess_1_field_rms.jl")
 include("Postprocess_2_reynolds_stress_tensor.jl")
+include("Postprocess_3_checkpoint.jl")
 
 end

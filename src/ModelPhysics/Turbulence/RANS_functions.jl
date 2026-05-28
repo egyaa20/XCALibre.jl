@@ -90,8 +90,14 @@ function set_production!(P, BC::KWallFunction, model, gradU, config)
     mesh = model.domain
     (; faces, boundary_cellsID, boundaries) = mesh
 
-    # Extract physics models
+    # Extract physics models. Pass only the concrete field arrays into
+    # the kernel — the turbulence struct itself carries Symbol tuples
+    # (coeffs.walls, wallBCs) which are not GPU bitstypes.
     (; fluid, momentum, turbulence) = model
+    nu = fluid.nu
+    U  = momentum.U
+    k  = turbulence.k
+    nut = turbulence.nut
 
     # facesID_range = get_boundaries(BC, boundaries)
     # boundaries_cpu = get_boundaries(boundaries)
@@ -103,19 +109,16 @@ function set_production!(P, BC::KWallFunction, model, gradU, config)
     ndrange = length(facesID_range)
     kernel! = _set_production!(_setup(backend, workgroup, ndrange)...)
     kernel!(
-        P.values, BC, fluid, momentum, turbulence, faces, boundary_cellsID, start_ID, gradU
+        P.values, BC, nu, U, k, nut, faces, boundary_cellsID, start_ID, gradU
     )
 end
 
 @kernel function _set_production!(
-    values, BC::KWallFunction, fluid, momentum, turbulence, faces, boundary_cellsID, start_ID, gradU)
+    values, BC::KWallFunction, nu, U, k, nut, faces, boundary_cellsID, start_ID, gradU)
     i = @index(Global)
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
-    (; nu) = fluid
-    (; U) = momentum
-    (; k, nut) = turbulence
 
     Uw = SVector{3}(0.0,0.0,0.0)
     # Uw = boundaries.U[BC.ID].value
@@ -160,8 +163,11 @@ function correct_nut_wall!(νtf, BC::NutWallFunction, model, config)
     mesh = model.domain
     (; faces, boundary_cellsID, boundaries) = mesh
 
-    # Extract physics models
+    # Extract physics models. Pass only concrete arrays — the turbulence
+    # struct carries Symbol tuples that are not GPU bitstypes.
     (; fluid, turbulence) = model
+    nu = fluid.nu
+    k  = turbulence.k
 
     # facesID_range = get_boundaries(BC, boundaries)
     # boundaries_cpu = get_boundaries(boundaries)
@@ -172,18 +178,16 @@ function correct_nut_wall!(νtf, BC::NutWallFunction, model, config)
     # Execute apply boundary conditions kernel
     ndrange=length(facesID_range)
     kernel! = _correct_nut_wall!(_setup(backend, workgroup, ndrange)...)
-    kernel!(νtf.values, fluid, turbulence, BC, faces, boundary_cellsID, start_ID)
+    kernel!(νtf.values, nu, k, BC, faces, boundary_cellsID, start_ID)
 end
 
 @kernel function _correct_nut_wall!(
-    values, fluid, turbulence, BC::NutWallFunction, faces, boundary_cellsID, start_ID)
+    values, nu, k, BC::NutWallFunction, faces, boundary_cellsID, start_ID)
     i = @index(Global)
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
-    (; nu) = fluid
-    (; k) = turbulence
-    
+
     cID = boundary_cellsID[fID]
     face = faces[fID]
     # nuf = nu[fID]
@@ -233,9 +237,10 @@ function constrain!(eqn, BC::OmegaWallFunction, model, config)
     mesh = model.domain
     (; faces, boundaries, boundary_cellsID) = mesh
 
-    fluid = model.fluid 
-    # turbFields = model.turbulence.fields
-    turbulence = model.turbulence
+    # Pass only concrete arrays — the turbulence/fluid structs carry
+    # Symbol tuples that are not GPU bitstypes.
+    nu = model.fluid.nu
+    k  = model.turbulence.k
 
     # facesID_range = get_boundaries(BC, boundaries)
     # boundaries_cpu = get_boundaries(boundaries)
@@ -247,17 +252,15 @@ function constrain!(eqn, BC::OmegaWallFunction, model, config)
     ndrange = length(facesID_range)
     kernel! = _constrain!(_setup(backend, workgroup, ndrange)...)
     kernel!(
-        turbulence, fluid, BC, faces, start_ID, boundary_cellsID, colval, rowptr, nzval, b
+        k, nu, BC, faces, start_ID, boundary_cellsID, colval, rowptr, nzval, b
     )
 end
 
-@kernel function _constrain!(turbulence, fluid, BC::OmegaWallFunction, faces, start_ID, boundary_cellsID, colval, rowptr, nzval, b)
+@kernel function _constrain!(k, nu, BC::OmegaWallFunction, faces, start_ID, boundary_cellsID, colval, rowptr, nzval, b)
     i = @index(Global)
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     @uniform begin
-        nu = fluid.nu
-        k = turbulence.k
         (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
     end
     ωc = zero(eltype(nzval))

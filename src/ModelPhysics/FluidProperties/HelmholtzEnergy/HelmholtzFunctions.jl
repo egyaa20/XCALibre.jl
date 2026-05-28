@@ -447,16 +447,22 @@ function params_computation(rho_mol::F, T::F, constants, fluid) where F <: Abstr
     
     beta_mol = beta_calc(T, δ, τ, constants, fluid)
 
-    conversion_factor = one(F) / (M * F(1e3))
+    # Molar → mass-specific conversion. With `M` in kg/mol (as confirmed
+    # by `rho = rho_mol * M` giving kg/m³), the correct factor for
+    # specific quantities is `1/M`, not `1/(M·1000)`. The previous
+    # `1e3` factor put cp/cv/h/u/s in kJ-based units silently — only
+    # caught when wiring the live mixture-T energy equation revealed
+    # ρ·cp was 1000× too small.
+    conversion_factor = one(F) / M
 
     rho = rho_mol * M
 
-    cv = cv_mol*conversion_factor
-    cp = cp_mol*conversion_factor
-    internal_energy = internal_energy_mol*conversion_factor
-    enthalpy = enthalpy_mol*conversion_factor
-    entropy = entropy_mol*conversion_factor
-    beta = beta_mol*conversion_factor # NOT TESTED!!!!!
+    cv = cv_mol*conversion_factor                  # J/(kg·K)
+    cp = cp_mol*conversion_factor                  # J/(kg·K)
+    internal_energy = internal_energy_mol*conversion_factor  # J/kg
+    enthalpy = enthalpy_mol*conversion_factor      # J/kg
+    entropy = entropy_mol*conversion_factor        # J/(kg·K)
+    beta = beta_mol*conversion_factor              # NOT TESTED — same factor
 
     return rho, cv, cp, kT, kT_ref, internal_energy, enthalpy, entropy, beta
 end
@@ -493,7 +499,19 @@ function EOS_wrapper(fluid::HelmholtzEnergyFluid, T::F, pressure::F, constants) 
     entropy_vals = [zero(F), zero(F)]
     beta_vals = [zero(F), zero(F)]
 
-    if T >= T_c # Account for supercritical fluid / superheated vapour state
+    if pressure >= p_c
+        # SUPERCRITICAL PRESSURE — no liquid–vapour transition at any
+        # temperature, so the two-phase machinery (saturation T, gibbs
+        # equality, etc.) is undefined. Single density branch only.
+        # Initial guess: liquid-like below T_c, ideal-gas-like above.
+        rho_guess = T < T_c ?
+                    liquid_multiplier * rho_c :        # compressed-liquid-like
+                    pressure / (R_univ * T)            # supercritical-gas-like
+        rho_mol  = find_density_advanced(T, pressure, rho_guess, constants, fluid)
+        rho_list = [rho_mol, rho_mol]
+        T_sat    = zero(F)   # not defined at supercritical pressure
+
+    elseif T >= T_c # Subcritical pressure but supercritical / superheated vapour state
         rho_guess = pressure / (R_univ * T) # Ideal gas guess
         rho_mol = find_density_advanced(T, pressure, rho_guess, constants, fluid)
         rho_list = [rho_mol, rho_mol] # if T > T_crit, we want to return two identical densities

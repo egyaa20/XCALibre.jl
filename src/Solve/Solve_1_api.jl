@@ -124,11 +124,12 @@ AdaptiveTimeStepping(;
     maxGrow=1.2
 ) = AdaptiveTimeStepping(float(maxCo), float(maxAlphaCo), float(minShrink), float(maxGrow))
 
-struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping}}
+struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping}, TE}
     iterations::I
     dt::V
     write_interval::I
     adaptive::A
+    t_end::TE   # Either `nothing` (use `iterations` as the only stop) or a Float
 end
 Adapt.@adapt_structure Runtime
 
@@ -156,24 +157,49 @@ This is a convenience function to set the top-level runtime information. The inp
 
 # Input arguments
 
-- `iterations::Integer`: specifies the number of iterations in a simulation run.
+- `iterations::Integer`: number of solver iterations. Optional when `t_end` is provided; in that case a large safety cap is computed automatically and the loop exits via the `t_end` check.
 - `write_interval::Integer`: defines how often simulation results are written to file (on the current working directory). The interval is currently based on number of iterations. Set to `-1` to run without writing results to file.
 - `time_step::AbstractFloat`: the time step to use in the simulation. Notice that for steady solvers this is simply a counter and it is recommended to simply use `1`.
 - `adaptive::Union{Nothing, AdaptiveTimeStepping}`: optionally enables adaptive time stepping. Pass an `AdaptiveTimeStepping` object to automatically adjust `dt` based on the Courant number during transient simulations. Defaults to `nothing`, meaning a fixed time step is used.
+- `t_end::Union{Nothing, AbstractFloat}`: optional physical-time termination. When set, the time-stepping loop exits as soon as the simulated time reaches `t_end`, regardless of the `iterations` count. Either `iterations` or `t_end` must be supplied — pass both to use whichever stops first. Defaults to `nothing`.
 
 # Example
 
 ```julia
+# Iteration-bound run
 runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
+
+# Time-bound transient run — solver auto-caps `iterations`
+runtime = Runtime(time_step=1.0e-3, write_interval=200, t_end=12.0)
+
+# Belt-and-braces — stop at the first of either limit
+runtime = Runtime(iterations=20_000, time_step=1.0e-3,
+                  write_interval=200, t_end=12.0)
 ```
 """
-Runtime(; iterations::I,
-          write_interval::I,
-          time_step::N,
-          adaptive=nothing) where {I<:Integer,N<:Number} = begin
+Runtime(; iterations=nothing,
+          write_interval,
+          time_step,
+          adaptive=nothing,
+          t_end=nothing) = begin
+
+    isnothing(iterations) && isnothing(t_end) &&
+        error("Runtime: must specify at least one of `iterations` or `t_end`.")
 
     val = float(time_step)
-    Runtime(iterations, [val], write_interval, adaptive)
+    t_end_val = isnothing(t_end) ? nothing : float(t_end)
+
+    # When only `t_end` is given, default `iterations` to a large safety
+    # cap that the time-check will normally trip first. Roughly 10× the
+    # time-step bound, with a hard floor of 1e7 to avoid pathological
+    # short caps from very small dt or non-positive t_end.
+    iter_val = if isnothing(iterations)
+        max(round(Int, 10 * t_end_val / val), 10_000_000)
+    else
+        Int(iterations)
+    end
+
+    Runtime(iter_val, [val], write_interval, adaptive, t_end_val)
 end
 
 # Set schemes function definition with default set variables

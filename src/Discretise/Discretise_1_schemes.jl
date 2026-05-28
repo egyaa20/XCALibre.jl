@@ -28,13 +28,27 @@ end
     0.0, 0.0 # add types if this approach works
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin # Default, no flux component
+    term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
+        # Backward-Euler discretisation of  ∂(c · φ)/∂t  with `c = term.flux`
+        # carrying the coefficient (e.g. ρ for Sensible Enthalpy, ρ·cp for the
+        # mixture-temperature energy equation, or 1 if the coefficient is
+        # `ConstantScalar(1.0)`). The previous version dropped `term.flux`
+        # entirely, which silently broke any energy equation with a
+        # non-unit coefficient — under-counted ρ·cp by a factor of ~10⁶ and
+        # blew up T at heated walls.
         volume = cell.volume
         vol_rdt = volume/runtime.dt[1]
-        
-        # Increment sparse and b arrays 
-        ac = vol_rdt
-        b = prev[cID]*vol_rdt
+        c = term.flux[cID]   # works for ConstantScalar and ScalarField
+
+        # Lagged-coefficient form: use `c` on both sides. Strictly this is
+        # ∂φ/∂t · c ≈ (φ^{n+1} − φ^n) · c^{n+1} / dt, i.e. the
+        # current-step coefficient is used to advance φ. The error is
+        # O((dc/dt) · φ · dt²) per step — small for slow temporal
+        # variation of c. Mirroring the VectorField branch (which tracks
+        # `rho_prev` separately) requires solver-level plumbing not
+        # available here.
+        ac = c * vol_rdt
+        b  = c * prev[cID] * vol_rdt
         return ac, b
 end
 @inline scheme_source!(
@@ -57,13 +71,13 @@ end
     0.0, 0.0 # add types if this approach works
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{CrankNicolson}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin # Default, no flux component
+    term::Operator{F,P,I,Time{CrankNicolson}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
+        # See the Euler ScalarField branch for the rationale — same fix.
         volume = cell.volume
         vol_rdt = volume/runtime.dt[1]
-        
-        # Increment sparse and b arrays 
-        ac = vol_rdt
-        b = prev[cID]*vol_rdt
+        c = term.flux[cID]
+        ac = c * vol_rdt
+        b  = c * prev[cID] * vol_rdt
         return ac, b
 end
 @inline scheme_source!(

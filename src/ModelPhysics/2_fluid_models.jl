@@ -174,16 +174,22 @@ Configuration structure for a single fluid phase.
 ### Fields
 - `rho` -- Density model (Equation of State) for the phase.
 - `mu`  -- Viscosity model for the phase.
+- `cp`  -- Specific heat capacity at constant pressure [J/(kg·K)]. Used by the
+           multiphase temperature energy model. Defaults to 0.0 (ignored when
+           the energy model is `Isothermal`).
+- `k`   -- Thermal conductivity [W/(m·K)]. Same role as `cp`.
 """
-struct Phase{E<:AbstractEosModel, V<:AbstractViscosityModel} <: AbstractPhase
+struct Phase{E<:AbstractEosModel, V<:AbstractViscosityModel, CP, K} <: AbstractPhase
     rho::E
     mu::V
+    cp::CP
+    k::K
 end
 
-function Phase(; rho, mu) # Covers all combinations e.g. mu=1.8e-5 or mu=SutherlandModel() etc
+function Phase(; rho, mu, cp=0.0, k=0.0) # cp/k optional — only used by MultiphaseTemperature energy model
     rho_model = rho isa AbstractFloat ? ConstEos(rho) : rho
     mu_model = mu  isa AbstractFloat ? ConstMu(mu) : mu
-    return Phase(rho_model, mu_model)
+    return Phase(rho_model, mu_model, cp, k)
 end
 
 @kwdef struct PhaseState{E<:AbstractEosModel, V<:AbstractViscosityModel, S1,S2,S3,S4,S5} <: AbstractPhase
@@ -202,8 +208,36 @@ Adapt.@adapt_structure PhaseState
 function build_phase(phase_setup::Phase, mesh)
     rho   = phase_setup.rho isa ConstEos ? ConstantScalar(phase_setup.rho.rho) : ScalarField(mesh)
     mu    = phase_setup.mu  isa ConstMu ? ConstantScalar(phase_setup.mu.mu) : ScalarField(mesh)
-    k     = ScalarField(mesh)
-    cp    = ScalarField(mesh)
+    cp    = ConstantScalar(phase_setup.cp)
+    k     = ConstantScalar(phase_setup.k)
+    beta  = ScalarField(mesh)
+
+    return PhaseState(
+        rho_model = phase_setup.rho,
+        mu_model = phase_setup.mu,
+        rho=rho,
+        mu=mu,
+        k=k,
+        cp=cp,
+        beta=beta
+    )
+end
+
+"""
+    build_phase_table_mode(phase_setup, mesh)
+
+Variant of `build_phase` used when `fluid_properties::HelmholtzTable` is
+present on `Fluid{Multiphase}`. All four T-dependent properties (rho,
+mu, cp, k) are allocated as `ScalarField`s rather than `ConstantScalar`s
+so the live update routine can mutate them per cell at every outer
+iteration. Initial values are populated from the supplied `phase_setup`
+constants (which themselves came from the snapshot at `T_snapshot`).
+"""
+function build_phase_table_mode(phase_setup::Phase, mesh)
+    rho   = ScalarField(mesh); initialise!(rho, phase_setup.rho.rho)
+    mu    = ScalarField(mesh); initialise!(mu,  phase_setup.mu.mu)
+    cp    = ScalarField(mesh); initialise!(cp,  phase_setup.cp)
+    k     = ScalarField(mesh); initialise!(k,   phase_setup.k)
     beta  = ScalarField(mesh)
 
     return PhaseState(
@@ -228,17 +262,27 @@ multiphase solver (e.g. `model.fluid.model isa VOF`).
 abstract type AbstractMultiphaseModel end
 
 """
-    VOF(; sigma=0.0, cAlpha=1.0) <: AbstractMultiphaseModel
+    VOF(; sigma=0.0, cAlpha=1.0, smooth=0, cycles=1) <: AbstractMultiphaseModel
 
 Volume-of-Fluid interface-capturing settings.
 
 ### Fields
 - `sigma`  -- Surface tension coefficient [N/m].
 - `cAlpha` -- Interface compression coefficient (MULES).
+- `smooth` -- Number of Laplacian passes to smooth α before computing the
+              compression-flux normal `n̂f`. `0` (default) keeps the raw
+              gradient. `> 0` reduces per-cell sawtooth artefacts on thin
+              interfaces at low/zero σ.
+- `cycles` -- Number of MULES sub-cycles per outer time step. `1` (default)
+              disables sub-cycling. `> 1` splits the outer dt into N MULES
+              α-updates with `dt_sub = dt/N`, increasing the effective α-CFL
+              headroom for adaptive time-stepping by a factor of N.
 """
-@kwdef struct VOF{T1,T2} <: AbstractMultiphaseModel
-    sigma::T1  = 0.0
-    cAlpha::T2 = 1.0
+@kwdef struct VOF{T1,T2,T3,T4} <: AbstractMultiphaseModel
+    sigma::T1        = 0.0
+    cAlpha::T2       = 1.0
+    smooth::T3       = 0
+    cycles::T4       = 1
 end
 Adapt.@adapt_structure VOF
 
@@ -290,7 +334,9 @@ Multiphase fluid model containing multiple phases and their interaction properti
 end
 Adapt.@adapt_structure Multiphase
 
-Fluid{Multiphase}(; phases::NTuple{2, Phase}, model::AbstractMultiphaseModel = Mixture(), kwargs...) = begin
+
+Fluid{Multiphase}(; phases::NTuple{2, Phase}, model=nothing, kwargs...) = begin
+    @assert model isa AbstractMultiphaseModel "Expected `model = VOF(...)` or `model = Mixture(...)`, got: $(typeof(model))"
     coeffs = (; phases, model, kwargs...)
     ARG = typeof(coeffs)
     Fluid{Multiphase, ARG}(coeffs)
@@ -312,7 +358,20 @@ build_property(property, mesh) = property
 build_property(setup::Gravity, mesh) = build_gravityModel(setup, mesh)
 
 function build_multiphase(model::AbstractMultiphaseModel, phase_setups::Tuple{<:AbstractPhase, <:AbstractPhase}, physics_properties_setup::NamedTuple, mesh, volume_fraction::Int)
-    phases = map(setup -> build_phase(setup, mesh), phase_setups)
+    # Phase-1 / Phase-2 high-fidelity properties: if the user supplied a
+    # `fluid_properties = HelmholtzTable(...)` keyword:
+    #   - the phase setups are first rewritten to use the table snapshot
+    #     at `T_snapshot` (so initial values are physical);
+    #   - then phases are allocated with ScalarField backings (Phase-2
+    #     mode) so that the live per-cell update routine has somewhere to
+    #     write into each iteration.
+    phase_setups = maybe_snapshot_from_fluid_properties(phase_setups, physics_properties_setup)
+
+    if haskey(physics_properties_setup, :fluid_properties) && physics_properties_setup.fluid_properties isa HelmholtzTable
+        phases = map(setup -> build_phase_table_mode(setup, mesh), phase_setups)
+    else
+        phases = map(setup -> build_phase(setup, mesh), phase_setups)
+    end
 
     built_properties = map(prop_setup -> build_property(prop_setup, mesh), physics_properties_setup)
 
@@ -330,3 +389,14 @@ function build_multiphase(model::AbstractMultiphaseModel, phase_setups::Tuple{<:
 
     Multiphase(model=model, phases=phases, physics_properties=built_properties, volume_fraction=volume_fraction, alpha=alpha, alphaf=alphaf, rho=rho, rhof=rhof, nu=nu, nuf=nuf, p_rgh=p_rgh, p_rghf=p_rghf)
 end
+
+# Default: no fluid_properties kwarg, return phase setups unchanged.
+maybe_snapshot_from_fluid_properties(phase_setups::Tuple, physics_properties::NamedTuple) =
+    haskey(physics_properties, :fluid_properties) ?
+        _snapshot_from_fluid_properties(phase_setups, physics_properties.fluid_properties) :
+        phase_setups
+
+# Generic catch-all so a user-supplied `fluid_properties = SomethingElse()`
+# is left alone. Specialised on `HelmholtzTable` in the FluidProperties
+# module (HelmholtzTable.jl is loaded later in the module include order).
+_snapshot_from_fluid_properties(phase_setups, _other) = phase_setups

@@ -161,6 +161,7 @@ function write_results(
     else
         # name = @sprintf "time_%.8f" iteration
         name = @sprintf "time_%i" iteration
+        log_iteration_time(iteration, time)
     end
     filename=name*suffix*".vtu"
 

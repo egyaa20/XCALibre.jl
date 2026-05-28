@@ -107,7 +107,7 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
     ) where {T,F<:Multiphase,SO,M,Tu<:Laminar,E,D,BI}
 
     args = (
-        ("U", model.momentum.U), 
+        ("U", model.momentum.U),
         ("p", model.momentum.p),
         ("alpha", model.fluid.alpha),
         ("rho", model.fluid.rho),
@@ -115,6 +115,35 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
     )
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
+
+# Multiphase + Laminar + MultiphaseTemperature: dump T alongside the usual fields.
+function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F<:Multiphase,SO,M,Tu<:Laminar,E<:MultiphaseTemperature,D,BI}
+
+    args = (
+        ("U", model.momentum.U),
+        ("p", model.momentum.p),
+        ("alpha", model.fluid.alpha),
+        ("rho", model.fluid.rho),
+        ("p_rgh", model.fluid.p_rgh),
+        ("T", model.energy.T),
+    )
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+end
+
+
+# function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+#     ) where {T,F<:Multiphase,SO,M,Tu<:Laminar,E,D,BI}
+
+#     args = (
+#         ("U", model.momentum.U), 
+#         ("p", model.momentum.p),
+#         ("alpha", model.fluid.alpha),
+#         ("rho", model.fluid.rho),
+#         ("p_rgh", model.fluid.p_rgh)
+#     )
+#     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+# end
 
 function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
     ) where {T,F,SO,M,Tu<:Laminar,E<:Nothing,D,BI}

@@ -147,7 +147,10 @@ function CPISO(
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
     
-    postprocess = convert_time_to_iterations(postprocess,model,dt[1],iterations)
+    dt_cpu = zeros(eltype(dt), 1); copyto!(dt_cpu, dt)
+    postprocess = convert_time_to_iterations(postprocess, model, dt_cpu[1], iterations)
+    # `dt_cpu` is reused inside the timestep loop; refreshed each iteration
+    # so adaptive-stepping changes are picked up without scalar-indexing dt.
     mdotf = get_flux(U_eqn, 2)
     mueff = get_flux(U_eqn, 3)
     mueffgradUt = get_source(U_eqn, 2)
@@ -226,7 +229,8 @@ function CPISO(
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     for iteration ∈ 1:iterations
-        time = iteration *dt
+        copyto!(dt_cpu, dt)
+        time += dt_cpu[1]   # accumulate so adaptive dt is respected
 
         ## CHECK GRADU AND EXPLICIT STRESSES
         # grad!(gradU, Uf, U, boundaries.U, time, config) # calculated in `turbulence!`
@@ -281,7 +285,7 @@ function CPISO(
                 flux!(mdotf, Uf, config)
                 @. mdotf.values *= rhof.values
                 @. corr -= mdotf.values
-                @. corr *= 0.0/runtime.dt[1]
+                @. corr *= 0.0/dt_cpu[1]
                 @. mdotf.values += rhorDf.values*corr/rhof.values
                 div!(divHv, mdotf, config)
             end
@@ -333,13 +337,15 @@ function CPISO(
             # interpolate!(Uf, U, config)
             # correct_boundaries!(Uf, U, boundaries.U, time, config)
             
-            @. dpdt.values = (p.values-prev)/runtime.dt[1]
+            @. dpdt.values = (p.values-prev)/dt_cpu[1]
 
             turbulence!(turbulenceModel, model, S, prev, time, config) 
             update_nueff!(nueff, nu, model.turbulence, config)
         end # corrector loop end
 
     maxCourant = max_courant_number!(cellsCourant, model, config)
+    update_dt!(config.runtime, maxCourant)
+    copyto!(dt_cpu, dt)   # refresh after update_dt! so progress shows the new dt
 
     R_ux[iteration] = rx
     R_uy[iteration] = ry
@@ -348,7 +354,8 @@ function CPISO(
 
     ProgressMeter.next!(
         progress, showvalues = [
-            (:time, iteration*runtime.dt[1]),
+            (:time, time),
+            (:dt, dt_cpu[1]),
             (:Courant, maxCourant),
             (:Ux, R_ux[iteration]),
             (:Uy, R_uy[iteration]),

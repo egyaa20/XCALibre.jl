@@ -340,11 +340,33 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
     ) where {T,F<:Multiphase,SO,M,Tu<:KOmegaSST,E,D,BI}
 
     args = (
-        ("U", model.momentum.U), 
+        ("U", model.momentum.U),
         ("p", model.momentum.p),
         ("alpha", model.fluid.alpha),
         ("rho", model.fluid.rho),
         ("p_rgh", model.fluid.p_rgh),
+        ("k", model.turbulence.k),
+        ("omega", model.turbulence.omega),
+        ("nut", model.turbulence.nut),
+        ("y", model.turbulence.y),
+    )
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+end
+
+# Multiphase + KOmegaSST + MultiphaseTemperature: record U, p, α, ρ,
+# p_rgh, turbulence quantities (k, ω, ν_t, y) AND T. Dispatches before
+# the generic Multiphase+KOmegaSST variant above because `E<:MultiphaseTemperature`
+# is more specific than the unconstrained `E`.
+function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F<:Multiphase,SO,M,Tu<:KOmegaSST,E<:MultiphaseTemperature,D,BI}
+
+    args = (
+        ("U", model.momentum.U),
+        ("p", model.momentum.p),
+        ("alpha", model.fluid.alpha),
+        ("rho", model.fluid.rho),
+        ("p_rgh", model.fluid.p_rgh),
+        ("T", model.energy.T),
         ("k", model.turbulence.k),
         ("omega", model.turbulence.omega),
         ("nut", model.turbulence.nut),

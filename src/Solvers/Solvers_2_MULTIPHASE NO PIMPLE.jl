@@ -1,65 +1,15 @@
 export multiphase!
 
-"""
-    multiphase!(model, config;
-                output=VTK(),
-                pref=nothing,
-                ncorrectors=0,
-                inner_loops=2,
-                n_outer_correctors=1,
-                outer_tol=1e-3)
-
-Run the two-phase multiphase solver (VOF or Mixture) on `model` using
-the supplied `config`.
-
-### Control parameters
-
-- `inner_loops`         Number of PISO pressure correctors (inside each
-                        outer corrector).
-- `n_outer_correctors`  Number of **PIMPLE outer correctors** per time
-                        step. `1` (default) recovers the original PISO
-                        time-stepping behaviour bit-for-bit. `> 1`
-                        wraps the U-equation, PISO inner loop,
-                        turbulence and energy updates in an outer loop
-                        that iterates property + velocity + temperature
-                        coupling toward consistency within each `dt`.
-                        Required for stable operation at large Courant
-                        numbers (`Co ≈ 10–100`) and for tight coupling
-                        when fluid properties depend strongly on T.
-- `outer_tol`           Relative convergence ratio for the outer
-                        corrector loop. The loop breaks early once
-                        `max(r_eq / r_eq_first_outer) < outer_tol`
-                        across {Ux, Uy, Uz, p_rgh, T}. Set to `0.0`
-                        to force exactly `n_outer_correctors` iterations.
-
-### Notes
-
-- The α (volume-fraction) sub-cycle runs once per *time step*, outside
-  the outer corrector loop, mirroring the interFoam PIMPLE convention.
-- When `n_outer_correctors > 1`, you should under-relax `U` and
-  `p_rgh` via `SolverSetup(..., relax = 0.7)` to avoid divergence.
-- Per-equation convergence tolerances (`SolverSetup(..., convergence=...)`)
-  still govern when each solve declares itself satisfied; `outer_tol`
-  is the additional relative criterion across the outer loop.
-"""
 function multiphase!(
     model, config;
-    output=VTK(),
-    pref=nothing,
-    ncorrectors=0,
-    inner_loops=2,
-    n_outer_correctors=1,
-    outer_tol=1.0e-3,
-    )
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2)
 
     residuals = setup_multiphase_solvers(
         MULTIPHASE, model, config;
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops,
-        n_outer_correctors=n_outer_correctors,
-        outer_tol=outer_tol,
+        inner_loops=inner_loops
         )
 
     return residuals
@@ -74,8 +24,7 @@ end
 
 function setup_multiphase_solvers(
     solver_variant, model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
-    n_outer_correctors=1, outer_tol=1.0e-3,
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -140,14 +89,10 @@ function setup_multiphase_solvers(
 
     @info "Computing fluid properties..."
 
-    # Blend per-phase properties (rho/mu may be ConstantScalar or
-    # ScalarField — the `.values` broadcast handles both). Face fields
-    # are refreshed every outer iteration in the loop; here just seed
-    # them by interpolating the blended cell mixture.
-    blend_properties!(rho, alpha, phases[main].rho, phases[secondary].rho)
-    blend_mixture_nu!(nu,  alpha, rho, phases[main].mu, phases[secondary].mu)
-    interpolate!(rhof, rho, config)
-    interpolate!(nuf,  nu,  config)
+    blend_properties!(rho,  alpha,  phases[main].rho[1], phases[secondary].rho[1])
+    blend_properties!(rhof, alphaf, phases[main].rho[1], phases[secondary].rho[1])
+    blend_mixture_nu!(nu,  alpha,  rho,  phases[main].mu[1], phases[secondary].mu[1])
+    blend_mixture_nu!(nuf, alphaf, rhof, phases[main].mu[1], phases[secondary].mu[1])
     @. mueff.values = rhof.values * nueff.values
 
     gh = model.fluid.physics_properties.gravity.gh
@@ -212,15 +157,6 @@ function setup_multiphase_solvers(
     @info "Initialising turbulence model..."
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
-    # One-shot y+ sanity check at initialisation. Only meaningful when
-    # the turbulence model carries a wall-distance field `y` and a TKE
-    # field `k` (KOmega, KOmegaSST, KOmegaLKE, etc.). Reports the
-    # distribution of `y⁺ = Cμ^0.25 · y · √k / ν` across all cells; the
-    # **min** is near the wall and tells you whether wall functions are
-    # in their valid range (high-Re wall functions need y⁺ ≳ 30; low-Re
-    # need y⁺ ≲ 5).
-    report_yplus_at_init(model.turbulence, model, config)
-
     @info "Initialising energy model..."
     energyModel = init_multiphase_energy(model.energy, model, mdotf, rho, p_eqn, config)
 
@@ -230,8 +166,7 @@ function setup_multiphase_solvers(
         extra_models, mules,
         config;
         output=output, pref=pref,
-        ncorrectors=ncorrectors, inner_loops=inner_loops,
-        n_outer_correctors=n_outer_correctors, outer_tol=outer_tol)
+        ncorrectors=ncorrectors, inner_loops=inner_loops)
 
     return residuals
 end
@@ -246,100 +181,16 @@ step_multiphase_energy!(::Nothing, model, prev, mdotf, rho, time, config) = noth
 step_multiphase_energy!(em::MultiphaseTemperatureModel, model, prev, mdotf, rho, time, config) =
     energy!(em, model, prev, mdotf, rho, time, config)
 
-
-# -----------------------------------------------------------------------------
-# Boiling-model source updates (Lee bulk phase change, RPI wall partition).
-#
-# Triggered once per outer corrector. Both are opt-in via `fluid_properties`
-# on the Multiphase fluid:
-#     fluid_properties = (
-#         phase_change = Lee(C_e = 0.1, C_c = 0.1),
-#         sat_props    = sat_props_N2_at(1.0e6),
-#         wall_boiling = init_rpi_wall_state(...),   # if you want RPI too
-#     )
-# The dispatcher reaches into `model.fluid.physics_properties` (a NamedTuple)
-# and skips silently if the relevant entry is absent.
-# -----------------------------------------------------------------------------
-
-# Default no-op (e.g. Isothermal energy model)
-_update_boiling_sources!(model, time, config) = nothing
-
-# Active when the energy model has a `T_source` slot (only MultiphaseTemperature)
-function _update_boiling_sources!(
-        model::Physics{T1,F,SO,M,Tu,<:MultiphaseTemperature,D,BI},
-        time, config) where {T1,F,SO,M,Tu,D,BI}
-
-    pp = model.fluid.physics_properties
-    has_lee = hasproperty(pp, :phase_change) && pp.phase_change !== nothing
-    has_rpi = hasproperty(pp, :wall_boiling) && pp.wall_boiling !== nothing
-
-    # Reset the T_source each iteration; populate from Lee (and any RPI
-    # wall-bulk feedback) below.
-    fill!(model.energy.T_source.values, zero(eltype(model.energy.T_source.values)))
-
-    if has_lee
-        sat = pp.sat_props
-        # Lee writes its T contribution directly into T_source.
-        # α scratch is consumed only if RPI is also active (alpha update
-        # is not wired into the equation yet — first-pass limitation).
-        S_alpha_scratch = has_rpi ? pp.wall_boiling.cell_source_alpha : ScalarField(model.domain)
-        apply_lee_sources!(S_alpha_scratch, model.energy.T_source,
-                           pp.phase_change, sat, model, config)
-    end
-
-    if has_rpi
-        update_rpi_wall_state!(pp.wall_boiling, model, time, config)
-        # Fold RPI's wall-cell T correction (`-q_e·A/V`) into the same
-        # T_source field Lee just populated. The full Joule q_w is still
-        # applied by the user's NeumannFunction BC; this source subtracts
-        # the evaporation portion. Net into wall cell = q_c + q_q.
-        @. model.energy.T_source.values += pp.wall_boiling.cell_source_T.values
-    end
-
-    return nothing
-end
-
-# ---- y+ at initialisation --------------------------------------------------
-# Compute and report the y+ distribution across the full field at t=0, using
-# the post-initialisation `y`, `k`, and `nu` fields. Dispatched on the
-# turbulence model: anything without a wall-distance / TKE pair is a no-op.
-
-# Generic fallback — turbulence model has no y+ to compute (Laminar, LES that
-# doesn't compute y, etc.).
-function report_yplus_at_init(turb, model, config)
-    if !(hasproperty(turb, :y) && hasproperty(turb, :k))
-        return nothing
-    end
-
-    # Cμ for k–ω / k–ε family wall-function definition. Hard-coded —
-    # matches the value used inside `y_plus(...)` in RANS_functions.jl.
-    Cμ = 0.09
-
-    y_vals  = Array(getproperty(turb, :y).values)
-    k_vals  = Array(getproperty(turb, :k).values)
-    nu_vals = Array(model.fluid.nu.values)
-
-    Cμ_quart = Cμ^0.25
-    yplus    = similar(y_vals)
-    @inbounds for i in eachindex(y_vals)
-        yplus[i] = Cμ_quart * y_vals[i] * sqrt(max(k_vals[i], 0.0)) /
-                   max(nu_vals[i], eps(eltype(nu_vals)))
-    end
-
-    @info "y+ at initialisation (whole field)" min_y_plus=minimum(yplus) max_y_plus=maximum(yplus) mean_y_plus=sum(yplus)/length(yplus) median_y_plus=sort(yplus)[length(yplus)÷2 + 1]
-    return nothing
-end
-
 # Phase-2 live property refresh. Only fires when the user has both a
 # `HelmholtzTable` driving properties AND a `MultiphaseTemperature`
 # energy model providing a per-cell T field. Without one of those, the
 # function is a no-op.
-function live_update_phase_properties!(model, config)
+function live_update_phase_properties!(model)
     fp = get(model.fluid.physics_properties, :fluid_properties, nothing)
     fp isa HelmholtzTable || return nothing
     energy = model.energy
     energy isa MultiphaseTemperature || return nothing
-    update_phase_properties_from_table!(model.fluid.phases, fp, energy.T, config)
+    update_phase_properties_from_table!(model.fluid.phases, fp, energy.T)
     return nothing
 end
 
@@ -349,8 +200,7 @@ function MULTIPHASE(
     mdotf, rhoPhi, gh, ghf, phi_g, phi_gf,
     extra_models::Tuple, mules::NamedTuple,
     config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=3,
-    n_outer_correctors=1, outer_tol=1.0e-3,
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=3
     )
 
     (; alpha_prev, div_alpha, div_mdotf, alpha_fluxf,
@@ -394,16 +244,37 @@ function MULTIPHASE(
     main = volume_fraction
     secondary = 3 - volume_fraction
 
-    # Per-phase face fields, refreshed each outer iteration. Seeded here
-    # via `phase_to_face!`, which dispatches on the property type.
+    rho1_val = phases[main].rho[1]
+    rho2_val = phases[secondary].rho[1]
+    mu1_val  = phases[main].mu[1]
+    mu2_val  = phases[secondary].mu[1]
+
+    # Phase-2B field mode flag — set when `HelmholtzTable` drove
+    # `build_phase_table_mode` so per-phase rho/mu live on ScalarField
+    # cells. In this mode the property kernels read the per-cell fields
+    # rather than the captured scalars above.
+    field_mode = phases[main].rho isa ScalarField
+
+    # Per-phase face fields. Always allocated so the same arithmetic
+    # path can be used by the rhoPhi formula and the Mixture tensor
+    # term. In constant mode they're filled once with the snapshot
+    # scalars; in field mode they're refreshed each iteration via
+    # interpolate! from the live cell fields.
     rho1f = FaceScalarField(mesh)
     rho2f = FaceScalarField(mesh)
     mu1f  = FaceScalarField(mesh)
     mu2f  = FaceScalarField(mesh)
-    phase_to_face!(rho1f, phases[main].rho,      config)
-    phase_to_face!(rho2f, phases[secondary].rho, config)
-    phase_to_face!(mu1f,  phases[main].mu,       config)
-    phase_to_face!(mu2f,  phases[secondary].mu,  config)
+    if field_mode
+        interpolate!(rho1f, phases[main].rho,      config)
+        interpolate!(rho2f, phases[secondary].rho, config)
+        interpolate!(mu1f,  phases[main].mu,       config)
+        interpolate!(mu2f,  phases[secondary].mu,  config)
+    else
+        initialise!(rho1f, rho1_val)
+        initialise!(rho2f, rho2_val)
+        initialise!(mu1f,  mu1_val)
+        initialise!(mu2f,  mu2_val)
+    end
 
     mp_model = model.fluid.model
 
@@ -416,14 +287,13 @@ function MULTIPHASE(
         Sc_t     = 0.7
         g_vec    = model.fluid.physics_properties.gravity.g
         diameter = mp_model.diameter
-        # Per-cell τ_d, refreshed every outer iteration. The `.values`
-        # broadcast handles both ConstantScalar (scalar) and ScalarField
-        # (per-cell array) property representations.
+        # Constant-mode τ_d (single scalar). Field mode below allocates a
+        # per-cell ScalarField that is refreshed every outer iteration.
+        tau_d    = (rho2_val * diameter^2) / (18.0 * mu1_val + eps())
         tau_d_field = ScalarField(mesh)
-        @. tau_d_field.values = (phases[secondary].rho.values * diameter^2) /
-                                (18.0 * phases[main].mu.values + eps())
+        initialise!(tau_d_field, tau_d)
 
-        # rho1f / rho2f already allocated above.
+        # rho1f / rho2f already allocated above (used by both modes).
 
         U_prev = VectorField(mesh)
         DUmDt  = VectorField(mesh)
@@ -531,11 +401,13 @@ function MULTIPHASE(
             limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
 
             compute_DUmDt!(DUmDt, U, U_prev, ∇U, dt_cpu[1], config)
-            # rho/mu/tau_d are ConstantScalar or per-cell ScalarField; the
-            # kernel reads them as `x[i]`, well-defined for both.
+            # rho1/rho2/mu1/tau_d below are either ConstantScalar (legacy)
+            # or per-cell ScalarField (Phase-2B field mode). The kernel
+            # reads them as `x[i]`, which is well-defined for both.
+            tau_d_arg = field_mode ? tau_d_field : ConstantScalar(tau_d)
             compute_Ur!(Ur, alpha, rho, g_vec, DUmDt,
                         phases[main].rho, phases[secondary].rho, phases[main].mu,
-                        diameter, tau_d_field, config)
+                        diameter, tau_d_arg, config)
             turbulent_dispersion!(Ur, alpha, ∇alpha, model.turbulence, Sc_t, config)
             interpolate_vanleer!(Urf, Ur, mdotf, config)
             zero_wall_drift_velocity!(Urf, config)
@@ -601,44 +473,31 @@ function MULTIPHASE(
 
         ralpha = zero(TF)
 
-        # =================================================================
-        # PIMPLE outer corrector loop. With `n_outer_correctors == 1` this
-        # is a single pass and the behaviour reduces to the original PISO
-        # time loop bit-for-bit. With `> 1` the U/p/T coupling iterates
-        # inside the time step toward consistency — necessary when the
-        # cell Courant number exceeds ~1 or when properties depend
-        # strongly on T (e.g. supercritical fluid near the pseudo-critical
-        # line). The α sub-cycle and `rho_prev` capture above stay frozen
-        # for the entire time step.
-        # =================================================================
-        rx = ry = rz = rp = zero(TF)
-        T_res_outer = zero(TF)
-        res_first = (rx = one(TF), ry = one(TF), rz = one(TF),
-                     rp = one(TF), rT = one(TF))
-        outer_converged = false
-        outers_done = 0
+        if field_mode
+            # Phase-2B: refresh per-cell phase rho/mu from the current
+            # T field (via the HelmholtzTable) and interpolate to faces
+            # so the property blending below sees up-to-date values.
+            live_update_phase_properties!(model)
+            interpolate!(rho1f, phases[main].rho,      config)
+            interpolate!(rho2f, phases[secondary].rho, config)
+            interpolate!(mu1f,  phases[main].mu,       config)
+            interpolate!(mu2f,  phases[secondary].mu,  config)
 
-        for outer in 1:n_outer_correctors
-            outers_done = outer
+            blend_properties!(rho,  alpha,  phases[main].rho, phases[secondary].rho)
+            blend_properties!(rhof, alphaf, rho1f,            rho2f)
+            blend_mixture_nu!(nu,  alpha,  rho,  phases[main].mu, phases[secondary].mu)
+            blend_mixture_nu!(nuf, alphaf, rhof, mu1f,            mu2f)
 
-        # Refresh per-cell phase rho/mu from the current T field (no-op
-        # unless a HelmholtzTable drives the properties), push them to
-        # faces, then blend. `phase_to_face!` and the `.values` broadcast
-        # handle ConstantScalar and ScalarField alike.
-        live_update_phase_properties!(model, config)
-        phase_to_face!(rho1f, phases[main].rho,      config)
-        phase_to_face!(rho2f, phases[secondary].rho, config)
-        phase_to_face!(mu1f,  phases[main].mu,       config)
-        phase_to_face!(mu2f,  phases[secondary].mu,  config)
-
-        blend_properties!(rho,  alpha,  phases[main].rho, phases[secondary].rho)
-        blend_properties!(rhof, alphaf, rho1f,            rho2f)
-        blend_mixture_nu!(nu,  alpha,  rho,  phases[main].mu, phases[secondary].mu)
-        blend_mixture_nu!(nuf, alphaf, rhof, mu1f,            mu2f)
-
-        if typeof(mp_model) <: Mixture
-            @. tau_d_field.values = (phases[secondary].rho.values * diameter^2) /
-                                    (18.0 * phases[main].mu.values + eps())
+            if typeof(mp_model) <: Mixture
+                # τ_d is per-cell now (depends on rho_secondary and mu_main).
+                @. tau_d_field.values = (phases[secondary].rho.values * diameter^2) /
+                                        (18.0 * phases[main].mu.values + eps())
+            end
+        else
+            blend_properties!(rho,  alpha,  rho1_val, rho2_val)
+            blend_properties!(rhof, alphaf, rho1_val, rho2_val)
+            blend_mixture_nu!(nu,  alpha,  rho,  mu1_val, mu2_val)
+            blend_mixture_nu!(nuf, alphaf, rhof, mu1_val, mu2_val)
         end
         @. mueff.values = rhof.values * nueff.values
 
@@ -649,10 +508,13 @@ function MULTIPHASE(
 
         if typeof(mp_model) <: Mixture
             @. rhoPhi.values = mdotf.values * rhof.values
-        else
-            # VOF rhoPhi with per-face per-phase densities.
+        elseif field_mode
+            # VOF rhoPhi with per-face per-phase densities
             @. rhoPhi.values = alpha_fluxf.values * (rho1f.values - rho2f.values) +
                                mdotf.values * rho2f.values
+        else
+            @. rhoPhi.values = alpha_fluxf.values * (rho1_val - rho2_val) +
+                               mdotf.values * rho2_val
         end
 
         # κ refresh — must happen BEFORE the U predictor so the well-balanced
@@ -748,55 +610,15 @@ function MULTIPHASE(
         update_nueff!(nueff, nuf, model.turbulence, config)
         @. mueff.values = rhof.values * nueff.values
 
-        # Note: live property refresh happens at the top of the outer
-        # iteration so the U-equation, the rhoPhi flux and the energy
-        # equation all see the same T-driven properties this step.
-
-        # Update boiling-model sources (Lee bulk phase change + RPI wall
-        # partition), if configured on the fluid. No-op when absent — leaves
-        # `model.energy.T_source` at zero and the equation unchanged.
-        _update_boiling_sources!(model, time, config)
+        # Note: live property refresh now happens at the top of the
+        # outer iteration (inside the `field_mode` branch above) so the
+        # U-equation, the rhoPhi flux and the energy equation all see
+        # the same T-driven properties this step.
 
         # Solve the mixture-temperature equation (no-op when the energy model
         # is Isothermal). Uses the post-pressure-correction mdotf and the
         # blended ρ at cells, with cp/k blended inside `energy!`.
         step_multiphase_energy!(energyModel, model, prev, mdotf, rho, time, config)
-
-        # ---- PIMPLE convergence check ------------------------------------
-        # Read the energy residual back from the model state when the
-        # energy equation is active; otherwise treat T as fully
-        # converged so it doesn't dominate the criterion.
-        T_res_outer = if energyModel isa MultiphaseTemperatureModel
-            energyModel.state.residuals[2]
-        else
-            zero(TF)
-        end
-
-        if outer == 1
-            # Capture the first-outer residuals as the reference. Guard
-            # against zero baselines (cosmetic — avoids divisions by zero
-            # in the ratio check below).
-            res_first = (
-                rx = max(rx, eps(TF)),
-                ry = max(ry, eps(TF)),
-                rz = max(rz, eps(TF)),
-                rp = max(rp, eps(TF)),
-                rT = max(T_res_outer, eps(TF)),
-            )
-        elseif outer_tol > zero(TF)
-            ratio = max(
-                rx / res_first.rx,
-                ry / res_first.ry,
-                rz / res_first.rz,
-                rp / res_first.rp,
-                T_res_outer / res_first.rT,
-            )
-            if ratio < outer_tol
-                outer_converged = true
-                break
-            end
-        end
-        end  # end PIMPLE outer-corrector loop
 
         courant           = max_courant_number!(cellsCourant, model, config)
         alphaCourantOuter = max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, model, config, dt_cpu[1])
@@ -1143,14 +965,6 @@ function blend_mixture_nu!(nu_field, alpha_field, rho_field,
                           mu_1.values * (1.0 - alpha_field.values)) / rho_field.values
     nothing
 end
-
-# Fill a per-phase face field from a per-phase cell property. Dispatch
-# (not a runtime flag) selects the right path so the solver never has to
-# branch on constant-vs-field representation and never scalar-indexes a
-# GPU array: a ConstantScalar fills the face uniformly, a ScalarField is
-# interpolated cell→face.
-phase_to_face!(facef, prop::ConstantScalar, config) = initialise!(facef, prop.values)
-phase_to_face!(facef, prop, config) = interpolate!(facef, prop, config)
 
 """
     compute_gh!(gh, g, config)

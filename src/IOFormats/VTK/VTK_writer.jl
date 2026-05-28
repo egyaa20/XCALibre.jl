@@ -1,6 +1,27 @@
 export write_results #, save_output
 export copy_to_cpu
 
+const TIMES_LOG_FILE = "times.csv"
+
+"""
+    log_iteration_time(iteration, time; filename=TIMES_LOG_FILE)
+
+Append `(iteration, time)` to a sidecar CSV next to the VTK files. Used to
+recover physical time per VTK output when adaptive time stepping is on
+(in that case iteration number alone does not map to physical time).
+The header is written on first call if the file does not yet exist.
+"""
+function log_iteration_time(iteration, time; filename=TIMES_LOG_FILE)
+    if !isfile(filename)
+        open(filename, "w") do io
+            write(io, "iteration,time\n")
+        end
+    end
+    open(filename, "a") do io
+        write(io, "$(iteration),$(time)\n")
+    end
+end
+
 initialise_writer(format::VTK, mesh::Mesh2) = VTKWriter2D(nothing, nothing)
 
 function write_results(
@@ -11,6 +32,7 @@ function write_results(
     else
         # name = @sprintf "time_%.8f" iteration
         name = @sprintf "time_%i" iteration
+        log_iteration_time(iteration, time)
     end
     filename = name*suffix*".vtk"
 

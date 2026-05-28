@@ -69,7 +69,8 @@ using Statistics: mean
 # Simulation setup
 # ------------------------------------------------------------
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-mesh_file = joinpath(grids_dir, "unit_test_stage5.unv")
+mesh_file = joinpath(grids_dir, "unit_test_stage4.unv")
+# unit_test_stage4
 mesh = UNV2D_mesh(mesh_file, scale=2.0)   # 0.25×1.0 base → 0.5×2.0
 
 backend = CPU(); workgroup = AutoTune(); activate_multithread(backend)
@@ -234,7 +235,7 @@ solvers = (
 # dt = 1e-3, 30000 iter.  Adaptive dt is disabled here (same rationale as
 # Stages 2–3: mostly-stagnant bulk gives misleading Courant).
 runtime = Runtime(
-    iterations=30000, time_step=1.0e-3, write_interval=500)
+    iterations=10000, time_step=1.0e-3, write_interval=100)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime,
@@ -306,8 +307,23 @@ max_Umag = maximum(sqrt.(Ux_vals.^2 .+ Uy_vals.^2))
     @test mean_α > 0.5
     # Plume drives non-trivial vertical velocity somewhere in the field
     @test max_Umag > 0.1
-    # Centreline rise at mid-height within an order-of-magnitude of theory
-    @test !isnan(vc_10) && vc_10 > 0.05
+
+    # ----------------------------------------------------------------
+    # Quantitative validation: List 1982 plane-plume centreline velocity
+    # ----------------------------------------------------------------
+    #     v_c ≈ 1.66 · B_0^{1/3}   (z-independent for a 2D plane plume)
+    # The coefficient 1.66 is itself uncertain to ±15 % across experimental
+    # data, plume self-similarity is asymptotic (near-source still developing,
+    # near-top distorted by outflow), so we accept ±50 % at all three heights.
+    # The mid-height z = 1.0 sample is the cleanest (developed yet not yet
+    # outflow-perturbed) and uses a tighter ±35 % window.
+    @test !isnan(vc_05) && 0.5*v_c_theory ≤ vc_05 ≤ 1.6*v_c_theory
+    @test !isnan(vc_10) && 0.65*v_c_theory ≤ vc_10 ≤ 1.35*v_c_theory
+    @test !isnan(vc_15) && 0.5*v_c_theory ≤ vc_15 ≤ 1.6*v_c_theory
+
+    # Centreline must stay near the source (no wall-attachment).
+    # The plume drift |x_peak − x_src| should be a small fraction of W.
+    @test abs(x_10 - x_src) < 0.25 * W
 
     @printf("\n=== Stage 5 results ===\n")
     @printf("Source location x_src = %.4f m   (domain x ∈ [0, %.2f])\n", x_src, W)

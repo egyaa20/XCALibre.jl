@@ -342,6 +342,9 @@ function update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, 
     runtime.dt .= runtime.dt .* new_dt_factor
 end
 
+# dispatch based on multiphase solver or smth else
+# don't forget the CHANGELOG
+
 function update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, courant, alphaCourant)
     (; maxCo, maxAlphaCo, maxGrow, minShrink) = runtime.adaptive
 

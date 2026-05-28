@@ -234,13 +234,20 @@ end
         g_vec = SVector{3,Float64}(0.0, -gmag, 0.0)
         τd    = ρd*d^2 / (18*μc)
 
-        # Iterate kernel to fixed point (Ur depends on |Ur| via Re → Picard)
+        # Iterate kernel to fixed point (Ur depends on |Ur| via Re → Picard).
+        # `compute_Ur!` now reads rho1/rho2/mu1/tau_d as fields via `[i]`,
+        # so the constant-property test wraps them in `ConstantScalar`.
+        ρc_field = ConstantScalar(ρc)
+        ρd_field = ConstantScalar(ρd)
+        μc_field = ConstantScalar(μc)
+        τd_field = ConstantScalar(τd)
         for _ in 1:200
             XCALibre.Solvers.compute_Ur!(Ur, alpha, rho, g_vec, DUmDt,
-                                         ρc, ρd, μc, d, τd, Cvm, config)
+                                         ρc_field, ρd_field, μc_field, d, τd_field,
+                                         config)
         end
 
-        u_expected = sn_terminal_solver(ρd, ρc, d, μc, gmag, Cvm)
+        u_expected = sn_terminal_manninen(ρd, ρc, d, μc, gmag)
         uy = Ur.y.values
         # All interior cells should have the same downward terminal velocity
         # (negative because g is -y and u_d,rel is downward). Note that Ur is
@@ -252,7 +259,7 @@ end
         # Stokes upper bound (solver's form happens to exceed Stokes)
         @test abs(mean_nonzero(uy)) < 10*stokes_terminal(ρd, ρc, d, μc, gmag)
 
-        @info "compute_Ur! fixed point" u_computed=abs(mean_nonzero(uy)) u_solver_expected=u_expected u_stokes=stokes_terminal(ρd, ρc, d, μc, gmag)
+        @info "compute_Ur! fixed point" u_computed=abs(mean_nonzero(uy)) u_manninen_expected=u_expected u_stokes=stokes_terminal(ρd, ρc, d, μc, gmag)
     end # compute_Ur
 
     @testset "turbulent_dispersion! dispatch" begin

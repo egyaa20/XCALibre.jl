@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -WindowStyle Hidden -Command \"$j = [Console]::In.ReadToEnd() | ConvertFrom-Json; if ($j.prompt -match 'notify me when you are done') { New-Item -Path \\\"$env:TEMP\\claude_notify_flag\\\" -ItemType File -Force | Out-Null }\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -WindowStyle Hidden -Command \"$f = \\\"$env:TEMP\\claude_notify_flag\\\"; if (Test-Path $f) { Remove-Item $f -Force; try { Import-Module BurntToast -ErrorAction Stop; New-BurntToastNotification -Text 'Claude Code', 'Finished — your turn' } catch { [console]::beep(800,200) } }\""
+          }
+        ]
+      }
+    ]
+  }
+}

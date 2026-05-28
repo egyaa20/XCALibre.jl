@@ -31,3 +31,5 @@ include("Viscosity/high_fidelity_mu_N2.jl")
 include("surface_tension.jl")
 
 include("HighFidelity_Closure.jl")
+include("HelmholtzTable.jl")
+include("NISTTable.jl")

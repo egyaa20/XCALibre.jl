@@ -48,7 +48,8 @@ run!() = nothing # dummy function for providing general documentation
 
 run!(
     model::Physics{T,F,SO,M,Tu,E,D,BI}, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=3,
+    n_outer_correctors=1, outer_tol=1.0e-3,
     ) where{T,F<:Multiphase,SO,M,Tu,E,D,BI} =
 begin
     residuals = multiphase!(
@@ -56,7 +57,9 @@ begin
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops
+        inner_loops=inner_loops,
+        n_outer_correctors=n_outer_correctors,
+        outer_tol=outer_tol,
         )
     return residuals
 end

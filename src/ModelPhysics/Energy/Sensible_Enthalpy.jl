@@ -159,7 +159,8 @@ function energy!(
     # Kbounded = ScalarField(mesh)
     Pr = model.fluid.Pr
 
-    dt = runtime.dt[1]
+    dt_cpu = zeros(eltype(runtime.dt), 1); copyto!(dt_cpu, runtime.dt)
+    dt = dt_cpu[1]
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
@@ -168,19 +169,23 @@ function energy!(
     # prev = _convert_array!(prev, backend)
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
 
-    volumes = getproperty.(mesh.cells, :volume)
-
     @. keff_by_cp.values = mueff.values/Pr.values
 
     @. prev = K.values
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
-    for i ∈ eachindex(K)
-        K.values[i] = 0.5*(U.x.values[i]^2 + U.y.values[i]^2 + U.z.values[i]^2)
+
+    # Compute |U|² / 2 at cell centres and face centres on the backend
+    # (host scalar-indexing GPU arrays is illegal — use KA kernels).
+    (; workgroup) = hardware
+    let ndrange = length(K.values)
+        kernel! = _kinetic_energy!(_setup(backend, workgroup, ndrange)...)
+        kernel!(K.values, U.x.values, U.y.values, U.z.values)
     end
     interpolate!(Kf, K, config)
-    for i ∈ eachindex(Kf)
-        Kf.values[i] = 0.5*(Uf.x.values[i]^2 + Uf.y.values[i]^2 + Uf.z.values[i]^2)
+    let ndrange = length(Kf.values)
+        kernel! = _kinetic_energy!(_setup(backend, workgroup, ndrange)...)
+        kernel!(Kf.values, Uf.x.values, Uf.y.values, Uf.z.values)
     end
     # correct_face_interpolation!(Kf, K, mdotf) # This forces KE to be upwind, MIGHT NOT BE WORKING
     @. Kf.values *= mdotf.values
@@ -330,6 +335,11 @@ function thermoClamp!(
     hmin = Cp.values*(Tmin-Tref)
     hmax = Cp.values*(Tmax-Tref)
     clamp!(hf.values, hmin, hmax)
+end
+
+@kernel inbounds=true function _kinetic_energy!(KE, Ux, Uy, Uz)
+    i = @index(Global)
+    KE[i] = 0.5 * (Ux[i]^2 + Uy[i]^2 + Uz[i]^2)
 end
 
 function correct_face_interpolation!(phif::FaceScalarField, phi, Uf::FaceScalarField)
