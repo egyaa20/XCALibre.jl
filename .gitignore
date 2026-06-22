@@ -27,3 +27,4 @@ test/HeatFlux
 test/prep_heatflux.jl
 test/HeatFlux_1MPa.jl
 test/HeatFlux.jl
+test/tatsumoto/*
