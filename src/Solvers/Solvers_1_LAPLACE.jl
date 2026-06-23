@@ -135,7 +135,7 @@ function LAPLACE(
     @time for iteration ∈ 1:iterations
         time = iteration *dt
 
-        rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config, rho_prev; time=time)
+        rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
         
         if typeof(model.solid) <: NonUniform
             energy!(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, config)

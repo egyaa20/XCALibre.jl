@@ -1,5 +1,7 @@
 export HelmholtzTable, lookup_helmholtz, snapshot_phase_setups
 export update_phase_properties_from_table!
+export Ttoh_helmholtz, htoT_helmholtz
+export interp_h_from_T!, invert_T_from_h!
 
 """
     HelmholtzTable(fluid; pressure, T_range, n_points=100, T_snapshot=nothing)
@@ -62,8 +64,25 @@ struct HelmholtzTable{F<:HelmholtzEnergyFluid, V<:AbstractVector{Float64}}
     cp_v::V
     k_l::V
     k_v::V
+    h_l::V          # sensible enthalpy ∫cp dT, liquid branch [J/kg]
+    h_v::V          # sensible enthalpy ∫cp dT, vapour branch [J/kg]
 end
 Adapt.@adapt_structure HelmholtzTable
+
+# Cumulative sensible enthalpy by the trapezoidal rule, referenced to 0 at
+# the table's lower edge:  h[1] = 0,  h[i] = h[i-1] + ½(cp[i-1]+cp[i])·ΔT.
+# Because cp > 0 the result is *strictly increasing*, so the h-grid is
+# invertible — the cp spike integrates to a smooth, monotone ramp rather
+# than a peak, which is exactly what lets the enthalpy energy formulation
+# step through the pseudo-critical line without the divide-by-cp runaway.
+function _cumulative_enthalpy(T::AbstractVector, cp::AbstractVector)
+    n = length(T)
+    h = zeros(Float64, n)
+    @inbounds for i in 2:n
+        h[i] = h[i-1] + 0.5 * (cp[i-1] + cp[i]) * (T[i] - T[i-1])
+    end
+    return h
+end
 
 function HelmholtzTable(fluid::HelmholtzEnergyFluid;
                         pressure::Real,
@@ -95,8 +114,13 @@ function HelmholtzTable(fluid::HelmholtzEnergyFluid;
         k_l[i],   k_v[i]   = result.k[1],   result.k[2]
     end
 
+    # Sensible enthalpy h(T) = ∫_{T_lo}^{T} cp dT' (exact at constant
+    # pressure since cp ≡ (∂h/∂T)_p), consistent with the tabulated cp.
+    h_l = _cumulative_enthalpy(Ts, cp_l)
+    h_v = _cumulative_enthalpy(Ts, cp_v)
+
     return HelmholtzTable(fluid, pressure_f, (T_lo, T_hi), n_points, T_snap,
-                          Ts, rho_l, rho_v, mu_l, mu_v, cp_l, cp_v, k_l, k_v)
+                          Ts, rho_l, rho_v, mu_l, mu_v, cp_l, cp_v, k_l, k_v, h_l, h_v)
 end
 
 """
@@ -126,6 +150,51 @@ function lookup_helmholtz(table::HelmholtzTable, T::Real)
         cp  = (interp(table.cp_l),  interp(table.cp_v)),
         k   = (interp(table.k_l),   interp(table.k_v)),
     )
+end
+
+"""
+    Ttoh_helmholtz(table::HelmholtzTable, T) -> h
+
+Interpolate sensible enthalpy [J/kg] at temperature `T` from the precomputed
+monotone `h_l(T)` grid (liquid branch). Out-of-range `T` clamps to the edges.
+"""
+function Ttoh_helmholtz(table::HelmholtzTable, T::Real)
+    T_lo, T_hi = table.T_range
+    Tf = clamp(float(T), T_lo, T_hi)
+    Δ = (T_hi - T_lo) / (table.n_points - 1)
+    pos = (Tf - T_lo) / Δ
+    i_lo = clamp(Int(floor(pos)) + 1, 1, table.n_points - 1)
+    i_hi = i_lo + 1
+    w = pos - (i_lo - 1)
+    return (1.0 - w) * table.h_l[i_lo] + w * table.h_l[i_hi]
+end
+
+"""
+    htoT_helmholtz(table::HelmholtzTable, h) -> T
+
+Invert the strictly-increasing enthalpy grid: given sensible enthalpy `h`
+[J/kg], return the temperature `T` [K] with `h_l(T) = h`. Binary search for
+the bracketing interval on `h_l`, then linear interpolation. Out-of-range
+`h` clamps to the table edges. This is the monotone, runaway-free `T(h)`
+inverse that replaces the divide-by-cp update of the temperature equation.
+"""
+function htoT_helmholtz(table::HelmholtzTable, h::Real)
+    hl = table.h_l
+    n  = table.n_points
+    hf = float(h)
+    hf <= hl[1] && return table.T_grid[1]
+    hf >= hl[n] && return table.T_grid[n]
+    lo, hi = 1, n
+    while hi - lo > 1
+        mid = (lo + hi) >>> 1
+        if hl[mid] <= hf
+            lo = mid
+        else
+            hi = mid
+        end
+    end
+    w = (hf - hl[lo]) / (hl[hi] - hl[lo])
+    return (1.0 - w) * table.T_grid[lo] + w * table.T_grid[hi]
 end
 
 """
@@ -222,3 +291,71 @@ end
 
 # No-op for any other fluid_properties type
 update_phase_properties_from_table!(phases, _other, T_field, config) = nothing
+
+# =====================================================================
+# Per-cell enthalpy <-> temperature conversion (for VariableSensibleEnthalpy)
+# =====================================================================
+
+"""
+    interp_h_from_T!(h_field, T_field, table::HelmholtzTable, config)
+
+Per-cell sensible enthalpy from temperature using the monotone `h_l(T)`
+grid (liquid branch). Used to initialise `h` consistently from a `T` field.
+"""
+function interp_h_from_T!(h_field, T_field, table::HelmholtzTable, config)
+    (; backend, workgroup) = config.hardware
+    ndrange = length(T_field.values)
+    kernel! = _interp_h_from_T!(_setup(backend, workgroup, ndrange)...)
+    kernel!(h_field.values, T_field.values, table.h_l,
+            table.T_range[1], table.T_range[2], table.n_points)
+    return nothing
+end
+
+@kernel inbounds=true function _interp_h_from_T!(hs, Ts, h_l, T_lo, T_hi, npts)
+    i = @index(Global)
+    Δ    = (T_hi - T_lo) / (npts - 1)
+    Tc   = clamp(Ts[i], T_lo, T_hi)
+    pos  = (Tc - T_lo) / Δ
+    i_lo = clamp(unsafe_trunc(Int, floor(pos)) + 1, 1, npts - 1)
+    i_hi = i_lo + 1
+    w    = pos - (i_lo - 1)
+    hs[i] = (1.0 - w) * h_l[i_lo] + w * h_l[i_hi]
+end
+
+"""
+    invert_T_from_h!(T_field, h_field, table::HelmholtzTable, config)
+
+Per-cell temperature from sensible enthalpy by inverting the strictly
+increasing `h_l` grid (binary search + linear interpolation). This is the
+monotone, runaway-free `T(h)` update that replaces dividing by the spiky cp
+in the temperature equation. Out-of-range `h` clamps to the table edges.
+"""
+function invert_T_from_h!(T_field, h_field, table::HelmholtzTable, config)
+    (; backend, workgroup) = config.hardware
+    ndrange = length(h_field.values)
+    kernel! = _invert_T_from_h!(_setup(backend, workgroup, ndrange)...)
+    kernel!(T_field.values, h_field.values, table.h_l, table.T_grid, table.n_points)
+    return nothing
+end
+
+@kernel inbounds=true function _invert_T_from_h!(Ts, hs, h_l, T_grid, npts)
+    i = @index(Global)
+    h = hs[i]
+    if h <= h_l[1]
+        Ts[i] = T_grid[1]
+    elseif h >= h_l[npts]
+        Ts[i] = T_grid[npts]
+    else
+        lo = 1; hi = npts
+        while hi - lo > 1
+            mid = (lo + hi) >>> 1
+            if h_l[mid] <= h
+                lo = mid
+            else
+                hi = mid
+            end
+        end
+        w = (h - h_l[lo]) / (h_l[hi] - h_l[lo])
+        Ts[i] = (1.0 - w) * T_grid[lo] + w * T_grid[hi]
+    end
+end

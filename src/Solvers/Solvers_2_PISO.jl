@@ -107,7 +107,7 @@ function PISO(
         time += config.runtime.dt[1]
 
         rx, ry, rz = solve_equation!(
-            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, rho_prev; time=time)
+            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
           
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -132,7 +132,7 @@ function PISO(
             xcal_foreach(prev, config) do i 
                 prev[i] = p[i]
             end
-            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config, rho_prev; ref=pref, time=time)
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref, time=time)
             if i == inner_loops
                 explicit_relaxation!(p, prev, 1.0, config)
             else
@@ -144,7 +144,7 @@ function PISO(
 
             # nonorthogonal correction (experimental)
             for i ∈ 1:ncorrectors
-                discretise!(p_eqn, p, config, ConstantScalar(0.0))
+                discretise!(p_eqn, p, config)
                 apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
                 setReference!(p_eqn, pref, 1, config)
                 nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)

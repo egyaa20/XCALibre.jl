@@ -29,26 +29,19 @@ end
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
-        # Backward-Euler discretisation of  ∂(c · φ)/∂t  with `c = term.flux`
-        # carrying the coefficient (e.g. ρ for Sensible Enthalpy, ρ·cp for the
-        # mixture-temperature energy equation, or 1 if the coefficient is
-        # `ConstantScalar(1.0)`). The previous version dropped `term.flux`
-        # entirely, which silently broke any energy equation with a
-        # non-unit coefficient — under-counted ρ·cp by a factor of ~10⁶ and
-        # blew up T at heated walls.
+        # Backward Euler of  ∂(c·φ)/∂t  with the coefficient `c = term.flux`
+        # (ρ for Sensible Enthalpy, ρ·cp for the mixture-temperature energy
+        # equation, or 1 for plain transport). The diagonal uses the current
+        # coefficient; the RHS uses `rho_prev` — the previous-step coefficient.
+        # `rho_prev` defaults (via discretise!) to `term.flux`, giving the
+        # lagged form `c·∂φ/∂t`. Pass a genuine previous-step field (e.g. ρcp^n)
+        # to get the fully conservative `∂(c·φ)/∂t`.
         volume = cell.volume
         vol_rdt = volume/runtime.dt[1]
-        c = term.flux[cID]   # works for ConstantScalar and ScalarField
+        rho = term.flux[cID]   # works for ConstantScalar and ScalarField
 
-        # Lagged-coefficient form: use `c` on both sides. Strictly this is
-        # ∂φ/∂t · c ≈ (φ^{n+1} − φ^n) · c^{n+1} / dt, i.e. the
-        # current-step coefficient is used to advance φ. The error is
-        # O((dc/dt) · φ · dt²) per step — small for slow temporal
-        # variation of c. Mirroring the VectorField branch (which tracks
-        # `rho_prev` separately) requires solver-level plumbing not
-        # available here.
-        ac = c * vol_rdt
-        b  = c * prev[cID] * vol_rdt
+        ac = rho * vol_rdt
+        b  = rho_prev[cID] * prev[cID] * vol_rdt
         return ac, b
 end
 @inline scheme_source!(
@@ -75,9 +68,9 @@ end
         # See the Euler ScalarField branch for the rationale — same fix.
         volume = cell.volume
         vol_rdt = volume/runtime.dt[1]
-        c = term.flux[cID]
-        ac = c * vol_rdt
-        b  = c * prev[cID] * vol_rdt
+        rho = term.flux[cID]
+        ac = rho * vol_rdt
+        b  = rho_prev[cID] * prev[cID] * vol_rdt
         return ac, b
 end
 @inline scheme_source!(

@@ -21,6 +21,7 @@ include("energy_types.jl")
 include("Sensible_Enthalpy.jl")
 include("Conduction.jl")
 include("Multiphase_Temperature.jl")
+include("Variable_Sensible_Enthalpy.jl")
 
 # Property Models
 include("PropertyModels/Cryogenic_metal_properties.jl")

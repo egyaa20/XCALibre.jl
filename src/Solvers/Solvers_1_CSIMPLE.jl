@@ -220,7 +220,7 @@ function CSIMPLE(
 
         # Set up and solve momentum equations
         
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, rho_prev)
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         energy!(energyModel, model, prev, mdotf, rho, mueff, time, config)
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
 
@@ -258,9 +258,9 @@ function CSIMPLE(
         @. prevpf.values = pf.values
         if typeof(model.fluid) <: Compressible
             # Ensure diagonal dominance for hyperbolic equations
-            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config, rho_prev; ref=nothing, irelax=solvers.U.relax)
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing, irelax=solvers.U.relax)
         elseif typeof(model.fluid) <: WeaklyCompressible
-            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config, rho_prev; ref=nothing)
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
         end
 
         if !isnothing(solvers.p.limit)
@@ -275,7 +275,7 @@ function CSIMPLE(
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
-            discretise!(p_eqn, p, config, ConstantScalar(0.0))       
+            discretise!(p_eqn, p, config)       
             apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
             setReference!(p_eqn, pref, 1, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)

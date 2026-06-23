@@ -173,7 +173,7 @@ function SIMPLE(
     for iteration ∈ 1:iterations
         time = iteration
 
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, rho_prev)
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -194,7 +194,7 @@ function SIMPLE(
         
         # Pressure calculations
         @. prev = p.values
-        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config, rho_prev; ref=pref)
+        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
         explicit_relaxation!(p, prev, solvers.p.relax, config)
         
         grad!(∇p, pf, p, boundaries.p, time, config) 
@@ -203,7 +203,7 @@ function SIMPLE(
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
             # @. prev = p.values
-            discretise!(p_eqn, p, config, ConstantScalar(0.0))       
+            discretise!(p_eqn, p, config)       
             apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
             # setReference!(p_eqn, pref, 1, config)
             nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)

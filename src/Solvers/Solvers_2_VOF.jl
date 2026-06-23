@@ -295,7 +295,7 @@ function MULTIPHASE(
         @. rhoPhi.values = alpha_fluxf.values * (rho1 - rho2) + mdotf.values * rho2
 
         rx, ry, rz = solve_equation!(
-            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, rho_prev; time=time)
+            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
 
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
@@ -339,7 +339,7 @@ function MULTIPHASE(
             div!(divHv, mdotf, config)
 
             @. prev = p_rgh.values
-            rp = solve_equation!(p_eqn, p_rgh, boundaries.p_rgh, solvers.p_rgh, config, rho_prev; ref=0.0, time=time)
+            rp = solve_equation!(p_eqn, p_rgh, boundaries.p_rgh, solvers.p_rgh, config; ref=0.0, time=time)
 
             grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config)
             limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)

@@ -241,10 +241,14 @@ end
 init_multiphase_energy(::Isothermal, model, mdotf, rho, p_eqn, config) = nothing
 init_multiphase_energy(e::MultiphaseTemperature, model, mdotf, rho, p_eqn, config) =
     initialise(e, model, mdotf, rho, p_eqn, config)
+init_multiphase_energy(e::VariableSensibleEnthalpy, model, mdotf, rho, p_eqn, config) =
+    initialise(e, model, mdotf, rho, p_eqn, config)
 
-step_multiphase_energy!(::Nothing, model, prev, mdotf, rho, time, config) = nothing
-step_multiphase_energy!(em::MultiphaseTemperatureModel, model, prev, mdotf, rho, time, config) =
-    energy!(em, model, prev, mdotf, rho, time, config)
+step_multiphase_energy!(::Nothing, model, prev, mdotf, rho, time, config; outer=1) = nothing
+step_multiphase_energy!(em::MultiphaseTemperatureModel, model, prev, mdotf, rho, time, config; outer=1) =
+    energy!(em, model, prev, mdotf, rho, time, config; outer=outer)
+step_multiphase_energy!(em::VariableSensibleEnthalpyModel, model, prev, mdotf, rho, time, config; outer=1) =
+    energy!(em, model, prev, mdotf, rho, time, config; outer=outer)
 
 
 # -----------------------------------------------------------------------------
@@ -338,7 +342,7 @@ function live_update_phase_properties!(model, config)
     fp = get(model.fluid.physics_properties, :fluid_properties, nothing)
     fp isa HelmholtzTable || return nothing
     energy = model.energy
-    energy isa MultiphaseTemperature || return nothing
+    (energy isa MultiphaseTemperature || energy isa VariableSensibleEnthalpy) || return nothing
     update_phase_properties_from_table!(model.fluid.phases, fp, energy.T, config)
     return nothing
 end
@@ -502,6 +506,13 @@ function MULTIPHASE(
         println(io, "iteration,time,mean_Umag,max_Umag")
     end
 
+    # Cumulative count of time steps where the PIMPLE outer loop failed to
+    # reach `outer_tol` (shown live in the progress bar). A summary warning is
+    # emitted every `outer_warn_interval` iterations. Persistent growth of the
+    # count ⇒ the coupling can't keep up with the time step.
+    n_outer_failed = 0
+    outer_warn_interval = 10
+
     @time for iteration ∈ 1:iterations
         # Optional time-based termination — exits as soon as the simulated
         # time reaches `runtime.t_end`. Skipped when `t_end === nothing`.
@@ -617,6 +628,7 @@ function MULTIPHASE(
                      rp = one(TF), rT = one(TF))
         outer_converged = false
         outers_done = 0
+        last_ratio = one(TF)
 
         for outer in 1:n_outer_correctors
             outers_done = outer
@@ -686,7 +698,7 @@ function MULTIPHASE(
         end
 
         rx, ry, rz = solve_equation!(
-            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config, rho_prev; time=time)
+            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
 
         inverse_diagonal!(rD, U_eqn, config)
         interpolate!(rDf, rD, config)
@@ -722,7 +734,7 @@ function MULTIPHASE(
 
             @. prev = p_rgh.values
             rp = solve_equation!(p_eqn, p_rgh, boundaries.p_rgh, solvers.p_rgh,
-                                 config, rho_prev; ref=pref, time=time)
+                                 config; ref=pref, time=time)
 
             grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config)
             limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
@@ -760,7 +772,7 @@ function MULTIPHASE(
         # Solve the mixture-temperature equation (no-op when the energy model
         # is Isothermal). Uses the post-pressure-correction mdotf and the
         # blended ρ at cells, with cp/k blended inside `energy!`.
-        step_multiphase_energy!(energyModel, model, prev, mdotf, rho, time, config)
+        step_multiphase_energy!(energyModel, model, prev, mdotf, rho, time, config; outer=outer)
 
         # ---- PIMPLE convergence check ------------------------------------
         # Read the energy residual back from the model state when the
@@ -791,12 +803,25 @@ function MULTIPHASE(
                 rp / res_first.rp,
                 T_res_outer / res_first.rT,
             )
+            last_ratio = ratio
             if ratio < outer_tol
                 outer_converged = true
                 break
             end
         end
         end  # end PIMPLE outer-corrector loop
+
+        # Track time steps where the outer loop exhausted all correctors
+        # without reaching `outer_tol`, and emit a summary warning every
+        # `outer_warn_interval` iterations (a fixed cadence — unlike a hard
+        # `maxlog` cap, which falls silent forever and hides ongoing trouble).
+        # Live per-step status is in the progress bar below.
+        if n_outer_correctors > 1 && outer_tol > zero(TF) && !outer_converged
+            n_outer_failed += 1
+        end
+        if n_outer_correctors > 1 && iteration % outer_warn_interval == 0 && !outer_converged
+            @warn "PIMPLE outer loop not converging to outer_tol" iteration time outers=outers_done achieved_ratio=last_ratio outer_tol cumulative_failures=n_outer_failed
+        end
 
         courant           = max_courant_number!(cellsCourant, model, config)
         alphaCourantOuter = max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, model, config, dt_cpu[1])
@@ -823,6 +848,9 @@ function MULTIPHASE(
                 (:Uz, R_uz[iteration]),
                 (:p_rgh, R_p[iteration]),
                 (:alpha, R_alpha[iteration]),
+                (:outers, outers_done),
+                (:outer_ratio, last_ratio),
+                (:outer_fails, n_outer_failed),
                 turbulenceModel.state.residuals...
                 ]
             )

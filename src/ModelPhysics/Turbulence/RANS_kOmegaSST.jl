@@ -283,7 +283,7 @@ function turbulence!(
 
     # Solve omega equation
     # prev .= omega.values
-    discretise!(ω_eqn, omega, config, ConstantScalar(0.0))
+    discretise!(ω_eqn, omega, config)
     apply_boundary_conditions!(ω_eqn, boundaries.omega, nothing, time, config)
     # implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     implicit_relaxation_diagdom!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
@@ -297,7 +297,7 @@ function turbulence!(
 
     # Solve k equation
     # prev .= k.values
-    discretise!(k_eqn, k, config, ConstantScalar(0.0))
+    discretise!(k_eqn, k, config)
     apply_boundary_conditions!(k_eqn, boundaries.k, nothing, time, config)
     # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
@@ -367,6 +367,28 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
         ("rho", model.fluid.rho),
         ("p_rgh", model.fluid.p_rgh),
         ("T", model.energy.T),
+        ("k", model.turbulence.k),
+        ("omega", model.turbulence.omega),
+        ("nut", model.turbulence.nut),
+        ("y", model.turbulence.y),
+    )
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+end
+
+# Multiphase + KOmegaSST + VariableSensibleEnthalpy: same set as
+# MultiphaseTemperature, plus the solved enthalpy `h` alongside the
+# recovered `T` (so post-processing still keys on `T`).
+function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F<:Multiphase,SO,M,Tu<:KOmegaSST,E<:VariableSensibleEnthalpy,D,BI}
+
+    args = (
+        ("U", model.momentum.U),
+        ("p", model.momentum.p),
+        ("alpha", model.fluid.alpha),
+        ("rho", model.fluid.rho),
+        ("p_rgh", model.fluid.p_rgh),
+        ("T", model.energy.T),
+        ("h", model.energy.h),
         ("k", model.turbulence.k),
         ("omega", model.turbulence.omega),
         ("nut", model.turbulence.nut),

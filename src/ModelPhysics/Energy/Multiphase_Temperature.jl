@@ -22,11 +22,13 @@ and `cp1, cp2, k1, k2` come from `Phase(rho=…, mu=…, cp=…, k=…)`.
 - `cpf_m`    : mixture cp at faces
 - `k_m`      : mixture k  at cells          [W/(m·K)]
 - `kf_m`     : mixture k  at faces
-- `rho_cp`   : ρ·cp at cells (Time-term coefficient)
+- `rho_cp`   : ρ·cp at cells (Time-term coefficient, ρcpⁿ⁺¹)
+- `rho_cp_prev` : ρ·cp at the start of the time step (ρcpⁿ); RHS of the
+                  conservative time term
 - `mdot_cpf` : ρ·cp·U·n·A at faces (Divergence flux)
 - `coeffs`   : NamedTuple of constant coefficients (e.g. `T_init`)
 """
-struct MultiphaseTemperature{S1,F1,S2,F2,S3,F3,S4,F4,S5,C} <: AbstractEnergyModel
+struct MultiphaseTemperature{S1,F1,S2,F2,S3,F3,S4,S6,F4,S5,C} <: AbstractEnergyModel
     T::S1
     Tf::F1
     cp_m::S2
@@ -34,6 +36,7 @@ struct MultiphaseTemperature{S1,F1,S2,F2,S3,F3,S4,F4,S5,C} <: AbstractEnergyMode
     k_m::S3
     kf_m::F3
     rho_cp::S4
+    rho_cp_prev::S6
     mdot_cpf::F4
     T_source::S5         # external T source (Lee latent heat etc.); zeros if unused
     coeffs::C
@@ -54,10 +57,19 @@ Adapt.@adapt_structure MultiphaseTemperatureModel
 # gases and most liquids). Set to `Inf` to disable turbulent thermal
 # diffusion entirely while keeping the turbulence model active for the
 # momentum equation.
-Energy{MultiphaseTemperature}(; T_init=300.0, Pr_t=0.85, Pr_t_model::Symbol=:constant) = begin
+#
+# `prop_relax ∈ (0, 1]` under-relaxes the time-term coefficient ρcp across
+# outer (PIMPLE) correctors. `1.0` (default) takes the fresh table value
+# each corrector (no relaxation). Lower it (e.g. `0.3–0.5`) for real-fluid
+# runs where ρcp swings steeply through the pseudo-critical line and the
+# conservative time term otherwise destabilises the outer loop. It is
+# consistent — at outer convergence the relaxation vanishes.
+Energy{MultiphaseTemperature}(; T_init=300.0, Pr_t=0.85, Pr_t_model::Symbol=:constant, prop_relax=1.0) = begin
     Pr_t_model in (:constant, :kays_crawford) ||
         error("MultiphaseTemperature: Pr_t_model must be :constant or :kays_crawford, got $Pr_t_model")
-    coeffs = (T_init=T_init, Pr_t=Pr_t, Pr_t_model=Pr_t_model)
+    (0.0 < prop_relax <= 1.0) ||
+        error("MultiphaseTemperature: prop_relax must be in (0, 1], got $prop_relax")
+    coeffs = (T_init=T_init, Pr_t=Pr_t, Pr_t_model=Pr_t_model, prop_relax=float(prop_relax))
     ARG = typeof(coeffs)
     Energy{MultiphaseTemperature, ARG}(coeffs)
 end
@@ -71,10 +83,11 @@ end
     k_m      = ScalarField(mesh)
     kf_m     = FaceScalarField(mesh)
     rho_cp   = ScalarField(mesh)
+    rho_cp_prev = ScalarField(mesh)
     mdot_cpf = FaceScalarField(mesh)
     T_source = ScalarField(mesh)   # zeros — populated by Lee/RPI updates each iter
     coeffs   = energy.args
-    MultiphaseTemperature(T, Tf, cp_m, cpf_m, k_m, kf_m, rho_cp, mdot_cpf, T_source, coeffs)
+    MultiphaseTemperature(T, Tf, cp_m, cpf_m, k_m, kf_m, rho_cp, rho_cp_prev, mdot_cpf, T_source, coeffs)
 end
 
 """
@@ -129,11 +142,11 @@ must therefore include a `T` entry (e.g. `Schemes(time=Euler, divergence=Upwind,
 """
 function energy!(
     energy::MultiphaseTemperatureModel, model::Physics{T1,F,SO,M,Tu,E,D,BI},
-    prev, mdotf, rho, time, config
+    prev, mdotf, rho, time, config; outer=1
 ) where {T1,F,SO,M,Tu,E,D,BI}
 
     mesh = model.domain
-    (; T, Tf, cp_m, cpf_m, k_m, kf_m, rho_cp, mdot_cpf, coeffs) = model.energy
+    (; T, Tf, cp_m, cpf_m, k_m, kf_m, rho_cp, rho_cp_prev, mdot_cpf, coeffs) = model.energy
     (; energy_eqn, state) = energy
     (; solvers, hardware, boundaries) = config
     (; alpha, alphaf) = model.fluid
@@ -180,13 +193,38 @@ function energy!(
     interpolate!(cpf_m, cp_m, config)
     interpolate!(kf_m,  k_m,  config)
 
-    # 3) Time-term coefficient and Divergence flux.
-    @. rho_cp.values   = rho.values * cp_m.values
+    # 3) Divergence face flux (always the fresh value).
     @. mdot_cpf.values = mdotf.values * cpf_m.values
 
-    # 4) Solve the T equation.
+    # Time-term coefficient ρcp, with optional property under-relaxation
+    # across outer correctors.
+    #
+    # `outer == 1` establishes ρcpⁿ: properties are still evaluated at Tⁿ,
+    # so the fresh `rho·cp_m` IS ρcpⁿ. We take it un-relaxed and snapshot it
+    # into `rho_cp_prev` as the frozen RHS coefficient for the conservative
+    # time term (this also makes the very first time step correct, avoiding
+    # a zero-initialised snapshot).
+    #
+    # Later correctors advance `rho_cp` toward ρcpⁿ⁺¹. Real-fluid ρcp swings
+    # steeply through the pseudo-critical line and the conservative source
+    # ∝ (ρcpⁿ⁺¹ − ρcpⁿ)/Δt amplifies any corrector-to-corrector jump (∝ 1/Δt).
+    # Blending the fresh table value with the previous corrector's `rho_cp`
+    # (factor `prop_relax`) damps that swing so the outer loop contracts —
+    # the standard real-fluid remedy (cf. OpenFOAM `rho.relax()`). It is
+    # consistent: at outer convergence the fresh and previous values
+    # coincide, so the relaxation vanishes and the true ρcpⁿ⁺¹ is recovered.
+    # `prop_relax == 1` reproduces the un-relaxed behaviour exactly.
+    β = coeffs.prop_relax
+    if outer == 1
+        @. rho_cp.values      = rho.values * cp_m.values
+        @. rho_cp_prev.values = rho_cp.values
+    else
+        @. rho_cp.values = (1 - β) * rho_cp.values + β * (rho.values * cp_m.values)
+    end
+
+    # 4) Solve the T equation (conservative time term via `rho_prev`).
     @. prev = T.values
-    discretise!(energy_eqn, T, config, ConstantScalar(0.0))
+    discretise!(energy_eqn, T, config; rho_prev=rho_cp_prev)
     apply_boundary_conditions!(energy_eqn, boundaries.T, nothing, time, config)
     implicit_relaxation_diagdom!(energy_eqn, T.values, solvers.T.relax, nothing, config)
     update_preconditioner!(energy_eqn.preconditioner, mesh, config)

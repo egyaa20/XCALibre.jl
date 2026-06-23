@@ -243,10 +243,10 @@ end
 
 
 function solve_equation!(
-    eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup, config, rho_prev; time=nothing, ref=nothing, irelax=nothing
+    eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup, config; rho_prev=eqn.model.terms[1].flux, time=nothing, ref=nothing, irelax=nothing
     ) where {T<:ScalarModel,M,E,S,P}
 
-    discretise!(eqn, phi, config, rho_prev)
+    discretise!(eqn, phi, config; rho_prev=rho_prev)
     apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
     setReference!(eqn, ref, 1, config)
     if !isnothing(irelax)
@@ -259,12 +259,12 @@ function solve_equation!(
 end
 
 function solve_equation!(
-    psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir, config, rho_prev; time=nothing
+    psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir, config; rho_prev=psiEqn.model.terms[1].flux, time=nothing
     ) where {T<:VectorModel,M,E,S,P}
 
     mesh = psi.mesh
 
-    discretise!(psiEqn, psi, config, rho_prev)
+    discretise!(psiEqn, psi, config; rho_prev=rho_prev)
     update_equation!(psiEqn, config)
     
     apply_boundary_conditions!(psiEqn, psiBCs, xdir, time, config)
