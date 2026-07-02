@@ -19,6 +19,7 @@ dev/
 !NIST_*.csv
 *.txt
 CLAUDE.md
+AGENTS.md
 .claudeignore
 *.jld2
 *.log
