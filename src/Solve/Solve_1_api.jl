@@ -56,7 +56,7 @@ This function is used to provide solver settings that will be used internally in
 - `relax`: specifies the relaxation factor to be used e.g. set to 1 for no relaxation
 - `smoother`: specifies smoothing method to be applied before discretisation. `JacobiSmoother`: is currently the only choice (defaults to `nothing`)
 - `limit`: used in some solvers to bound the solution within these limits e.g. (min, max). It defaults to `nothing`
-- `itmax`: maximum number of iterations in a single solver pass (defaults to 1000) 
+- `itmax`: maximum number of iterations in a single solver pass (defaults to 1000, or 200 for `AMG`)
 - `atol`: absolute tolerance for the solver (default to eps(FloatType)^0.9)
 - `rtol`: set relative tolerance for the solver (defaults to 1e-1)
 - `float_type`: specifies the floating point type to be used by the solver. It is also used to estimate the absolute tolerance for the solver (defaults to `Float64`)
@@ -69,7 +69,7 @@ SolverSetup(;
         convergence, 
         relax, 
         limit=nothing,
-        itmax::I=1000, 
+        itmax::I=(solver isa AMG ? 200 : 1000),
         atol=(eps(float_type))^0.9,
         rtol=1e-1 |> float_type
         ) where{S1,S2,PT,I} = 
@@ -292,7 +292,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
 
     krylov_solve!(
         solver, opA, b, values; 
-        M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon)
+        M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon), history=false
         )
 
     # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution
@@ -306,9 +306,9 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     kernel! = _copy!(_setup(backend, workgroup, ndrange)...)
     kernel!(values, x)
 
-    Krylov.iteration_count(solver) == itmax && @warn "Maximum number of iterations reached!"
+    iterations = Krylov.iteration_count(solver)
+    iterations == itmax && @warn "Maximum number of iterations reached!"
 
-    # println(statistics(solver).niter)
     res = residual(phiEqn, component, config)
     return res
 end

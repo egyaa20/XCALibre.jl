@@ -69,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  Added capablity to write out TensorFields to .vtk/vtu including Reynolds Stress Tensor [#87](@ref)
 *  Extended `DirichLetFunction` to accept functions defining boundary condition for `ScalarFields` [#89](@ref)
 *  Implemented `CrankNicolson` time scheme (second order implicit-explicit) [#90](@ref)
+*  Implementation of a new AMG solver for symmetric matrices [#141](@ref)
 
 
 ### Fixed
