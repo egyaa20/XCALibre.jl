@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  Added initialisation logic for new Multiphase solver user-level API [#117](@ref)
 *  New Eulerian Thin Film model solver (2D only) [#120](@ref)
 *  Added an experimental algebraic multigrid solver stack with `AMG`, `SmoothAggregation`, `RugeStuben`, `AMGJacobi`, and `AMGChebyshev`
+*  Added a modular viscosity model framework (`Viscosity`) for compressible/weakly compressible fluids, with `ConstantViscosity` and temperature-dependent `SutherlandViscosity` models, updated per-iteration in the compressible SIMPLE and PISO solvers
 
 
 ### Fixed
