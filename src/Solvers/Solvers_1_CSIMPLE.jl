@@ -193,7 +193,8 @@ function CSIMPLE(
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
-    update_nueff!(nueff, nu, model.turbulence, config)
+    update_viscosity!(model.fluid, model.energy, config)
+    update_nueff!(nueff, nuf, model.turbulence, config)
     @. mueff.values = nueff.values * rhof.values
 
 
@@ -223,7 +224,7 @@ function CSIMPLE(
 
         # Set up and solve momentum equations
         rx, ry, rz = solve_equation!(
-            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config
+            U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; rho_prev=rho
             )
 
         # Solve energy equation and update thermo properties
@@ -312,8 +313,9 @@ function CSIMPLE(
         # correct_boundaries!(Uf, U, boundaries.U, time, config)
         
         # Perform turbulence calculations and update eddy viscosity
-        turbulence!(turbulenceModel, model, S, prev, time, config) 
-        update_nueff!(nueff, nu, model.turbulence, config)
+        turbulence!(turbulenceModel, model, S, prev, time, config)
+        update_viscosity!(model.fluid, model.energy, config)
+        update_nueff!(nueff, nuf, model.turbulence, config)
 
         if typeof(model.fluid) <: WeaklyCompressible
             rhorelax = solvers.p.relax
@@ -331,6 +333,8 @@ function CSIMPLE(
         else
             @. model.energy.mueff_cell.values = rho.values*(nu.values + nut.values)
         end
+
+
 
         # stor residuals and check for convergence
         R_ux[iteration] = rx
