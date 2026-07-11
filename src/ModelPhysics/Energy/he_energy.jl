@@ -185,24 +185,23 @@ function energy!(
         @. keff.values = mueff.values * gamma.values / Pr.values
     end
 
-    interpolate!(Uf, U, config)
-    correct_boundaries!(Uf, U, boundaries.U, time, config)
-    
-    @. K.values = 0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
-    @. Kf.values = 0.5*(Uf.x.values^2 + Uf.y.values^2 + Uf.z.values^2)
-
-    interpolate_upwind!(Kf, K, mdotf, config)
-    @. Kf.values *= mdotf.values
-    div!(divK, Kf, config)
-
-    @. dKdt.values = (rho.values*K.values - prevRhoK)/dt
-
-
-    # Set source term based on energy model type
+    # Kinetic-energy transport (divK, dKdt) and pressure work depend on the formulation.
+    # Enthalpy: solves h_s, needs +div(rho U K)+d(rho K)/dt and dp/dt source.
+    # Internal energy: solves e, has NO kinetic-energy terms; pressure work is -p*div(U).
     if model.energy isa SensibleEnthalpy
+        interpolate!(Uf, U, config)
+        correct_boundaries!(Uf, U, boundaries.U, time, config)
+        @. K.values = 0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
+        @. Kf.values = 0.5*(Uf.x.values^2 + Uf.y.values^2 + Uf.z.values^2)
+        interpolate_upwind!(Kf, K, mdotf, config)
+        @. Kf.values *= mdotf.values
+        div!(divK, Kf, config)
+        @. dKdt.values = (rho.values*K.values - prevRhoK)/dt
         @. S_he.values = (p.values - prevP)/dt
-    else  
-        _compute_pdivU!(S_he, p, gradU, config) # InternalEnergy: -p*div(U)
+    else
+        @. divK.values = 0
+        @. dKdt.values = 0
+        _compute_pdivU!(S_he, p, gradU, config)
         @. S_he.values = -S_he.values
     end
 

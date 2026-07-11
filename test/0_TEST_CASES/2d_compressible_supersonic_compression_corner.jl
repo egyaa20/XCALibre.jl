@@ -73,7 +73,7 @@ function run_compression_corner(energy, he_inlet)
         he = Schemes(time=SteadyState, divergence=BoundedUpwind)
     )
 
-    runtime = Runtime(iterations=400, write_interval=401, time_step=1)
+    runtime = Runtime(iterations=1000, write_interval=1001, time_step=1)
     hardware = Hardware(backend=backend, workgroup=workgroup)
     config = Configuration(; solvers, schemes, runtime, hardware, boundaries=BCs)
 
@@ -92,6 +92,10 @@ function run_compression_corner(energy, he_inlet)
     @test all(isfinite, residuals.Ux)            # BoundedUpwind stays bounded
     @test last(residuals.Ux) < 1e-4              # steady state reached
     @test last(residuals.p) < 1e-4
+    # Oblique shock (M=2, 15°) gives T2/T1 ≈ 1.27. A physical peak guards against the
+    # kinetic-energy source wrongly entering the internal-energy equation (Tmax ~2300).
+    @test all(isfinite, model.energy.T.values)
+    @test maximum(model.energy.T.values) < 1600.0
 end
 
 @testset "SensibleEnthalpy" begin
