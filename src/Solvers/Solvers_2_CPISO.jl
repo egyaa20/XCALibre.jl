@@ -222,7 +222,7 @@ function CPISO(
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
 
-        explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, config)
+        explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, boundaries.U, config)
         div!(divmugradUTx, mugradUTx, config)
         div!(divmugradUTy, mugradUTy, config)
         div!(divmugradUTz, mugradUTz, config)
@@ -311,11 +311,8 @@ function CPISO(
 
             if typeof(model.fluid) <: Compressible
                 @. mdotf.values += pconv.values*pf.values
-                correct_mass_flux!(model, mdotf, p, pconv, rhorDf, config)
-            elseif typeof(model.fluid) <: WeaklyCompressible
-                # correct_mass_flux!(mdotf, p_eqn, config)
-                correct_mass_flux!(model, mdotf, p, pconv, rhorDf, config)
             end
+            correct_mass_flux!(mdotf, p_eqn, config)
 
             # TO-DO: this needs to be exposed to users eventually
             @. rho.values = max.(Psi.values * p.values, 0.001)
