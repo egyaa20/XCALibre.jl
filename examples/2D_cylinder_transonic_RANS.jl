@@ -104,25 +104,26 @@ boundaries = assign(
 )
 time = SteadyState # Euler
 
-relax_p = time() isa SteadyState ? 0.15 : 1.00
-relax_U = time() isa SteadyState ? 0.6 : 1.00
+relax_p = time() isa SteadyState ? 0.3 : 1.00
+relax_U = time() isa SteadyState ? 0.7 : 1.00
+convergence = 1e-8
 solvers = (
     U = SolverSetup(
-        solver=Bicgstab(), preconditioner=Jacobi(), convergence=1e-7, relax=relax_U, rtol=1e-2
+        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=relax_U, rtol=1e-2
         ),
     p = SolverSetup(
-        solver=Bicgstab(), preconditioner=Jacobi(), convergence=1e-7, relax=relax_p, 
+        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=relax_p, 
         limit=(0.02*p_inf, 50*p_inf), rtol=1e-2
         ),
     he = SolverSetup(
-        solver=Bicgstab(), preconditioner=Jacobi(), convergence=1e-7, relax=relax_p,
+        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=relax_p,
         limit=(50.0, 6000.0), rtol=1e-2
         ),
     k = SolverSetup(
-        solver=Bicgstab(), preconditioner=Jacobi(), convergence=1e-7, relax=0.3, rtol=1e-2
+        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=0.6, rtol=1e-2
         ),
     omega = SolverSetup(
-        solver=Bicgstab(), preconditioner=Jacobi(), convergence=1e-7, relax=0.3, rtol=1e-2
+        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=0.6, rtol=1e-2
         )
 )
 
@@ -136,7 +137,7 @@ schemes = (
 )
 
 dt = time() isa SteadyState ? 1 : 5e-8
-runtime = Runtime(iterations=5000, write_interval=100, time_step=dt)
+runtime = Runtime(iterations=10000, write_interval=100, time_step=dt)
 hardware = Hardware(backend=backend, workgroup=workgroup)
 
 config = Configuration(;
