@@ -129,6 +129,8 @@ function CPISO(
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
     (; rho, rhof, nu, nuf) = model.fluid
+    (; nut) = model.turbulence
+
     mesh = model.domain
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
@@ -220,10 +222,7 @@ function CPISO(
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
 
-        ## CHECK GRADU AND EXPLICIT STRESSES
-        # grad!(gradU, Uf, U, boundaries.U, time, config) # calculated in `turbulence!`
-
-        explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, config)
+        explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, boundaries.U, config)
         div!(divmugradUTx, mugradUTx, config)
         div!(divmugradUTy, mugradUTy, config)
         div!(divmugradUTz, mugradUTz, config)
@@ -312,11 +311,8 @@ function CPISO(
 
             if typeof(model.fluid) <: Compressible
                 @. mdotf.values += pconv.values*pf.values
-                correct_mass_flux!(model, mdotf, p, pconv, rhorDf, config)
-            elseif typeof(model.fluid) <: WeaklyCompressible
-                # correct_mass_flux!(mdotf, p_eqn, config)
-                correct_mass_flux!(model, mdotf, p, pconv, rhorDf, config)
             end
+            correct_mass_flux!(mdotf, p_eqn, config)
 
             # TO-DO: this needs to be exposed to users eventually
             @. rho.values = max.(Psi.values * p.values, 0.001)
@@ -331,7 +327,14 @@ function CPISO(
         turbulence!(turbulenceModel, model, S, prev, time, config)
         update_viscosity!(model.fluid, model.energy, config)
         update_nueff!(nueff, nuf, model.turbulence, config)
+        
+        # update turbulent dynamic viscosity
         @. mueff.values = rhof.values*nueff.values
+        if model.turbulence isa Laminar 
+            @. model.energy.mueff_cell.values = rho.values*nu.values 
+        else
+            @. model.energy.mueff_cell.values = rho.values*(nu.values + nut.values)
+        end
 
         
         courant = max_courant_number!(cellsCourant, model, config)

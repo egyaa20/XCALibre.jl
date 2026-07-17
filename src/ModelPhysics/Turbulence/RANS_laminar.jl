@@ -6,7 +6,9 @@ export Laminar
 
 Laminar model definition for physics API.
 """
-struct Laminar <: AbstractDummyTurbulenceModel end 
+struct Laminar{SF} <: AbstractDummyTurbulenceModel
+    nut::SF
+end 
 Adapt.@adapt_structure Laminar
 
 # Model type definition (hold equation definitions and internal data)
@@ -27,8 +29,15 @@ LES{Laminar}() = begin # Empty constructor
 end
 
 # Functor as constructor (internally called by Physics API): Returns fields and user data
-(model::RANS{Laminar, ARG})(mesh) where ARG = Laminar()
-(model::LES{Laminar, ARG})(mesh) where ARG = Laminar()
+(model::RANS{Laminar, ARG})(mesh) where ARG = begin
+    nut = ConstantScalar(mesh)
+    Laminar(nut)
+end
+
+(model::LES{Laminar, ARG})(mesh) where ARG = begin
+    nut = ConstantScalar(mesh)
+    Laminar(nut)
+end
 
 # Model initialisation
 """
