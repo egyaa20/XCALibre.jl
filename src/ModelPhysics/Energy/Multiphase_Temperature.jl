@@ -8,9 +8,11 @@ Mixture-temperature energy model for two-phase flows. Solves
     ∂(ρ_m c_{p,m} T)/∂t + ∇·(ρ_m c_{p,m} U T) − ∇·(k_m ∇T) = ∂p/∂t + S_T
 
 The `∂p/∂t` pressure-work source (enabled by `pressure_work=true`, the default)
-is the low-Mach approximation of β_T·Dp/Dt with β_T ≈ 1 — exact for an ideal
-gas, approximate for liquids/supercritical fluids (the h-formulation carries
-the exact Dp/Dt). Disable with `pressure_work=false`.
+is the low-Mach approximation of the exact term β_T·T·Dp/Dt with the
+dimensionless group β_T·T taken as 1 — exact for an ideal gas (β_T = 1/T),
+an over-estimate for liquids (β_T·T ≈ 0.45 for liquid N2 at 78 K). The
+h-formulation carries the exact Dp/Dt with no such factor — prefer it where
+pressure work matters. Disable with `pressure_work=false`.
 
 where ρ_m, c_{p,m}, k_m are the α-blended mixture properties:
 
@@ -244,9 +246,10 @@ function energy!(
         @. rho_cp.values = (1 - β) * rho_cp.values + β * (rho.values * cp_m.values)
     end
 
-    # 3b) Pressure-work source ∂p/∂t ≈ β_T·Dp/Dt with β_T ≈ 1 (low-Mach; the
-    #     convective U·∇p part is neglected, the h-formulation carries the
-    #     exact term). `p = p_rgh + ρ·gh` is refreshed by the solver before
+    # 3b) Pressure-work source ∂p/∂t — approximates the exact β_T·T·Dp/Dt with
+    #     β_T·T ≈ 1 (ideal gas; ~0.45 for liquid N2) and drops the convective
+    #     U·∇p (low-Mach, consistent with neglecting kinetic-energy transport;
+    #     the h-formulation carries the exact term). `p = p_rgh + ρ·gh` is refreshed by the solver before
     #     the energy step. Computed once per time step (outer == 1) against
     #     the pⁿ snapshot — same convention as the ρcp snapshot above; later
     #     outer correctors reuse it.
