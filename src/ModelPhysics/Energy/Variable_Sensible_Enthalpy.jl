@@ -33,6 +33,9 @@ only reappears as the benign diffusion coefficient `k_eff/cp`.
 - `alpha_eff_f` : `k_eff/cp` at faces (Laplacian flux)
 - `mdot_hf`     : mass convection flux ρf·U·n·A at faces (Divergence flux);
                   the continuity-consistent ṁ, NOT the volumetric mdotf
+- `dpdt`        : pressure-work source ∂p/∂t [W/m³] — EXACT for the enthalpy
+                  equation (ρ Dh/Dt = Dp/Dt − ∇·q); low-Mach: U·∇p neglected
+- `p_old`       : pⁿ snapshot for the ∂p/∂t finite difference
 - `rho_h`       : Time-term coefficient ρ (ρⁿ⁺¹; optionally under-relaxed)
 - `rho_h_prev`  : ρⁿ snapshot — RHS of the conservative time term
 - `T_source`    : external heat source [W/m³] (Lee/RPI); zeros if unused
@@ -51,6 +54,8 @@ struct VariableSensibleEnthalpy{S,F,C} <: AbstractEnergyModel
     rho_h::S
     rho_h_prev::S
     T_source::S
+    dpdt::S              # pressure-work source ∂p/∂t; zeros if pressure_work=false
+    p_old::S             # pⁿ snapshot (p = p_rgh + ρ·gh)
     coeffs::C
 end
 Adapt.@adapt_structure VariableSensibleEnthalpy
@@ -63,12 +68,14 @@ Adapt.@adapt_structure VariableSensibleEnthalpyModel
 
 # API constructor — mirrors MultiphaseTemperature (same knobs), so a case
 # can switch formulation by changing only the model type.
-Energy{VariableSensibleEnthalpy}(; T_init=300.0, Pr_t=0.85, Pr_t_model::Symbol=:constant, prop_relax=1.0) = begin
+Energy{VariableSensibleEnthalpy}(; T_init=300.0, Pr_t=0.85, Pr_t_model::Symbol=:constant,
+                                   prop_relax=1.0, pressure_work::Bool=true) = begin
     Pr_t_model in (:constant, :kays_crawford) ||
         error("VariableSensibleEnthalpy: Pr_t_model must be :constant or :kays_crawford, got $Pr_t_model")
     (0.0 < prop_relax <= 1.0) ||
         error("VariableSensibleEnthalpy: prop_relax must be in (0, 1], got $prop_relax")
-    coeffs = (T_init=T_init, Pr_t=Pr_t, Pr_t_model=Pr_t_model, prop_relax=float(prop_relax))
+    coeffs = (T_init=T_init, Pr_t=Pr_t, Pr_t_model=Pr_t_model,
+              prop_relax=float(prop_relax), pressure_work=pressure_work)
     ARG = typeof(coeffs)
     Energy{VariableSensibleEnthalpy, ARG}(coeffs)
 end
@@ -87,9 +94,11 @@ end
     rho_h       = ScalarField(mesh)
     rho_h_prev  = ScalarField(mesh)
     T_source    = ScalarField(mesh)
+    dpdt        = ScalarField(mesh)   # zeros — populated per step if pressure_work
+    p_old       = ScalarField(mesh)
     coeffs      = energy.args
     VariableSensibleEnthalpy(h, hf, T, Tf, cp_m, k_m, alpha_eff, alpha_eff_f,
-                             mdot_hf, rho_h, rho_h_prev, T_source, coeffs)
+                             mdot_hf, rho_h, rho_h_prev, T_source, dpdt, p_old, coeffs)
 end
 
 # Fetch the HelmholtzTable the model depends on (errors clearly if absent —
@@ -112,10 +121,12 @@ function initialise(
     mdotf, rho, peqn, config
 ) where {T1,F,SO,M,Tu,E,D,BI}
 
-    (; h, T, rho_h, alpha_eff_f, mdot_hf, T_source) = energy
+    (; h, T, rho_h, alpha_eff_f, mdot_hf, T_source, dpdt, p_old) = energy
     (; solvers, schemes, boundaries) = config
     eqn = peqn.equation
 
+    # `+ Source(dpdt)` is the pressure-work term — exact for the enthalpy
+    # equation: ρ Dh/Dt = Dp/Dt − ∇·q (low-Mach: ∂p/∂t retained, U·∇p dropped).
     energy_eqn = (
         Time{schemes.h.time}(rho_h, h)
         + Divergence{schemes.h.divergence}(mdot_hf, h)
@@ -123,6 +134,7 @@ function initialise(
         ==
         Source(ConstantScalar(0.0))
         + Source(T_source)
+        + Source(dpdt)
     ) → eqn
 
     @reset energy_eqn.preconditioner = set_preconditioner(solvers.h.preconditioner, energy_eqn)
@@ -134,6 +146,12 @@ function initialise(
     interp_h_from_T!(h, T, model.fluid.p_rgh, table, config)
     @. rho_h.values = rho.values
     @. mdot_hf.values = mdotf.values   # finite seed; set to ρf·mdotf each solve
+
+    # Seed the pⁿ snapshot with the full pressure the solver maintains
+    # (p = p_rgh + ρ·gh) so the first step's ∂p/∂t is the true change, not a
+    # spurious (p − 0)/Δt kick from the hydrostatic field.
+    gh = model.fluid.physics_properties.gravity.gh
+    @. p_old.values = model.fluid.p_rgh.values + rho.values * gh.values
 
     init_residual = (:h, 1.0)
     state = ModelState(init_residual, false)
@@ -154,7 +172,7 @@ function energy!(
 ) where {T1,F,SO,M,Tu,E,D,BI}
 
     mesh = model.domain
-    (; h, hf, T, Tf, cp_m, k_m, alpha_eff, alpha_eff_f, mdot_hf, rho_h, rho_h_prev, coeffs) = model.energy
+    (; h, hf, T, Tf, cp_m, k_m, alpha_eff, alpha_eff_f, mdot_hf, rho_h, rho_h_prev, dpdt, p_old, coeffs) = model.energy
     (; energy_eqn, state) = energy
     (; solvers, hardware, boundaries) = config
     (; alpha, rhof) = model.fluid
@@ -206,6 +224,20 @@ function energy!(
     #     consistent, ∂ρ/∂t + ∇·(ρf·mdotf) = 0, so the h·(∂ρ/∂t + ∇·U) spurious
     #     source vanishes. Plain volumetric mdotf would drop the ρ entirely.
     @. mdot_hf.values = mdotf.values * rhof.values
+
+    # 3c) Pressure-work source ∂p/∂t — exact for the h-equation (low-Mach:
+    #     U·∇p neglected). `p = p_rgh + ρ·gh` is refreshed by the solver before
+    #     the energy step. Computed once per time step (outer == 1) against the
+    #     pⁿ snapshot — same convention as the ρ snapshot; later outers reuse it.
+    if coeffs.pressure_work
+        p = model.momentum.p
+        if outer == 1
+            dt_cpu = zeros(eltype(dpdt.values), 1)
+            copyto!(dt_cpu, config.runtime.dt)
+            @. dpdt.values = (p.values - p_old.values) / dt_cpu[1]
+            @. p_old.values = p.values
+        end
+    end
 
     # 4) Assemble and solve the enthalpy equation.
     @. prev = h.values

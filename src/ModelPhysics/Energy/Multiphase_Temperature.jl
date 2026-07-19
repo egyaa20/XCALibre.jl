@@ -5,7 +5,12 @@ export MultiphaseTemperature, MultiphaseTemperatureModel
 
 Mixture-temperature energy model for two-phase flows. Solves
 
-    ∂(ρ_m c_{p,m} T)/∂t + ∇·(ρ_m c_{p,m} U T) − ∇·(k_m ∇T) = 0
+    ∂(ρ_m c_{p,m} T)/∂t + ∇·(ρ_m c_{p,m} U T) − ∇·(k_m ∇T) = ∂p/∂t + S_T
+
+The `∂p/∂t` pressure-work source (enabled by `pressure_work=true`, the default)
+is the low-Mach approximation of β_T·Dp/Dt with β_T ≈ 1 — exact for an ideal
+gas, approximate for liquids/supercritical fluids (the h-formulation carries
+the exact Dp/Dt). Disable with `pressure_work=false`.
 
 where ρ_m, c_{p,m}, k_m are the α-blended mixture properties:
 
@@ -26,9 +31,11 @@ and `cp1, cp2, k1, k2` come from `Phase(rho=…, mu=…, cp=…, k=…)`.
 - `rho_cp_prev` : ρ·cp at the start of the time step (ρcpⁿ); RHS of the
                   conservative time term
 - `mdot_cpf` : ρ·cp·U·n·A at faces (Divergence flux)
+- `dpdt`     : pressure-work source ∂p/∂t [W/m³] (zeros when disabled)
+- `p_old`    : pⁿ snapshot for the ∂p/∂t finite difference
 - `coeffs`   : NamedTuple of constant coefficients (e.g. `T_init`)
 """
-struct MultiphaseTemperature{S1,F1,S2,F2,S3,F3,S4,S6,F4,S5,C} <: AbstractEnergyModel
+struct MultiphaseTemperature{S1,F1,S2,F2,S3,F3,S4,S6,F4,S5,S7,S8,C} <: AbstractEnergyModel
     T::S1
     Tf::F1
     cp_m::S2
@@ -39,6 +46,8 @@ struct MultiphaseTemperature{S1,F1,S2,F2,S3,F3,S4,S6,F4,S5,C} <: AbstractEnergyM
     rho_cp_prev::S6
     mdot_cpf::F4
     T_source::S5         # external T source (Lee latent heat etc.); zeros if unused
+    dpdt::S7             # pressure-work source ∂p/∂t; zeros if pressure_work=false
+    p_old::S8            # pⁿ snapshot (p = p_rgh + ρ·gh)
     coeffs::C
 end
 Adapt.@adapt_structure MultiphaseTemperature
@@ -64,12 +73,14 @@ Adapt.@adapt_structure MultiphaseTemperatureModel
 # runs where ρcp swings steeply through the pseudo-critical line and the
 # conservative time term otherwise destabilises the outer loop. It is
 # consistent — at outer convergence the relaxation vanishes.
-Energy{MultiphaseTemperature}(; T_init=300.0, Pr_t=0.85, Pr_t_model::Symbol=:constant, prop_relax=1.0) = begin
+Energy{MultiphaseTemperature}(; T_init=300.0, Pr_t=0.85, Pr_t_model::Symbol=:constant,
+                                prop_relax=1.0, pressure_work::Bool=true) = begin
     Pr_t_model in (:constant, :kays_crawford) ||
         error("MultiphaseTemperature: Pr_t_model must be :constant or :kays_crawford, got $Pr_t_model")
     (0.0 < prop_relax <= 1.0) ||
         error("MultiphaseTemperature: prop_relax must be in (0, 1], got $prop_relax")
-    coeffs = (T_init=T_init, Pr_t=Pr_t, Pr_t_model=Pr_t_model, prop_relax=float(prop_relax))
+    coeffs = (T_init=T_init, Pr_t=Pr_t, Pr_t_model=Pr_t_model,
+              prop_relax=float(prop_relax), pressure_work=pressure_work)
     ARG = typeof(coeffs)
     Energy{MultiphaseTemperature, ARG}(coeffs)
 end
@@ -86,8 +97,11 @@ end
     rho_cp_prev = ScalarField(mesh)
     mdot_cpf = FaceScalarField(mesh)
     T_source = ScalarField(mesh)   # zeros — populated by Lee/RPI updates each iter
+    dpdt     = ScalarField(mesh)   # zeros — populated per step if pressure_work
+    p_old    = ScalarField(mesh)
     coeffs   = energy.args
-    MultiphaseTemperature(T, Tf, cp_m, cpf_m, k_m, kf_m, rho_cp, rho_cp_prev, mdot_cpf, T_source, coeffs)
+    MultiphaseTemperature(T, Tf, cp_m, cpf_m, k_m, kf_m, rho_cp, rho_cp_prev,
+                          mdot_cpf, T_source, dpdt, p_old, coeffs)
 end
 
 """
@@ -102,13 +116,14 @@ function initialise(
     mdotf, rho, peqn, config
 ) where {T1,F,SO,M,Tu,E,D,BI}
 
-    (; T, rho_cp, kf_m, mdot_cpf, T_source) = energy
+    (; T, rho_cp, kf_m, mdot_cpf, T_source, dpdt, p_old) = energy
     (; solvers, schemes, boundaries) = config
     eqn = peqn.equation
 
     # `+ Source(T_source)` is for Lee phase-change latent heat (and any
     # other external source). The field starts at zero — only populated
     # if Lee/RPI is configured. With it zero, the equation is unchanged.
+    # `+ Source(dpdt)` is the pressure-work term ∂p/∂t (zeros when disabled).
     energy_eqn = (
         Time{schemes.T.time}(rho_cp, T)
         + Divergence{schemes.T.divergence}(mdot_cpf, T)
@@ -116,7 +131,14 @@ function initialise(
         ==
         Source(ConstantScalar(0.0))
         + Source(T_source)
+        + Source(dpdt)
     ) → eqn
+
+    # Seed the pⁿ snapshot with the full pressure the solver maintains
+    # (p = p_rgh + ρ·gh). Without this, the first step's ∂p/∂t would be the
+    # spurious (p − 0)/Δt of the whole hydrostatic field.
+    gh = model.fluid.physics_properties.gravity.gh
+    @. p_old.values = model.fluid.p_rgh.values + rho.values * gh.values
 
     @reset energy_eqn.preconditioner = set_preconditioner(solvers.T.preconditioner, energy_eqn)
     @reset energy_eqn.solver         = _workspace(solvers.T.solver, _b(energy_eqn))
@@ -146,7 +168,7 @@ function energy!(
 ) where {T1,F,SO,M,Tu,E,D,BI}
 
     mesh = model.domain
-    (; T, Tf, cp_m, cpf_m, k_m, kf_m, rho_cp, rho_cp_prev, mdot_cpf, coeffs) = model.energy
+    (; T, Tf, cp_m, cpf_m, k_m, kf_m, rho_cp, rho_cp_prev, mdot_cpf, dpdt, p_old, coeffs) = model.energy
     (; energy_eqn, state) = energy
     (; solvers, hardware, boundaries) = config
     (; alpha, alphaf) = model.fluid
@@ -220,6 +242,22 @@ function energy!(
         @. rho_cp_prev.values = rho_cp.values
     else
         @. rho_cp.values = (1 - β) * rho_cp.values + β * (rho.values * cp_m.values)
+    end
+
+    # 3b) Pressure-work source ∂p/∂t ≈ β_T·Dp/Dt with β_T ≈ 1 (low-Mach; the
+    #     convective U·∇p part is neglected, the h-formulation carries the
+    #     exact term). `p = p_rgh + ρ·gh` is refreshed by the solver before
+    #     the energy step. Computed once per time step (outer == 1) against
+    #     the pⁿ snapshot — same convention as the ρcp snapshot above; later
+    #     outer correctors reuse it.
+    if coeffs.pressure_work
+        p = model.momentum.p
+        if outer == 1
+            dt_cpu = zeros(eltype(dpdt.values), 1)
+            copyto!(dt_cpu, config.runtime.dt)
+            @. dpdt.values = (p.values - p_old.values) / dt_cpu[1]
+            @. p_old.values = p.values
+        end
     end
 
     # 4) Solve the T equation (conservative time term via `rho_prev`).
