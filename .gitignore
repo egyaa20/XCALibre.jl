@@ -37,3 +37,7 @@ examples/0_GRIDS/*
 
 # Simulation campaign outputs (checkpoints, VTK, SLURM logs)
 cases/**/runs/
+
+# Python bytecode
+__pycache__/
+*.pyc
