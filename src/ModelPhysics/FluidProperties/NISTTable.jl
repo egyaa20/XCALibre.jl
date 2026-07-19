@@ -155,13 +155,14 @@ _snapshot_from_fluid_properties(phase_setups, table::NISTTable) =
 build_property(table::NISTTable, mesh) = adapt(_get_backend(mesh), table)
 
 """
-    update_phase_properties_from_table!(phases, table::NISTTable, T_field, config)
+    update_phase_properties_from_table!(phases, table::NISTTable, T_field, p_rgh_field, config)
 
 Per-cell property update. Both phases receive identical values from the
-single-branch NIST table. Emits a warning once per session if any cell T
-leaves `T_range`.
+single-branch NIST table. `p_rgh_field` is accepted for interface parity with the
+3D `HelmholtzTable` but ignored (the NIST table is constant-pressure). Emits a
+warning once per session if any cell T leaves `T_range`.
 """
-function update_phase_properties_from_table!(phases, table::NISTTable, T_field, config)
+function update_phase_properties_from_table!(phases, table::NISTTable, T_field, p_rgh_field, config)
     phases[1].rho isa ScalarField || return nothing
     # Out-of-range monitor (cheap host-side reduction over GPU array)
     if !_nist_oor_warned[]

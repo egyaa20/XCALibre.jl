@@ -29,13 +29,6 @@ end
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
-        # Backward Euler of  ∂(c·φ)/∂t  with the coefficient `c = term.flux`
-        # (ρ for Sensible Enthalpy, ρ·cp for the mixture-temperature energy
-        # equation, or 1 for plain transport). The diagonal uses the current
-        # coefficient; the RHS uses `rho_prev` — the previous-step coefficient.
-        # `rho_prev` defaults (via discretise!) to `term.flux`, giving the
-        # lagged form `c·∂φ/∂t`. Pass a genuine previous-step field (e.g. ρcp^n)
-        # to get the fully conservative `∂(c·φ)/∂t`.
         volume = cell.volume
         vol_rdt = volume/runtime.dt[1]
         rho = term.flux[cID]   # works for ConstantScalar and ScalarField

@@ -130,6 +130,48 @@ function k_T(T::F, rho::F, constants, fluid) where F <: AbstractFloat
     return one(F) / (term1 * term2)
 end
 
+"""
+Computes the compressibility ψ = (∂ρ/∂p)_T in **mass** units [kg/(m³·Pa)] for the
+implicit pressure-equation term `Time(ψ, p)`.
+
+Analytical: from the Helmholtz EOS the pressure derivative at fixed T is
+`(∂p/∂ρ_mol)_T = R T (1 + 2 λʳ₀₁ + λʳ₀₂)`, so the molar density derivative is its
+reciprocal; the molar mass `M` converts to mass density. Equivalent to `ρ·k_T`
+(this is `M/(ρ_mol·R T·term2)·ρ_mol = M/(R T·term2)`), but written from `dp/dρ`
+directly so it cannot pick up the molar/mass factor confusion. Always > 0.
+
+`rho_mol` is the molar density (mol/m³) at the state — the same root the density
+solver returns.
+"""
+function compute_psi(T::F, rho_mol::F, constants, fluid) where F <: AbstractFloat
+    (; T_c, rho_c, R_univ, M) = constants
+    τ = T_c / T
+    δ = rho_mol / rho_c
+    dp_drho_mol = R_univ * T *
+        (one(F) + F(2) * lambda_r_01(δ, τ, constants, fluid) + lambda_r_02(δ, τ, constants, fluid))
+    return M / dp_drho_mol            # [kg/(m³·Pa)]
+end
+
+"""
+Computes (∂ρ/∂T)_p in **mass** units [kg/(m³·K)] — the explicit thermal-expansion
+density rate for the pressure-equation source `(∂ρ/∂T)·dT/dt`.
+
+Analytical: `(∂ρ/∂T)_p = -ρ·β`, with `β` the isobaric expansion coefficient (1/K)
+from `beta_calc`. Returns a NEGATIVE value over the heating range (density falls as
+T rises at fixed p). Uses `beta_calc` directly (the intensive 1/K value), avoiding
+the molar/mass `1/M` factor that `params_computation` applies to its β output.
+
+`rho_mol` is the molar density (mol/m³) at the state.
+"""
+function compute_drho_dT_p(T::F, rho_mol::F, constants, fluid) where F <: AbstractFloat
+    (; T_c, rho_c, M) = constants
+    τ = T_c / T
+    δ = rho_mol / rho_c
+    β = beta_calc(T, δ, τ, constants, fluid)   # 1/K (intensive)
+    rho_mass = rho_mol * M
+    return -rho_mass * β               # [kg/(m³·K)]
+end
+
 """Computes the ideal-gas isochoric heat capacity (Cv0) in J/(mol*K) at a given temperature."""
 function cv0_calc(T::F, constants, fluid) where F <: AbstractFloat
     (; T_c, R_univ) = constants

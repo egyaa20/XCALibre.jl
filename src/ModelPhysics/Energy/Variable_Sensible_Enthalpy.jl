@@ -31,6 +31,8 @@ only reappears as the benign diffusion coefficient `k_eff/cp`.
 - `k_m`         : mixture effective conductivity k + k_t [W/(m·K)]
 - `alpha_eff`   : `k_eff/cp` at cells (Laplacian coefficient)
 - `alpha_eff_f` : `k_eff/cp` at faces (Laplacian flux)
+- `mdot_hf`     : mass convection flux ρf·U·n·A at faces (Divergence flux);
+                  the continuity-consistent ṁ, NOT the volumetric mdotf
 - `rho_h`       : Time-term coefficient ρ (ρⁿ⁺¹; optionally under-relaxed)
 - `rho_h_prev`  : ρⁿ snapshot — RHS of the conservative time term
 - `T_source`    : external heat source [W/m³] (Lee/RPI); zeros if unused
@@ -45,6 +47,7 @@ struct VariableSensibleEnthalpy{S,F,C} <: AbstractEnergyModel
     k_m::S
     alpha_eff::S
     alpha_eff_f::F
+    mdot_hf::F
     rho_h::S
     rho_h_prev::S
     T_source::S
@@ -80,12 +83,13 @@ end
     k_m         = ScalarField(mesh)
     alpha_eff   = ScalarField(mesh)
     alpha_eff_f = FaceScalarField(mesh)
+    mdot_hf     = FaceScalarField(mesh)
     rho_h       = ScalarField(mesh)
     rho_h_prev  = ScalarField(mesh)
     T_source    = ScalarField(mesh)
     coeffs      = energy.args
     VariableSensibleEnthalpy(h, hf, T, Tf, cp_m, k_m, alpha_eff, alpha_eff_f,
-                             rho_h, rho_h_prev, T_source, coeffs)
+                             mdot_hf, rho_h, rho_h_prev, T_source, coeffs)
 end
 
 # Fetch the HelmholtzTable the model depends on (errors clearly if absent —
@@ -108,13 +112,13 @@ function initialise(
     mdotf, rho, peqn, config
 ) where {T1,F,SO,M,Tu,E,D,BI}
 
-    (; h, T, rho_h, alpha_eff_f, T_source) = energy
+    (; h, T, rho_h, alpha_eff_f, mdot_hf, T_source) = energy
     (; solvers, schemes, boundaries) = config
     eqn = peqn.equation
 
     energy_eqn = (
         Time{schemes.h.time}(rho_h, h)
-        + Divergence{schemes.h.divergence}(mdotf, h)
+        + Divergence{schemes.h.divergence}(mdot_hf, h)
         - Laplacian{schemes.h.laplacian}(alpha_eff_f, h)
         ==
         Source(ConstantScalar(0.0))
@@ -127,8 +131,9 @@ function initialise(
     # Seed h from T (case sets T = T_init before the run). ρ-coefficient is
     # initialised to the current density so the first assembly is sane.
     table = _helmholtz_table(model)
-    interp_h_from_T!(h, T, table, config)
+    interp_h_from_T!(h, T, model.fluid.p_rgh, table, config)
     @. rho_h.values = rho.values
+    @. mdot_hf.values = mdotf.values   # finite seed; set to ρf·mdotf each solve
 
     init_residual = (:h, 1.0)
     state = ModelState(init_residual, false)
@@ -149,10 +154,10 @@ function energy!(
 ) where {T1,F,SO,M,Tu,E,D,BI}
 
     mesh = model.domain
-    (; h, hf, T, Tf, cp_m, k_m, alpha_eff, alpha_eff_f, rho_h, rho_h_prev, coeffs) = model.energy
+    (; h, hf, T, Tf, cp_m, k_m, alpha_eff, alpha_eff_f, mdot_hf, rho_h, rho_h_prev, coeffs) = model.energy
     (; energy_eqn, state) = energy
     (; solvers, hardware, boundaries) = config
-    (; alpha) = model.fluid
+    (; alpha, rhof) = model.fluid
 
     phases = model.fluid.phases
     table  = _helmholtz_table(model)
@@ -194,6 +199,14 @@ function energy!(
         @. rho_h.values = (1 - β) * rho_h.values + β * rho.values
     end
 
+    # 3b) Convection face flux = continuity-consistent MASS flux ṁ = ρf·U·Sf.
+    #     The storage term is conservative ∂(ρh)/∂t, so the transport ∇·(ṁ h)
+    #     MUST carry ρ (dimensionally and for boundedness). ρf·mdotf is the same
+    #     mass flux the variable-density pressure equation makes divergence-
+    #     consistent, ∂ρ/∂t + ∇·(ρf·mdotf) = 0, so the h·(∂ρ/∂t + ∇·U) spurious
+    #     source vanishes. Plain volumetric mdotf would drop the ρ entirely.
+    @. mdot_hf.values = mdotf.values * rhof.values
+
     # 4) Assemble and solve the enthalpy equation.
     @. prev = h.values
     discretise!(energy_eqn, h, config; rho_prev=rho_h_prev)
@@ -203,7 +216,7 @@ function energy!(
     h_res = solve_system!(energy_eqn, solvers.h, h, nothing, config)
 
     # 5) Recover T from h by the monotone inversion (runaway-free), refresh faces.
-    invert_T_from_h!(T, h, table, config)
+    invert_T_from_h!(T, h, model.fluid.p_rgh, table, config)
     interpolate!(hf, h, config)
     correct_boundaries!(hf, h, boundaries.h, time, config)
     interpolate!(Tf, T, config)
