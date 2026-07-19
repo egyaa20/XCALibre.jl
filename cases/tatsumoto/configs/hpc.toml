@@ -1,0 +1,27 @@
+# =============================================================================
+# HPC / SLURM configuration for pipeline/submit.jl  (cluster: Ada, Nottingham)
+# Fill the CHANGE_ME fields once; everything else has working defaults.
+# =============================================================================
+
+[slurm]
+partition = "CHANGE_ME"        # `sinfo -s` on the cluster to list partitions
+account   = ""                 # empty -> --account omitted
+time      = "48:00:00"         # walltime per job (HH:MM:SS)
+time_prep = ""                 # optional per-stage override; empty -> `time`
+time_heated = ""
+cpus_per_task = 32
+mem       = "64G"
+gpu       = false              # true -> adds --gres=gpu:1 and keeps the case's
+                               # [hardware] backend; false -> backend forced to CPU
+
+[env]
+julia   = "julia"              # or absolute path (e.g. ~/.juliaup/bin/julia)
+threads = 0                    # JULIA_NUM_THREADS; 0 -> = cpus_per_task
+modules = []                   # e.g. ["gcc-uoneasy/12.3.0"] — `module load` lines
+project = ""                   # --project; empty -> repo root (auto-detected)
+
+[post]
+enable = false                 # true -> post.py submitted as a dependent job
+                               # (needs python3 + pyvista/matplotlib on the cluster;
+                               #  default: run post.py locally on synced results)
+python = "python3"

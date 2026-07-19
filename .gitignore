@@ -28,3 +28,12 @@ test/prep_heatflux.jl
 test/HeatFlux_1MPa.jl
 test/HeatFlux.jl
 test/tatsumoto/*
+# examples/0_GRIDS is collaterally ignored by the [0-9]*/ rule above.
+# Re-include ONLY the gzipped grids (large raw .unv stay local; stages
+# auto-decompress the .gz on first use).
+!examples/0_GRIDS/
+examples/0_GRIDS/*
+!examples/0_GRIDS/*.unv.gz
+
+# Simulation campaign outputs (checkpoints, VTK, SLURM logs)
+cases/**/runs/

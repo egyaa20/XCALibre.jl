@@ -1,0 +1,85 @@
+# =============================================================================
+# SUPERCRITICAL N2 heat transfer — Tatsumoto 2010, Fig. 5
+# P = 3.5 MPa (supercritical), T_in = 78 K, vertical heated quarter-pipe.
+#
+# Single run:   julia --project=. cases/tatsumoto/pipeline/submit.jl \
+#                     cases/tatsumoto/configs/supercritical.toml --local
+# HPC (SLURM):  julia --project=. cases/tatsumoto/pipeline/submit.jl \
+#                     cases/tatsumoto/configs/supercritical.toml
+# Batch sweep:  uncomment [batch] below — every combination becomes a DAG chain.
+# =============================================================================
+
+[case]
+name = "supercritical"         # names runs/<name>/ (checkpoints, vtk, post)
+# prep_stage   = "prep.jl"     # defaults; boiling.toml overrides these
+# heated_stage = "heated.jl"
+
+[mesh]
+grid  = "quarter_pipe_xfine"   # quarter_pipe_coarse | _fine | _xfine (auto-gunzipped)
+scale = 0.001                  # UNV length units -> metres
+
+[hardware]
+backend   = "CPU"              # "CPU" | "CUDA"  (submit.jl forces CPU when hpc.toml gpu=false)
+workgroup = 128                # ignored (AutoTune) on CPU
+
+[flow]
+U_in           = 0.24          # inlet bulk velocity [m/s]
+T_in           = 78.0          # inlet / bath temperature [K]
+turb_intensity = 0.05          # inlet turbulence intensity (fraction)
+D_hyd          = 5.4e-3        # hydraulic diameter [m] (tube ID)
+
+[thermo]
+pressure   = 3.5e6             # operating (absolute) pressure [Pa]
+T_table_lo = 75.0              # property-table T bounds [K]
+T_table_hi = 375.0
+n_points   = 3000              # base T resolution (auto-refined ×3 in T_c±10 K, ×5 in ±1 K)
+p_lo       = 3.4e6             # table pressure bounds [Pa] (absolute)
+p_hi       = 3.64e6
+n_p        = 12                # pressure samples (uniform, linear interpolation)
+
+[energy]
+# NOTE: "enthalpy" (VariableSensibleEnthalpy) is pending re-add to the rebuilt
+# multiphase solver — use "temperature" until then.
+formulation = "temperature"
+Pr_t        = 0.85             # turbulent Prandtl number (Pr_t_model = "constant")
+Pr_t_model  = "constant"       # "constant" | "kays_crawford"
+prop_relax  = 0.4              # ρ/ρcp under-relaxation across outer correctors (0,1]
+
+[heating]
+Q0  = 250.0                    # ramp prefactor [W/m^2]:  q(t) = Q0·exp(t/tau)
+tau = 2.0                      # ramp time constant [s] (paper value)
+
+[run]
+time_step  = 1.0e-4            # base dt [s] (adaptive grows from here)
+warmup_end = 5.0               # stage-2 flow-development stop time [s]
+heated_end = 3.0               # stage-3 heated stop time [s]
+stop_T     = 124.0             # one-shot checkpoint when hottest cell reaches this [K]
+discard_until = 0.0            # post.py ignores heated data before this time [s]
+post_stride   = 1              # post.py: plot every Nth snapshot
+
+write_interval_prep   = 5000   # VTK cadence [iterations], warmup stage
+write_interval_heated = 500    # heated stage
+
+inner_loops        = 2         # PISO pressure correctors
+n_outer_correctors = 3         # PIMPLE outer correctors (ignored if solver lacks them)
+outer_tol          = 1.0e-3
+
+[run.adaptive]
+maxCo      = 0.9
+maxAlphaCo = 0.85
+minShrink  = 0.1
+maxGrow    = 1.1
+
+# =============================================================================
+# BATCH MODE — uncomment to turn this file into a parameter sweep.
+# Every combination (mode="product") of the [batch.vary] lists becomes one
+# variant with its own runs/<name>__<param>-<val>/ directory and DAG chain.
+# Variants that only touch heated-stage sections (energy, heating, run) SHARE
+# one baseline warmup; variants touching mesh/flow/thermo/hardware/phase get
+# their own prep job automatically.
+# =============================================================================
+# [batch]
+# mode = "product"             # "product" (cross) | "zip" (1:1, equal lengths)
+# [batch.vary]
+# "energy.prop_relax"     = [0.3, 0.4, 0.6]
+# "run.adaptive.maxCo"    = [0.9, 5.0]
