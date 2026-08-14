@@ -109,10 +109,11 @@ render_template() {
     line=${line//@NAME@/$NAME};         line=${line//@NODES@/$NODES}
     line=${line//@NTASKS@/$NTASKS};     line=${line//@CPUS_PER_TASK@/$CPUS_PER_TASK}
     line=${line//@TIME@/$TIME};         line=${line//@PARTITION@/$PARTITION}
-    line=${line//@ACCOUNT@/$ACCOUNT};   line=${line//@MODULES@/$MODULES}
-    line=${line//@RUNDIR@/$RUNDIR};     line=${line//@SOLVER_CMD@/$SOLVER_CMD}
+    line=${line//@MODULES@/$MODULES};   line=${line//@RUNDIR@/$RUNDIR}
+    line=${line//@SOLVER_CMD@/$SOLVER_CMD}
     line=${line//@CASE_DIR@/$CASE_DIR}; line=${line//@COMMIT@/$COMMIT}
     line=${line//@DEPOT@/${JULIA_DEPOT:-$HOME/.julia}}
+    if [[ "$line" == *@ACCOUNT_LINE@* ]]; then [[ -n "$ACCOUNT" ]] && line="#SBATCH --account=$ACCOUNT" || continue; fi
     if [[ "$line" == *@GPU_LINE@*   ]]; then [[ -n "$GPUS" ]] && line="#SBATCH --gpus=$GPUS" || continue; fi
     if [[ "$line" == *@MEM_LINE@*   ]]; then [[ -n "$MEM"  ]] && line="#SBATCH --mem=$MEM"   || continue; fi
     if [[ "$line" == *@EXTRA_LINE@* ]]; then [[ -n "$SBATCH_EXTRA" ]] && line="#SBATCH $SBATCH_EXTRA" || continue; fi

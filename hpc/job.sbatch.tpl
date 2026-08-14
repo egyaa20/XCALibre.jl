@@ -1,6 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=xca-@NAME@
 #SBATCH --partition=@PARTITION@
+@ACCOUNT_LINE@
 #SBATCH --nodes=@NODES@
 #SBATCH --ntasks=@NTASKS@
 #SBATCH --cpus-per-task=@CPUS_PER_TASK@
