@@ -1,0 +1,12 @@
+# One file = one run. Filename minus .run is the run name and the dedup key:
+# editing this file will NOT resubmit. Copy to a new name for a new run.
+CASE_DIR=.
+SOLVER_CMD=julia --project=@RUNDIR@/src examples/2D_BFS.jl
+NODES=1
+NTASKS=1
+CPUS_PER_TASK=8
+TIME=00:30:00
+# PARTITION=defq
+# MODULES=julia
+# MEM=32G
+# SBATCH_EXTRA=--exclusive
