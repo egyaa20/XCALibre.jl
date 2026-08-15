@@ -1,5 +1,5 @@
 using XCALibre
-using CUDA
+# using CUDA # only needed for the CUDABackend() path below
 
 # backwardFacingStep_2mm, 5mm or 10mm
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
