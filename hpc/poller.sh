@@ -64,7 +64,8 @@ guards_ok() { # name -> 0 if we may submit now
 validate_repo() {
   [[ -n "${VALIDATE_CMD:-}" ]] || return 0
   [[ -x "$REPO_DIR/${VALIDATE_CMD#./}" ]] || { say "WARN no $VALIDATE_CMD, skipping validation"; return 0; }
-  ( cd "$REPO_DIR" && timeout "${VALIDATE_TIMEOUT:-900}" bash -c "$VALIDATE_CMD" ) \
+  ( cd "$REPO_DIR" && CFD_MODULES="$DEFAULT_MODULES" \
+    timeout "${VALIDATE_TIMEOUT:-900}" bash -c "$VALIDATE_CMD" ) \
     >"$STATE_DIR/logs/validate.log" 2>&1
 }
 

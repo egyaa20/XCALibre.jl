@@ -2,7 +2,25 @@
 # Gate between a phone-typed instruction and the queue. Runs on the LOGIN node
 # before any sbatch. Non-zero exit = nothing is submitted.
 # Keep it under VALIDATE_TIMEOUT (900 s) and off the compute nodes.
+
+# Cron (and any non-interactive `bash -c`, which is how poller.sh invokes
+# this) doesn't source /etc/profile.d, so Lmod's `module` function may not
+# exist here even though it's fine in an interactive ssh shell. Bootstrap it
+# before turning on -u below, since Lmod's own init scripts aren't
+# nounset-clean.
+if ! declare -F module >/dev/null 2>&1; then
+  for f in /etc/profile.d/z00_lmod.sh /etc/profile.d/00-modulepath.sh; do
+    [[ -r "$f" ]] && source "$f"
+  done
+fi
+
 set -euo pipefail
+
+if declare -F module >/dev/null 2>&1 && [[ -n "${CFD_MODULES:-}" ]]; then
+  for m in $CFD_MODULES; do
+    module load "$m" || { echo "FAIL: could not load module $m"; exit 1; }
+  done
+fi
 
 export JULIA_DEPOT_PATH="${JULIA_DEPOT_PATH:-$HOME/.julia}"
 
