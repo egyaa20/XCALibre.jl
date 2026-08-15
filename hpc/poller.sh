@@ -4,6 +4,18 @@
 #   poller.sh --loop     sweep forever (tmux fallback when cron is unavailable)
 #   poller.sh --status   print state
 # Submits and reports only; never runs solver work on the login node.
+
+# Cron's plain `bash -c` doesn't source /etc/profile.d, so neither Lmod's
+# `module` function nor the `slurm` module (sbatch/squeue/sacct) are loaded
+# here, unlike in an interactive shell. Bootstrap before -u, since Lmod's
+# init scripts aren't nounset-clean.
+if ! declare -F module >/dev/null 2>&1; then
+  for f in /etc/profile.d/z00_lmod.sh /etc/profile.d/00-modulepath.sh; do
+    [[ -r "$f" ]] && source "$f"
+  done
+fi
+command -v sbatch >/dev/null 2>&1 || { declare -F module >/dev/null 2>&1 && module load slurm 2>/dev/null; }
+
 set -uo pipefail
 
 MODE="${1:---once}"
