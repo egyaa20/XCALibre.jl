@@ -47,5 +47,33 @@ for f in residuals.dat forces.dat convergence.csv monitor.csv error_norms.csv; d
 done
 cp -- *.png @RUNDIR@/summary/ 2>/dev/null || true
 
+# Post-process: on success, render the pressure field from the last .vtk
+# written (off-screen, via the pyvista venv set up separately on the login
+# node — compute nodes have no network to install anything). On failure,
+# write a text summary instead. Either way this must not flip the job's
+# own exit code.
+if (( rc == 0 )); then
+  last_vtk=$(ls -t -- *.vtk 2>/dev/null | head -1)
+  if [[ -n "$last_vtk" ]]; then
+    module load python-uoneasy/3.12.3-GCCcore-13.3.0 mesa-uoneasy/23.1.9-GCCcore-13.2.0 2>/dev/null \
+      || echo "WARN postprocess modules not loaded"
+    if [[ -x "$HOME/cfd-pipeline/venv-pyvista/bin/python3" ]]; then
+      "$HOME/cfd-pipeline/venv-pyvista/bin/python3" \
+        "@RUNDIR@/src/hpc/postprocess_vtk.py" "$last_vtk" "@RUNDIR@/summary/pressure_xy.png" \
+        || echo "WARN postprocess_vtk.py failed on $last_vtk"
+    else
+      echo "WARN no pyvista venv at \$HOME/cfd-pipeline/venv-pyvista, skipping postprocess"
+    fi
+  else
+    echo "WARN no .vtk file found for postprocessing"
+  fi
+else
+  {
+    echo "run=@NAME@ FAILED exit_code=$rc commit=@COMMIT@"
+    echo "--- tail of slurm log ---"
+    tail -n 100 "@RUNDIR@/slurm-${SLURM_JOB_ID:-unknown}.out" 2>/dev/null
+  } >@RUNDIR@/summary/error.txt
+fi
+
 echo "exit=$rc"
 exit $rc

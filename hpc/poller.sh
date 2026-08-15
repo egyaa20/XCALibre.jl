@@ -302,12 +302,12 @@ build_index() {
 
 publish() {
   ensure_status_repo
-  rm -rf "$STATUS_DIR/jobs" "$STATUS_DIR/artifacts"
-  mkdir -p "$STATUS_DIR/jobs" "$STATUS_DIR/artifacts"
+  rm -rf "$STATUS_DIR/jobs" "$STATUS_DIR/results"
+  mkdir -p "$STATUS_DIR/jobs" "$STATUS_DIR/results"
   cp "$STATE_DIR"/jobs/*.json "$STATUS_DIR/jobs/" 2>/dev/null || true
   ( cd "$STATE_DIR/publish" 2>/dev/null &&
     find . -type f -size -"$(( ${MAX_PUBLISH_BYTES:-262144} / 1024 ))"k \
-      -exec cp --parents {} "$STATUS_DIR/artifacts/" \; ) 2>/dev/null || true
+      -exec cp --parents {} "$STATUS_DIR/results/" \; ) 2>/dev/null || true
   tail -n 200 "$LOG" >"$STATUS_DIR/poller.log"
   build_index
   git -C "$STATUS_DIR" add -A
