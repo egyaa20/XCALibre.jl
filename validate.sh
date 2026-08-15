@@ -36,6 +36,16 @@ julia --project=. -e '
 echo "== load =="
 julia --project=. -e 'using XCALibre' || { echo "FAIL: package does not load"; exit 1; }
 
+echo "== load (offline) =="
+# The actual compute-node job runs with JULIA_PKG_OFFLINE=true (no network
+# there). Instantiating above can silently paper over a Manifest that's
+# stale relative to the installed Julia version or registry state, since
+# online mode is free to fix things up quietly. Re-check under the same
+# offline constraint the real job faces, so that gap gets caught here
+# instead of after a real sbatch submission.
+JULIA_PKG_OFFLINE=true julia --project=. -e 'using XCALibre' \
+  || { echo "FAIL: package does not load offline (JULIA_PKG_OFFLINE=true) — Manifest.toml is likely out of sync with this Julia version; try Pkg.resolve()"; exit 1; }
+
 echo "== fast tests =="
 # Swap for your real smoke test. Keep it short — this runs on every submission.
 # Good candidates: an MMS convergence check on a tiny mesh, or a single-step

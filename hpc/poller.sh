@@ -92,6 +92,12 @@ snapshot() { # name -> sets RUNDIR to a frozen copy of the current commit
   RUNDIR="$SCRATCH_ROOT/${1}-$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$RUNDIR/src" || return 1
   git -C "$REPO_DIR" archive HEAD | tar -x -C "$RUNDIR/src" || return 1
+  # Manifest.toml is gitignored (deliberately, so it's not part of the
+  # tracked tree), so `git archive` never includes it. Without it, the job
+  # runs offline against no resolved manifest at all. Carry over the one
+  # validate_repo() just instantiated/precompiled against in $REPO_DIR, so
+  # what was validated is what actually runs.
+  [[ -f "$REPO_DIR/Manifest.toml" ]] && cp "$REPO_DIR/Manifest.toml" "$RUNDIR/src/Manifest.toml"
 }
 
 # ------------------------------------------------------ mode: spec files
