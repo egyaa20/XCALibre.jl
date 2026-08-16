@@ -284,11 +284,35 @@ function find_density_advanced(T::F, P_target::F, rho_guess::F, constants, fluid
         step = f / dp_drho
         relaxation_coeff = one(F)
         rho_new = rho - ( relaxation_coeff * step )
-        
-        # Check for nonphysical results
-        if rho_new <= 0 || !isfinite(rho_new)
 
-            error("[Density Solver] Nonphysical density value was obtained")
+        # Check for nonphysical results. dp/drho -> 0 at the critical point
+        # (by definition), and stays anomalously small over a wide band of
+        # rho around rho_c on the critical isotherm (both dp/drho AND
+        # d2p/drho2 vanish there), so a fixed-length step can overshoot to
+        # rho<=0 without the true root being unreachable -- it's an
+        # overshoot, not evidence Newton can't converge. Halve the step and
+        # retry a few times (standard damped-Newton practice) before giving
+        # up; this only engages on the overshoot path, so it can't change
+        # behaviour for any state that was already converging cleanly.
+        if rho_new <= 0 || !isfinite(rho_new)
+            # Not a literal division-by-zero: dp/drho passes through zero
+            # continuously near rho_c, so `step` is finite but can be many
+            # orders of magnitude larger than rho (observed: step~2e8 against
+            # rho~1e4, a 4-5 decade gap) -- a handful of halvings isn't
+            # enough headroom. 60 gives ~10^18 of margin, so any step that's
+            # merely large (not literally Inf/NaN) is covered; halving Inf or
+            # NaN still can't produce a finite value at any depth, so those
+            # correctly still fall through to the error below.
+            recovered = false
+            for _ in 1:60
+                step /= F(2)
+                rho_new = rho - ( relaxation_coeff * step )
+                if rho_new > 0 && isfinite(rho_new)
+                    recovered = true
+                    break
+                end
+            end
+            recovered || error("[Density Solver] Nonphysical density value was obtained")
         end
         rho = rho_new
     end
