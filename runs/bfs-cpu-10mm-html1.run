@@ -1,0 +1,12 @@
+# One file = one run. Filename minus .run is the run name and the dedup key:
+# editing this file will NOT resubmit. Copy to a new name for a new run.
+#
+# Same BFS case as bfs-cpu-10mm-run4 (COMPLETED, converged in 623 iters).
+# Rerun here to exercise the new interactive-HTML postprocessing path:
+# p_scene.html at decimate=0.75 alongside the existing p_xy.png.
+CASE_DIR=.
+SOLVER_CMD=julia --project=@RUNDIR@/src examples/2D_BFS.jl
+NODES=1
+NTASKS=1
+CPUS_PER_TASK=8
+TIME=00:30:00
