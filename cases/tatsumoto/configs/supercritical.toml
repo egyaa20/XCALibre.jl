@@ -15,8 +15,29 @@ name = "supercritical"         # names runs/<name>/ (checkpoints, vtk, post)
 # heated_stage = "heated.jl"
 
 [mesh]
-grid  = "quarter_pipe_xfine"   # quarter_pipe_coarse | _fine | _xfine (auto-gunzipped)
-scale = 0.001                  # UNV length units -> metres
+# Built on the cluster by SALOME (cases/tatsumoto/mesh/quarter_pipe.py) into a
+# content-addressed cache; change any value below and the next submit builds a
+# new mesh, leaving the old one cached. To use a committed grid instead, delete
+# the three sub-tables and set `grid = "quarter_pipe_xfine"`.
+scale = 0.001                  # UNV length units (mm) -> metres
+
+[mesh.geometry]                # all lengths in mm
+radius     = 2.7               # tube ID 5.4 mm (paper) -> R = 2.7
+L_entrance = 200.0             # unheated development length (paper: 200 mm = 37d)
+L_heated   = 100.0             # heated section (paper: 100 mm)
+L_exit     = 0.0               # unheated extension past the heated section
+core_ratio = 0.4               # O-grid core half-size as a fraction of R
+
+[mesh.resolution]
+n_quarter  = 16                # circumferential / core-square segments
+n_radial   = 30                # wall-normal segments (these carry the BL)
+axial_cell = 1.0               # target axial cell size [mm]
+
+[mesh.boundary_layer]
+# Target first wall-normal cell height [mm]; the grading ratio is solved for
+# it. The two setpoints need different values — 3.7 m/s has a far thinner
+# viscous sublayer than 0.24 m/s — so this is the natural key to vary.
+first_cell = 0.01
 
 [hardware]
 backend   = "CPU"              # "CPU" | "CUDA"  (submit.jl forces CPU when hpc.toml gpu=false)

@@ -63,6 +63,33 @@ function resolve_grid(gridname)
 end
 
 """
+    resolve_mesh(cfg) -> path
+
+Mesh file for this case, covering both sources:
+
+  * generated — `[mesh.geometry]` present: the mesh was built by SALOME on the
+    cluster and `submit.jl` recorded its cache path in `[mesh] generated_file`.
+    Nothing is hashed or derived here; the materialised case.toml is the single
+    source of truth so a run always uses exactly the mesh its DAG built.
+  * named — legacy `[mesh] grid = "quarter_pipe_fine"` from examples/0_GRIDS.
+"""
+function resolve_mesh(cfg)
+    m = cfg["mesh"]
+    if haskey(m, "generated_file")
+        f = abspath(m["generated_file"])
+        isfile(f) || error("""
+            Generated mesh missing: $f
+            The mesh stage should have built it. Rebuild with:
+              julia --project=. cases/tatsumoto/pipeline/submit.jl <case.toml> --stages mesh
+            """)
+        return f
+    end
+    haskey(m, "grid") || error(
+        "[mesh] needs either `grid = \"<name>\"` or a [mesh.geometry] block")
+    return resolve_grid(m["grid"])
+end
+
+"""
     run_solver!(model, config; kwargs...)
 
 Call the multiphase solver with only the kwargs the INSTALLED solver supports.

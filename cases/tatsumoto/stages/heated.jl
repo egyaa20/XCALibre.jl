@@ -59,7 +59,7 @@ end
 hardware = Hardware(backend = backend, workgroup = workgroup)
 
 # --- Mesh --------------------------------------------------------------------
-mesh_file = resolve_grid(mesh_cfg["grid"])
+mesh_file = resolve_mesh(CFG)
 mesh      = UNV3D_mesh(mesh_file, scale = Float64(mesh_cfg["scale"]))
 mesh_dev  = adapt(backend, mesh)
 

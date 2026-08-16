@@ -26,23 +26,26 @@ import pyvista as pv
 pv.OFF_SCREEN = True
 
 
-def render_png(mesh, field: str, png_path: str) -> None:
+def render_png(mesh, field: str, png_path: str, flat: bool) -> None:
     """Static view at the X-Y plane; slices mid-Z if the mesh has depth."""
-    zmin, zmax = mesh.bounds[4], mesh.bounds[5]
-    flat = (zmax - zmin) < 1e-9
-
     plotter = pv.Plotter(off_screen=True, window_size=(1000, 800))
     if flat:
         plotter.add_mesh(mesh, scalars=field, cmap="viridis", show_edges=False)
     else:
         center = mesh.center
-        mid_z = (zmin + zmax) / 2.0
-        plane = mesh.slice(normal="z", origin=(center[0], center[1], mid_z))
+        plane = mesh.slice(normal="z", origin=center)
         plotter.add_mesh(plane, scalars=field, cmap="viridis", show_edges=False)
     plotter.view_xy()
     plotter.add_scalar_bar(title=field)
     plotter.screenshot(png_path)
     plotter.close()
+
+
+# Below this many triangles, decimation is pure quality loss: the ~1 MB
+# embedded VTK.js viewer dwarfs the geometry's contribution to file size,
+# so there's nothing to gain, and coarsening a mesh this small visibly
+# blocks up any sharp gradient (e.g. behind a BFS step).
+MIN_CELLS_FOR_DECIMATION = 5000
 
 
 def prepare_surface(mesh, field: str, reduction: float):
@@ -56,6 +59,10 @@ def prepare_surface(mesh, field: str, reduction: float):
                 .triangulate())
 
     if reduction <= 0.0:
+        return surf
+    if surf.n_cells < MIN_CELLS_FOR_DECIMATION:
+        print(f"skipping decimation: surface has {surf.n_cells} triangles "
+              f"(< {MIN_CELLS_FOR_DECIMATION}), not worth the quality loss")
         return surf
     try:
         decimated = surf.decimate(reduction)
@@ -80,13 +87,16 @@ def prepare_surface(mesh, field: str, reduction: float):
     return decimated
 
 
-def export_html(mesh, field: str, reduction: float, html_path: str) -> None:
+def export_html(mesh, field: str, reduction: float, html_path: str, flat: bool) -> None:
     surf = prepare_surface(mesh, field, reduction)
 
     plotter = pv.Plotter(off_screen=True)
     plotter.add_mesh(surf, scalars=field, cmap="viridis", show_edges=False)
     plotter.add_scalar_bar(title=field)
-    plotter.view_isometric()
+    # Matches render_png: an isometric camera on an essentially flat mesh
+    # just tilts a thin plane into a confusing sliver. Genuinely 3D fields
+    # still get isometric so their shape is visible at all.
+    plotter.view_xy() if flat else plotter.view_isometric()
     plotter.export_html(html_path)
     plotter.close()
 
@@ -109,14 +119,17 @@ def main() -> None:
             f"cell_data={list(mesh.cell_data.keys())} "
             f"point_data={list(mesh.point_data.keys())}")
 
+    zmin, zmax = mesh.bounds[4], mesh.bounds[5]
+    flat = (zmax - zmin) < 1e-9
+
     png_path = f"{args.outdir}/{field}_xy.png"
-    render_png(mesh, field, png_path)
+    render_png(mesh, field, png_path, flat)
     print(f"wrote {png_path}")
 
     # Best-effort: never let a missing trame backend cost us the PNG.
     html_path = f"{args.outdir}/{field}_scene.html"
     try:
-        export_html(mesh, field, args.decimate, html_path)
+        export_html(mesh, field, args.decimate, html_path, flat)
         print(f"wrote {html_path}")
     except Exception as exc:  # noqa: BLE001
         print(f"WARN interactive HTML export failed: {exc}", file=sys.stderr)

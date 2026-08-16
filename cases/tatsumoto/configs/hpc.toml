@@ -20,6 +20,20 @@ threads = 0                    # JULIA_NUM_THREADS; 0 -> = cpus_per_task
 modules = []                   # e.g. ["gcc-uoneasy/12.3.0"] — `module load` lines
 project = ""                   # --project; empty -> repo root (auto-detected)
 
+[mesh]
+# SALOME mesh generation (used when the case has a [mesh.geometry] block).
+# There is no salome module on Ada; it runs from a singularity image built
+# once on the login node:
+#   module load singularity/3.8.5
+#   singularity build --sandbox salome_sandbox docker://simvia/salome:latest
+#   chmod -R a+rX salome_sandbox            # rootless build leaves KERNEL/bin unreadable
+#   singularity build salome-9.14.0.sif salome_sandbox
+container     = "/gpfs01/home/egyaa20/cfd-pipeline/containers/salome-9.14.0.sif"
+modules       = ["singularity/3.8.5"]
+time          = "02:00:00"
+cpus_per_task = 4
+mem           = "16G"
+
 [post]
 enable = false                 # true -> post.py submitted as a dependent job
                                # (needs python3 + pyvista/matplotlib on the cluster;

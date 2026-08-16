@@ -7,12 +7,17 @@
 #   --hpc <hpc.toml>     cluster config          (default: configs/hpc.toml)
 #   --dry-run            write job scripts + print the DAG, submit nothing
 #   --local              run stages sequentially on this machine (no SLURM)
-#   --stages a,b,c       subset of prep,heated,post (default: prep,heated
-#                        [+post if enabled in hpc.toml / always offered locally])
+#   --stages a,b,c       subset of mesh,prep,heated,post (default: mesh,prep,
+#                        heated [+post if enabled in hpc.toml / always locally])
 #   --reprep             force warmup even if a checkpoint already exists
 #
 # Behaviour:
-#   * No [batch] section  -> single variant, DAG: prep -> heated (-> post).
+#   * No [batch] section  -> single variant, DAG: mesh -> prep -> heated (-> post).
+#   * [mesh.geometry] present -> the mesh is BUILT by SALOME on the cluster
+#     (singularity container, see [mesh] in hpc.toml) into a content-addressed
+#     cache under runs/_meshes/, keyed by a hash of the mesh parameters. An
+#     already-cached mesh is reused and no mesh job is submitted. Without
+#     [mesh.geometry], [mesh] grid = "<name>" selects a committed grid as before.
 #   * With [batch]        -> one variant per parameter combination
 #     (mode="product") or per zipped tuple (mode="zip"). Variants whose varied
 #     keys only touch heated-stage sections share ONE baseline warmup job;
@@ -26,11 +31,20 @@
 # =============================================================================
 
 using TOML
+using SHA
 
 const CAMPAIGN = dirname(@__DIR__)                       # cases/tatsumoto
 const STAGES   = joinpath(CAMPAIGN, "stages")
 const RUNS     = joinpath(CAMPAIGN, "runs")
+const MESHES   = joinpath(RUNS, "_meshes")               # shared mesh cache
 const REPO     = dirname(dirname(CAMPAIGN))              # repository root
+const MESH_PY  = joinpath(CAMPAIGN, "mesh", "quarter_pipe.py")
+
+# Parameters understood by the SALOME generator, in the order it documents
+# them. Anything else in [mesh.*] is a submitter concern (scale, grid, ...).
+const MESH_PARAM_KEYS = ("radius", "L_entrance", "L_heated", "L_exit", "core_ratio",
+                         "n_quarter", "n_radial", "axial_cell",
+                         "first_cell", "bl_growth", "bl_flip")
 
 # Varied keys with these prefixes invalidate the shared warmup:
 const WARMUP_PREFIXES = ("mesh.", "flow.", "thermo.", "hardware.", "phase.")
@@ -71,6 +85,103 @@ sanitize(x) = replace(string(x), "." => "p", "-" => "m", "/" => "_", " " => "")
 short_key(k) = String(last(split(k, ".")))
 
 is_warmup_key(k) = any(startswith(k, p) for p in WARMUP_PREFIXES) || k in WARMUP_KEYS
+
+# --------------------------------------------------------------- meshing
+"True when [mesh] describes a mesh to generate rather than a committed grid."
+is_generated_mesh(mesh_cfg) = haskey(mesh_cfg, "geometry")
+
+"Flatten [mesh.geometry|resolution|boundary_layer] into the generator's params."
+function mesh_params(mesh_cfg)
+    p = Dict{String,Any}()
+    for sect in ("geometry", "resolution", "boundary_layer")
+        haskey(mesh_cfg, sect) || continue
+        for (k, v) in mesh_cfg[sect]
+            k in MESH_PARAM_KEYS ||
+                error("unknown mesh parameter [mesh.$sect] $k — valid: $(join(MESH_PARAM_KEYS, ", "))")
+            p[k] = v
+        end
+    end
+    return p
+end
+
+"""
+Canonical JSON for the SALOME generator.
+
+Keys are emitted in a fixed order with a fixed float format so the text is a
+function of the values alone — the cache hash is taken over this string, and
+an incidental reordering in the TOML must not silently invalidate a mesh.
+`first_cell` is emitted as null when absent, which is how the generator is
+told to fall back to `bl_growth`.
+"""
+function mesh_params_json(p)
+    fmt(v) = v isa Bool ? (v ? "true" : "false") :
+             v isa Integer ? string(v) : string(float(v))
+    lines = String[]
+    for k in MESH_PARAM_KEYS
+        haskey(p, k) || continue
+        push!(lines, "  \"$k\": $(fmt(p[k]))")
+    end
+    haskey(p, "first_cell") || push!(lines, "  \"first_cell\": null")
+    return "{\n" * join(lines, ",\n") * "\n}\n"
+end
+
+"Cache paths for a mesh spec: (unv, params.json, 12-char hash)."
+function mesh_cache_paths(mesh_cfg)
+    json = mesh_params_json(mesh_params(mesh_cfg))
+    h = bytes2hex(sha256(json))[1:12]
+    return (joinpath(MESHES, "quarter_pipe-$h.unv"),
+            joinpath(MESHES, "quarter_pipe-$h.params.json"),
+            h, json)
+end
+
+"Write the params file for a generated mesh and return its .unv cache path."
+function stage_mesh_params(mesh_cfg)
+    unv, jsonf, h, json = mesh_cache_paths(mesh_cfg)
+    mkpath(MESHES)
+    write(jsonf, json)
+    return unv, jsonf, h
+end
+
+function write_mesh_job(hpc, name, run_dir, unv, jsonf)
+    m = hpc["mesh"]
+    s = hpc["slurm"]
+    lines = String[
+        "#!/bin/bash",
+        "#SBATCH --job-name=$(name)-mesh",
+        "#SBATCH --partition=$(s["partition"])",
+        "#SBATCH --nodes=1",
+        "#SBATCH --ntasks=1",
+        "#SBATCH --cpus-per-task=$(get(m, "cpus_per_task", 4))",
+        "#SBATCH --mem=$(get(m, "mem", "16G"))",
+        "#SBATCH --time=$(get(m, "time", "02:00:00"))",
+        "#SBATCH --output=$(joinpath(run_dir, "slurm"))/%x-%j.out",
+    ]
+    isempty(s["account"]) || push!(lines, "#SBATCH --account=$(s["account"])")
+    push!(lines, "")
+    for mod in get(m, "modules", String[])
+        push!(lines, "module load $mod")
+    end
+    append!(lines, [
+        "set -euo pipefail",
+        # Idempotent: the cache key is the mesh spec, so an existing file is
+        # by definition the mesh this job would have produced. Re-running the
+        # DAG (or a sibling variant) must not rebuild it.
+        "if [[ -f '$unv' ]]; then echo \"mesh already built: $unv\"; exit 0; fi",
+        "export SALOME_MESH_PARAMS='$jsonf'",
+        "export SALOME_MESH_OUT='$unv.tmp'",
+        "singularity exec '$(m["container"])' salome -t '$MESH_PY'",
+        # Publish atomically: a half-written .unv left by a timeout would
+        # otherwise look like a valid cache hit to every later run. The stats
+        # sidecar needs no move — the generator derives its name by stripping
+        # one extension, so writing to <unv>.tmp already lands it at
+        # <unv>.mesh.json, next to where the mesh itself is about to appear.
+        "mv '$unv.tmp' '$unv'",
+        "echo \"mesh written: $unv\"",
+    ])
+    path = joinpath(run_dir, "slurm", "mesh.sbatch")
+    write(path, join(lines, "\n") * "\n")
+    return path
+end
 
 # ------------------------------------------------------- batch expansion
 "Expand [batch] into (name_suffix, overrides::Dict, own_prep::Bool) tuples."
@@ -121,6 +232,12 @@ function materialise(cfg, name, overrides, hpc; warmup_from=nothing)
         setdeep!(v, "hardware.backend", "CPU")
     end
     warmup_from === nothing || setdeep!(v, "run.warmup_from", warmup_from)
+    # Resolve the mesh AFTER overrides: a batch variant that varies a mesh
+    # parameter must hash its own value, not the baseline's.
+    if is_generated_mesh(v["mesh"])
+        unv, _, _ = stage_mesh_params(v["mesh"])
+        v["mesh"]["generated_file"] = unv
+    end
     mkpath(joinpath(run_dir, "slurm"))
     path = joinpath(run_dir, "case.toml")
     open(path, "w") do io
@@ -178,6 +295,37 @@ sbatch!(script; dep=nothing, dry=false) = begin
     readchomp(`sbatch $args`)
 end
 
+"""
+    ensure_mesh!(mesh_ids, hpc, opts, case_toml, name, run_dir) -> jobid | nothing
+
+Make sure this case's mesh exists, returning a job id to depend on (or
+`nothing` if the mesh is already on disk / was submitted for an earlier
+variant sharing the same spec). `mesh_ids` maps cache hash -> job id, which is
+what stops a sweep of N solver variants from launching N identical mesh jobs.
+"""
+function ensure_mesh!(mesh_ids, hpc, opts, case_toml, name, run_dir)
+    vcfg = TOML.parsefile(case_toml)
+    is_generated_mesh(vcfg["mesh"]) || return nothing
+    unv, jsonf, h = stage_mesh_params(vcfg["mesh"])
+    if isfile(unv)
+        println("[$name]  mesh   cached ($(basename(unv)))")
+        return nothing
+    end
+    if haskey(mesh_ids, h)
+        println("[$name]  mesh   shared with an earlier variant ($(mesh_ids[h]))")
+        return mesh_ids[h]
+    end
+    if opts["local"]
+        run_local_mesh(hpc, unv, jsonf)
+        return nothing
+    end
+    js = write_mesh_job(hpc, name, run_dir, unv, jsonf)
+    id = sbatch!(js; dry=opts["dry"])
+    mesh_ids[h] = id
+    println("[$name]  mesh   $id  ($(basename(unv)))")
+    return id
+end
+
 # ------------------------------------------------------------------- main
 function main(argv)
     opts = parse_args(argv)
@@ -194,6 +342,10 @@ function main(argv)
     batch = length(variants) > 1 || variants[1][1] != ""
     share_warmup = batch && any(!own for (_, _, own) in variants)
 
+    # One mesh job per distinct mesh spec, keyed by cache hash: variants that
+    # differ only in solver settings share a mesh and must not each rebuild it.
+    mesh_ids = Dict{String,Any}()
+
     println("="^78)
     println("Campaign: $base_name   variants: $(length(variants))" *
             (share_warmup ? "   (shared baseline warmup)" : ""))
@@ -209,12 +361,16 @@ function main(argv)
         if isfile(ckpt) && !opts["reprep"]
             println("[baseline]  warmup checkpoint exists -> shared prep skipped")
         elseif opts["local"]
+            want("mesh") && ensure_mesh!(mesh_ids, hpc, opts, btoml, "baseline", bdir)
             run_local_stage(hpc, prep_stage, btoml)
         else
+            bmesh = want("mesh") ?
+                ensure_mesh!(mesh_ids, hpc, opts, btoml, "baseline", bdir) : nothing
             js = write_job(hpc, "prep", base_name, bdir, prep_stage, btoml;
                            time_override=hpc["slurm"]["time_prep"])
-            base_prep_id = sbatch!(js; dry=opts["dry"])
-            println("[baseline]  prep job $base_prep_id  ($js)")
+            base_prep_id = sbatch!(js; dep=bmesh, dry=opts["dry"])
+            println("[baseline]  prep job $base_prep_id  ($js)" *
+                    (bmesh === nothing ? "" : "  (afterok:$bmesh)"))
         end
     end
 
@@ -225,6 +381,10 @@ function main(argv)
         vdir = joinpath(RUNS, name)
         wend = Float64(cfg["run"]["warmup_end"])
         own_ckpt = joinpath(vdir, "warmup_t$(wend).jld2")
+
+        # --- mesh (stage 0): build this variant's mesh if it isn't cached ---
+        mesh_id = want("mesh") ?
+            ensure_mesh!(mesh_ids, hpc, opts, vtoml, name, vdir) : nothing
 
         if opts["local"]
             println("-"^78); println("[local] $name")
@@ -244,17 +404,21 @@ function main(argv)
             else
                 js = write_job(hpc, "prep", name, vdir, prep_stage, vtoml;
                                time_override=hpc["slurm"]["time_prep"])
-                prep_id = sbatch!(js; dry=opts["dry"])
-                println("[$name]  prep   $prep_id")
+                prep_id = sbatch!(js; dep=mesh_id, dry=opts["dry"])
+                println("[$name]  prep   $prep_id" *
+                        (mesh_id === nothing ? "" : "  (afterok:$mesh_id)"))
             end
         end
         heat_id = nothing
         if want("heated")
             js = write_job(hpc, "heated", name, vdir, heated_stage, vtoml;
                            time_override=hpc["slurm"]["time_heated"])
-            heat_id = sbatch!(js; dep=prep_id, dry=opts["dry"])
+            # Skipped prep still leaves a mesh dependency to honour: heated
+            # reads the mesh too, so it must not start before the mesh lands.
+            hdep = prep_id === nothing ? mesh_id : prep_id
+            heat_id = sbatch!(js; dep=hdep, dry=opts["dry"])
             println("[$name]  heated $heat_id" *
-                    (prep_id === nothing ? "" : "  (afterok:$prep_id)"))
+                    (hdep === nothing ? "" : "  (afterok:$hdep)"))
         end
         if do_post
             js = write_job(hpc, "post", name, vdir, "", vtoml)
@@ -275,6 +439,15 @@ function run_local_stage(hpc, stage_file, case_toml)
     jl = e["julia"]
     println("  \$ $jl --project=$project $(joinpath(STAGES, stage_file)) $case_toml")
     run(`$jl --project=$project $(joinpath(STAGES, stage_file)) $case_toml`)
+end
+
+function run_local_mesh(hpc, unv, jsonf)
+    m = hpc["mesh"]
+    println("  \$ singularity exec $(m["container"]) salome -t $MESH_PY")
+    withenv("SALOME_MESH_PARAMS" => jsonf, "SALOME_MESH_OUT" => unv * ".tmp") do
+        run(`singularity exec $(m["container"]) salome -t $MESH_PY`)
+    end
+    mv(unv * ".tmp", unv; force=true)   # stats sidecar already lands correctly
 end
 
 function run_local_post(hpc, case_toml)
