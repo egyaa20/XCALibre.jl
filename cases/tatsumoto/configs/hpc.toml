@@ -11,7 +11,9 @@
 # beyond the ordering.
 partition = "defq,shortq,devq"
 account   = ""                 # empty -> --account omitted
-time      = "48:00:00"         # walltime per job (HH:MM:SS)
+time      = "11:30:00"         # walltime per job (HH:MM:SS); under shortq's
+                               # 12h cap so prep/heated can also queue there,
+                               # not just defq
 time_prep = ""                 # optional per-stage override; empty -> `time`
 time_heated = ""
 cpus_per_task = 32
