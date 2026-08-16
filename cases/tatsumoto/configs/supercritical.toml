@@ -30,7 +30,7 @@ core_ratio = 0.4               # O-grid core half-size as a fraction of R
 
 [mesh.resolution]
 n_quarter = 10                 # circumferential / core-square segments
-n_radial  = 20                 # wall-normal segments (these carry the BL)
+n_radial  = 50                 # wall-normal segments (these carry the BL)
 n_axial   = 300                # total axial segments, split across
                                 # entrance/heated/exit by length (300 mm total
                                 # -> 1 mm cells at L_entrance=200/L_heated=100)
@@ -61,11 +61,11 @@ first_cell = 0.000392          # y+ ~ 1 at U_in=3.7 m/s, sized at the WALL
                                 # Using the inlet value alone would have been
                                 # ~3x too coarse exactly where the case exists
                                 # to resolve the deterioration regime.
-                                # BL grading ratio comes out to ~1300 over
-                                # n_radial=20 (~46% per-cell growth) — steep
-                                # enough that outer BL cell skew is worth
-                                # checking if the solve struggles; increasing
-                                # n_radial eases the grading at higher cost.
+                                # BL grading ratio: n_radial=50 gives ~491.9
+                                # (~13.5% per-cell growth) for this first_cell,
+                                # vs ~1300 (~46% growth) at n_radial=20 — 50
+                                # was chosen to ease that, at ~2.2x the cell
+                                # count (150k -> 330k total).
                                 # For 0.24 m/s redo this sweep — the wall
                                 # temperature profile differs.
 
