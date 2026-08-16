@@ -41,16 +41,33 @@ n_axial   = 300                # total axial segments, split across
 # note in [flow] below) — the two setpoints need different values since
 # 3.7 m/s has a far thinner viscous sublayer than 0.24 m/s, so this is the
 # natural key to vary per variant.
-first_cell = 0.001166          # y+ ~ 1 at U_in=3.7 m/s. Derived from the real
-                                # N2 Helmholtz EOS at (T=78K, p=3.5MPa):
-                                # rho=811.7 kg/m3, mu=165.4 uPa.s -> nu=2.038e-7
-                                # m2/s, via Blasius/Fanning Cf=0.079*Re^-0.25
-                                # (Re=98048, Cf=0.00446, u_tau=0.1748 m/s).
-                                # Blasius is nominally valid to Re~1e5, so this
-                                # is a sizing estimate, not the converged y+ —
-                                # check the actual wall shear once this run
-                                # completes and re-mesh if it's off.
-                                # For 0.24 m/s the same method gives 0.01277 mm.
+first_cell = 0.000392          # y+ ~ 1 at U_in=3.7 m/s, sized at the WALL
+                                # condition, not the inlet — the BL spacing is
+                                # one fixed value swept the length of the pipe
+                                # (structured extrusion, can't vary axially),
+                                # so it has to cover the worst point along it.
+                                #
+                                # nu = mu/rho is NOT monotonic in T here: mu
+                                # falls faster than rho as the wall heats
+                                # toward Tc'=126.8K, so nu bottoms out AT Tc',
+                                # not at either end of the range (Helmholtz EOS
+                                # @ 3.5 MPa: rho 812->328 kg/m3, mu 165->19
+                                # uPa.s from 78K to 126.8K; past Tc' rho keeps
+                                # falling but mu flattens, so nu turns back up).
+                                # Blasius/Fanning at each T (U=3.7 m/s bulk):
+                                #   T=78.0K (inlet): first_cell=1.166 um
+                                #   T=126.8K (Tc'):  first_cell=0.392 um  <- used
+                                #   T=150.0K:        first_cell=0.612 um
+                                # Using the inlet value alone would have been
+                                # ~3x too coarse exactly where the case exists
+                                # to resolve the deterioration regime.
+                                # BL grading ratio comes out to ~1300 over
+                                # n_radial=20 (~46% per-cell growth) — steep
+                                # enough that outer BL cell skew is worth
+                                # checking if the solve struggles; increasing
+                                # n_radial eases the grading at higher cost.
+                                # For 0.24 m/s redo this sweep — the wall
+                                # temperature profile differs.
 
 [hardware]
 backend   = "CPU"              # "CPU" | "CUDA"  (submit.jl forces CPU when hpc.toml gpu=false)
