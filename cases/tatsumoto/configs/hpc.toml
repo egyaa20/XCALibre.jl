@@ -4,7 +4,12 @@
 # =============================================================================
 
 [slurm]
-partition = "CHANGE_ME"        # `sinfo -s` on the cluster to list partitions
+# Comma list -> SLURM runs the job on whichever becomes eligible first. devq
+# is listed last (lowest priority) since its 1 h cap makes it usable only for
+# the mesh job anyway; anything requesting more than 1 h is automatically
+# ineligible for devq regardless of list order, so this doesn't need enforcing
+# beyond the ordering.
+partition = "defq,shortq,devq"
 account   = ""                 # empty -> --account omitted
 time      = "48:00:00"         # walltime per job (HH:MM:SS)
 time_prep = ""                 # optional per-stage override; empty -> `time`

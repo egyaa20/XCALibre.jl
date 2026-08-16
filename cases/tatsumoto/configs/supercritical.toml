@@ -29,22 +29,39 @@ L_exit     = 0.0               # unheated extension past the heated section
 core_ratio = 0.4               # O-grid core half-size as a fraction of R
 
 [mesh.resolution]
-n_quarter  = 16                # circumferential / core-square segments
-n_radial   = 30                # wall-normal segments (these carry the BL)
-axial_cell = 1.0               # target axial cell size [mm]
+n_quarter = 10                 # circumferential / core-square segments
+n_radial  = 20                 # wall-normal segments (these carry the BL)
+n_axial   = 300                # total axial segments, split across
+                                # entrance/heated/exit by length (300 mm total
+                                # -> 1 mm cells at L_entrance=200/L_heated=100)
 
 [mesh.boundary_layer]
 # Target first wall-normal cell height [mm]; the grading ratio is solved for
-# it. The two setpoints need different values — 3.7 m/s has a far thinner
-# viscous sublayer than 0.24 m/s — so this is the natural key to vary.
-first_cell = 0.01
+# it. first_cell below is sized for y+ ~ 1 at U_in = 3.7 m/s (see the run
+# note in [flow] below) — the two setpoints need different values since
+# 3.7 m/s has a far thinner viscous sublayer than 0.24 m/s, so this is the
+# natural key to vary per variant.
+first_cell = 0.001166          # y+ ~ 1 at U_in=3.7 m/s. Derived from the real
+                                # N2 Helmholtz EOS at (T=78K, p=3.5MPa):
+                                # rho=811.7 kg/m3, mu=165.4 uPa.s -> nu=2.038e-7
+                                # m2/s, via Blasius/Fanning Cf=0.079*Re^-0.25
+                                # (Re=98048, Cf=0.00446, u_tau=0.1748 m/s).
+                                # Blasius is nominally valid to Re~1e5, so this
+                                # is a sizing estimate, not the converged y+ —
+                                # check the actual wall shear once this run
+                                # completes and re-mesh if it's off.
+                                # For 0.24 m/s the same method gives 0.01277 mm.
 
 [hardware]
 backend   = "CPU"              # "CPU" | "CUDA"  (submit.jl forces CPU when hpc.toml gpu=false)
 workgroup = 128                # ignored (AutoTune) on CPU
 
 [flow]
-U_in           = 0.24          # inlet bulk velocity [m/s]
+U_in           = 3.7           # inlet bulk velocity [m/s] — validation setpoint;
+                                # mesh.boundary_layer.first_cell is sized for
+                                # this U_in (y+ ~ 1). Changing U_in without
+                                # rechecking first_cell will silently change
+                                # the achieved y+.
 T_in           = 78.0          # inlet / bath temperature [K]
 turb_intensity = 0.05          # inlet turbulence intensity (fraction)
 D_hyd          = 5.4e-3        # hydraulic diameter [m] (tube ID)

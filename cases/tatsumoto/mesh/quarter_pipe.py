@@ -80,7 +80,9 @@ PARAM_DEFAULTS = {
     # -- resolution ----------------------------------------------------------
     "n_quarter":  10,      # segments on core + circumferential edges
     "n_radial":   20,      # segments on radial (wall-normal) edges; carries BL
-    "axial_cell": 1.2,     # target axial cell size [mm]; per-zone counts derived
+    "n_axial":    300,     # total axial segments across the FULL pipe length;
+                           # split across entrance/heated/exit proportionally
+                           # to zone length (uniform axial cell size)
 
     # -- boundary layer ------------------------------------------------------
     # Preferred: state the target first wall-normal cell height directly and
@@ -156,7 +158,7 @@ L_EXIT     = float(P["L_exit"])
 CORE_RATIO = float(P["core_ratio"])
 N_QUARTER  = int(P["n_quarter"])
 N_RADIAL   = int(P["n_radial"])
-AXIAL_CELL = float(P["axial_cell"])
+N_AXIAL    = int(P["n_axial"])
 BL_FLIP    = bool(P["bl_flip"])
 
 if L_HEAT <= 0:
@@ -185,10 +187,16 @@ else:
 fc_axis = first_cell_of(L_RAD_AXIS, N_RADIAL, BL_SCALE)
 fc_diag = first_cell_of(L_RAD_DIAG, N_RADIAL, BL_SCALE)
 
-# Per-zone axial counts from the target cell size (uniform across zones).
-n_ax_ent  = max(1, int(round(L_ENT   / AXIAL_CELL))) if L_ENT  > 0 else 0
-n_ax_heat = max(1, int(round(L_HEAT  / AXIAL_CELL)))
-n_ax_exit = max(1, int(round(L_EXIT  / AXIAL_CELL))) if L_EXIT > 0 else 0
+if N_AXIAL < 1:
+    raise SystemExit("n_axial must be >= 1")
+
+# Per-zone axial counts: N_AXIAL split proportionally to zone length, giving a
+# uniform axial cell size across entrance/heated/exit. Each present zone
+# keeps at least 1 segment even if its share rounds to 0.
+AXIAL_CELL = Z_TOTAL / N_AXIAL
+n_ax_ent  = max(1, int(round(L_ENT  / AXIAL_CELL))) if L_ENT  > 0 else 0
+n_ax_heat = max(1, int(round(L_HEAT / AXIAL_CELL)))
+n_ax_exit = max(1, int(round(L_EXIT / AXIAL_CELL))) if L_EXIT > 0 else 0
 n_ax_total = n_ax_ent + n_ax_heat + n_ax_exit
 
 cross_cells = N_QUARTER ** 2 + 2 * N_QUARTER * N_RADIAL
@@ -198,8 +206,8 @@ print("  Quarter pipe : R = %g mm, total L = %g mm" % (R, Z_TOTAL))
 print("    entrance %g mm (%d cells) | heated %g mm (%d) | exit %g mm (%d)"
       % (L_ENT, n_ax_ent, L_HEAT, n_ax_heat, L_EXIT, n_ax_exit))
 print("  core_ratio = %g (core half-size %.4g mm)" % (CORE_RATIO, c))
-print("  n_quarter=%d, n_radial=%d, axial_cell=%g mm"
-      % (N_QUARTER, N_RADIAL, AXIAL_CELL))
+print("  n_quarter=%d, n_radial=%d, n_axial=%d (cell size ~%.4g mm)"
+      % (N_QUARTER, N_RADIAL, N_AXIAL, AXIAL_CELL))
 print("  BL scale factor = %.4g (flip=%s)" % (BL_SCALE, BL_FLIP))
 print("  first wall cell ~ %.5g mm (axis edges), %.5g mm (diagonal)"
       % (fc_axis, fc_diag))

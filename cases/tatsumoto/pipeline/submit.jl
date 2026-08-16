@@ -43,7 +43,7 @@ const MESH_PY  = joinpath(CAMPAIGN, "mesh", "quarter_pipe.py")
 # Parameters understood by the SALOME generator, in the order it documents
 # them. Anything else in [mesh.*] is a submitter concern (scale, grid, ...).
 const MESH_PARAM_KEYS = ("radius", "L_entrance", "L_heated", "L_exit", "core_ratio",
-                         "n_quarter", "n_radial", "axial_cell",
+                         "n_quarter", "n_radial", "n_axial",
                          "first_cell", "bl_growth", "bl_flip")
 
 # Varied keys with these prefixes invalidate the shared warmup:
