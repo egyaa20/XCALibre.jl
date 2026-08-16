@@ -28,6 +28,7 @@ source "$CONF"
 WHOAMI="${USER:-$(id -un)}"
 STATE_DIR="${STATE_DIR:-$HOME/.cfd-pipeline}"
 mkdir -p "$STATE_DIR/jobs" "$STATE_DIR/logs" "$STATE_DIR/publish"
+PUBLISH_TMP_BRANCH="__publish_staging"   # scratch ref for the orphan publish
 LOCK="$STATE_DIR/poller.lock"
 HEARTBEAT="$STATE_DIR/heartbeat"
 LOG="$STATE_DIR/logs/poller.log"
@@ -312,14 +313,24 @@ publish() {
   mkdir -p "$STATUS_DIR/jobs" "$STATUS_DIR/results"
   cp "$STATE_DIR"/jobs/*.json "$STATUS_DIR/jobs/" 2>/dev/null || true
   ( cd "$STATE_DIR/publish" 2>/dev/null &&
-    find . -type f -size -"$(( ${MAX_PUBLISH_BYTES:-262144} / 1024 ))"k \
+    find . -type f -size -"$(( ${MAX_PUBLISH_BYTES:-10485760} / 1024 ))"k \
       -exec cp --parents {} "$STATUS_DIR/results/" \; ) 2>/dev/null || true
   tail -n 200 "$LOG" >"$STATUS_DIR/poller.log"
   build_index
   git -C "$STATUS_DIR" add -A
   git -C "$STATUS_DIR" diff --cached --quiet && return 0
+  # Publish as a single root commit. Interactive scenes run to several MB
+  # each; appending them would grow every clone of this branch without
+  # bound. A force-push only moves the ref -- the old commits stay
+  # reachable from it -- so the history has to be dropped deliberately.
+  git -C "$STATUS_DIR" branch -q -D "$PUBLISH_TMP_BRANCH" 2>/dev/null || true
+  git -C "$STATUS_DIR" checkout -q --orphan "$PUBLISH_TMP_BRANCH" \
+    || { say "WARN orphan checkout failed, skipping publish"; return 0; }
+  git -C "$STATUS_DIR" add -A
   git -C "$STATUS_DIR" commit -q -m "status $(date -u +%FT%TZ)"
+  git -C "$STATUS_DIR" branch -q -M "$STATUS_BRANCH"
   git -C "$STATUS_DIR" push -q --force origin "$STATUS_BRANCH" 2>>"$LOG" || say "WARN status push failed"
+  git -C "$STATUS_DIR" gc --auto --quiet 2>/dev/null || true
 }
 
 # ------------------------------------------------------------------ sweep

@@ -55,11 +55,16 @@ cp -- *.png @RUNDIR@/summary/ 2>/dev/null || true
 if (( rc == 0 )); then
   last_vtk=$(ls -t -- *.vtk 2>/dev/null | head -1)
   if [[ -n "$last_vtk" ]]; then
-    module load python-uoneasy/3.12.3-GCCcore-13.3.0 mesa-uoneasy/23.1.9-GCCcore-13.2.0 2>/dev/null \
-      || echo "WARN postprocess modules not loaded"
+    # Load individually: these two carry different GCCcore versions and a
+    # combined load can fail as a pair, taking down the one that would
+    # otherwise have worked.
+    for pm in python-uoneasy/3.12.3-GCCcore-13.3.0 mesa-uoneasy/23.1.9-GCCcore-13.2.0; do
+      module load "$pm" 2>/dev/null || echo "WARN postprocess module $pm not loaded"
+    done
     if [[ -x "$HOME/cfd-pipeline/venv-pyvista/bin/python3" ]]; then
       "$HOME/cfd-pipeline/venv-pyvista/bin/python3" \
-        "@RUNDIR@/src/hpc/postprocess_vtk.py" "$last_vtk" "@RUNDIR@/summary/pressure_xy.png" \
+        "@RUNDIR@/src/hpc/postprocess_vtk.py" "$last_vtk" "@RUNDIR@/summary" \
+        --field p --decimate 0.75 \
         || echo "WARN postprocess_vtk.py failed on $last_vtk"
     else
       echo "WARN no pyvista venv at \$HOME/cfd-pipeline/venv-pyvista, skipping postprocess"
