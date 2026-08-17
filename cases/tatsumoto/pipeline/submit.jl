@@ -10,6 +10,11 @@
 #   --stages a,b,c       subset of mesh,prep,heated,post (default: mesh,prep,
 #                        heated [+post if enabled in hpc.toml / always locally])
 #   --reprep             force warmup even if a checkpoint already exists
+#   --job-report <path>  append "<name>-<stage> <jobid>" lines here as each
+#                        sbatch call succeeds. Consumed by hpc/poller.sh's
+#                        hook mode (CFD_JOB_REPORT) so a `git push` alone can
+#                        drive submission with no interactive SSH/VPN needed
+#                        -- see pipeline/on_update.sh. A no-op if omitted.
 #
 # Behaviour:
 #   * No [batch] section  -> single variant, DAG: mesh -> prep -> heated (-> post).
@@ -58,7 +63,8 @@ const WARMUP_KEYS     = ("run.warmup_end", "run.time_step", "run.adaptive.maxCo"
 # ----------------------------------------------------------------- utilities
 function parse_args(argv)
     opts = Dict{String,Any}("stages" => nothing, "hpc" => joinpath(CAMPAIGN, "configs", "hpc.toml"),
-                            "dry" => false, "local" => false, "reprep" => false, "case" => nothing)
+                            "dry" => false, "local" => false, "reprep" => false, "case" => nothing,
+                            "job_report" => nothing)
     i = 1
     while i <= length(argv)
         a = argv[i]
@@ -67,13 +73,14 @@ function parse_args(argv)
         elseif a == "--reprep";   opts["reprep"] = true
         elseif a == "--hpc";      opts["hpc"] = abspath(argv[i+=1])
         elseif a == "--stages";   opts["stages"] = strip.(split(argv[i+=1], ","))
+        elseif a == "--job-report"; opts["job_report"] = abspath(argv[i+=1])
         elseif startswith(a, "--"); error("unknown option $a")
         else opts["case"] = abspath(a)
         end
         i += 1
     end
     opts["case"] === nothing && error(
-        "usage: julia pipeline/submit.jl <case.toml> [--hpc hpc.toml] [--dry-run] [--local] [--stages prep,heated,post] [--reprep]")
+        "usage: julia pipeline/submit.jl <case.toml> [--hpc hpc.toml] [--dry-run] [--local] [--stages prep,heated,post] [--reprep] [--job-report path]")
     return opts
 end
 
@@ -301,6 +308,24 @@ sbatch!(script; dep=nothing, dry=false) = begin
 end
 
 """
+    report_job!(opts, label, jobid)
+
+Append "`label` `jobid`" to `opts["job_report"]` (if set) -- one line per
+submitted job. `hpc/poller.sh`'s hook mode reads this back to publish job
+state and notifications, exactly like the spec-file path already does for
+single-job runs; this is what lets a DAG (mesh -> prep -> heated, possibly
+one per batch variant) report itself the same way. Silently skipped for
+"DRY" ids (dry-run) and when job_report isn't set (interactive/local use).
+"""
+function report_job!(opts, label, jobid)
+    path = get(opts, "job_report", nothing)
+    (path === nothing || jobid == "DRY") && return
+    open(path, "a") do io
+        println(io, "$label $jobid")
+    end
+end
+
+"""
     ensure_mesh!(mesh_ids, hpc, opts, case_toml, name, run_dir) -> jobid | nothing
 
 Make sure this case's mesh exists, returning a job id to depend on (or
@@ -328,6 +353,7 @@ function ensure_mesh!(mesh_ids, hpc, opts, case_toml, name, run_dir)
     id = sbatch!(js; dry=opts["dry"])
     mesh_ids[h] = id
     println("[$name]  mesh   $id  ($(basename(unv)))")
+    report_job!(opts, "$name-mesh", id)
     return id
 end
 
@@ -376,6 +402,7 @@ function main(argv)
             base_prep_id = sbatch!(js; dep=bmesh, dry=opts["dry"])
             println("[baseline]  prep job $base_prep_id  ($js)" *
                     (bmesh === nothing ? "" : "  (afterok:$bmesh)"))
+            report_job!(opts, "$base_name-prep", base_prep_id)
         end
     end
 
@@ -412,6 +439,7 @@ function main(argv)
                 prep_id = sbatch!(js; dep=mesh_id, dry=opts["dry"])
                 println("[$name]  prep   $prep_id" *
                         (mesh_id === nothing ? "" : "  (afterok:$mesh_id)"))
+                report_job!(opts, "$name-prep", prep_id)
             end
         end
         heat_id = nothing
@@ -424,12 +452,14 @@ function main(argv)
             heat_id = sbatch!(js; dep=hdep, dry=opts["dry"])
             println("[$name]  heated $heat_id" *
                     (hdep === nothing ? "" : "  (afterok:$hdep)"))
+            report_job!(opts, "$name-heated", heat_id)
         end
         if do_post
             js = write_job(hpc, "post", name, vdir, "", vtoml)
             pid = sbatch!(js; dep=heat_id, dry=opts["dry"])
             println("[$name]  post   $pid" *
                     (heat_id === nothing ? "" : "  (afterok:$heat_id)"))
+            report_job!(opts, "$name-post", pid)
         end
     end
 

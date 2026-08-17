@@ -1,62 +1,59 @@
-#!/usr/bin/env bash
-# TRIGGER_MODE="hook" only. This is your original design: a script in the repo,
-# edited from the phone, that decides what to run and calls sbatch itself.
+#!/bin/bash
+# Hook script for hpc/poller.sh (TRIGGER_MODE=hook or "both"). Runs when a
+# commit lands on `queue` with `[run]` in the commit message.
 #
-# The poller has already: pulled, run validate.sh, and snapshotted this commit
-# into $CFD_RUNDIR/src (you are cd'd there). It handed you:
-#   CFD_RUNDIR    scratch dir for this commit
-#   CFD_COMMIT    short sha
-#   CFD_JOB_REPORT  append "name jobid" per submission so the poller tracks it
-#   CFD_ACCOUNT CFD_PARTITION CFD_MODULES CFD_DEPOT CFD_DRY_RUN
-# Guards (max active jobs, rate limit, DRY_RUN) are enforced by the poller and
-# cannot be overridden from here. That is deliberate.
+# Per the pipeline's original design (see CLAUDE.md "Launching a run
+# (TRIGGER_MODE=hook)"): this script decides everything and calls sbatch;
+# the poller owns the guards, the snapshot, and the reporting. Invoked from
+# INSIDE a frozen git-archive snapshot of `queue` at the triggering commit
+# (not a persistent clone), with these env vars set by poller.sh:
+#   CFD_RUNDIR CFD_COMMIT CFD_JOB_REPORT CFD_ACCOUNT CFD_PARTITION
+#   CFD_MODULES CFD_DEPOT CFD_DRY_RUN
+#
+# This only SUBMITS jobs and returns -- submit.jl needs no XCALibre
+# precompilation to do that (TOML/SHA stdlib only), so it's fast, well
+# inside poller.sh's HOOK_TIMEOUT (default 300s). The actual solve happens
+# in the separately-submitted SLURM jobs, asynchronously, using the
+# Manifest.toml this snapshot already carries (copied in by poller.sh's
+# snapshot() step) against the shared, pre-instantiated depot.
+#
+# To change which case/sweep this triggers: edit the CASE= line below,
+# commit, and push to `queue` with `[run]` in the commit message. That's the
+# whole workflow -- no SSH, no VPN.
+
 set -euo pipefail
 
-submit() { # submit <name> <sbatch-script>
-  local name=$1 script=$2 jid
-  if [[ "${CFD_DRY_RUN:-0}" == "1" ]]; then
-    echo "DRY_RUN: would submit $name ($script)"; return 0
-  fi
-  jid=$(sbatch --parsable "$script")
-  echo "$name $jid" >>"$CFD_JOB_REPORT"
-  echo "submitted $name as $jid"
-}
+# Cron doesn't source /etc/profile.d, so Lmod's `module` function may not
+# exist here even though poller.sh's own top-level bootstrap made it
+# available in ITS process -- bash functions aren't inherited by this
+# subshell (only exported env vars are). Same pattern as validate.sh.
+if ! declare -F module >/dev/null 2>&1; then
+  for f in /etc/profile.d/z00_lmod.sh /etc/profile.d/00-modulepath.sh; do
+    [[ -r "$f" ]] && source "$f"
+  done
+fi
+if declare -F module >/dev/null 2>&1 && [[ -n "${CFD_MODULES:-}" ]]; then
+  for m in $CFD_MODULES; do
+    module load "$m" || { echo "FATAL: could not load module $m"; exit 1; }
+  done
+fi
 
-# ---- example: one job per case listed here -------------------------------
-CASES=(
-  "tgv_re1600:cases/taylor_green:02:00:00:16"
-  # "cavity_re1000:cases/cavity:00:30:00:8"
-)
+# sbatch itself is expected already on PATH here: unlike the `module`
+# function, PATH is a plain exported env var and poller.sh's own top-level
+# bootstrap (module load slurm, if needed) propagates to this subshell
+# normally.
+command -v sbatch >/dev/null 2>&1 || { echo "FATAL: sbatch not on PATH"; exit 1; }
 
-for entry in "${CASES[@]}"; do
-  IFS=: read -r name dir h m s cpus <<<"$entry"
-  walltime="$h:$m:$s"
-  [[ -d "$dir" ]] || { echo "skip $name: no $dir"; continue; }
+export JULIA_DEPOT_PATH="${CFD_DEPOT:-$HOME/.julia}"
+export JULIA_PKG_OFFLINE=true   # this snapshot's Manifest must already resolve
 
-  script="$CFD_RUNDIR/$name.sbatch"
-  cat >"$script" <<EOF
-#!/bin/bash
-#SBATCH --job-name=xca-$name
-#SBATCH --partition=$CFD_PARTITION
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=$cpus
-#SBATCH --time=$walltime
-#SBATCH --chdir=$CFD_RUNDIR
-#SBATCH --output=$CFD_RUNDIR/slurm-%j.out
-set -uo pipefail
-module purge 2>/dev/null || true
-for mod in $CFD_MODULES; do module load "\$mod" 2>/dev/null || true; done
-export JULIA_DEPOT_PATH="$CFD_DEPOT"
-export JULIA_PKG_OFFLINE=true
-export JULIA_NUM_THREADS=\${SLURM_CPUS_PER_TASK:-1}
-mkdir -p $CFD_RUNDIR/summary
-cd "$CFD_RUNDIR/src/$dir"
-rc=0
-julia --project=$CFD_RUNDIR/src run.jl || rc=\$?
-echo "exit_code=\$rc commit=$CFD_COMMIT" >>$CFD_RUNDIR/summary/result.txt
-exit \$rc
-EOF
+CASE="cases/tatsumoto/configs/supercritical.toml"
+HPC="cases/tatsumoto/configs/hpc.toml"
 
-  submit "$name" "$script"
-done
+echo "on_update.sh: submitting $CASE for commit ${CFD_COMMIT:-unknown}"
+
+args=(cases/tatsumoto/pipeline/submit.jl "$CASE" --hpc "$HPC")
+[[ -n "${CFD_JOB_REPORT:-}" ]] && args+=(--job-report "$CFD_JOB_REPORT")
+[[ "${CFD_DRY_RUN:-0}" == "1" ]] && args+=(--dry-run)
+
+julia --project=. "${args[@]}"
