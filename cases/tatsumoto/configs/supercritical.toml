@@ -126,15 +126,16 @@ minShrink  = 0.1
 maxGrow    = 1.1
 
 # =============================================================================
-# BATCH MODE — uncomment to turn this file into a parameter sweep.
-# Every combination (mode="product") of the [batch.vary] lists becomes one
+# BATCH MODE — every combination (mode="product") of [batch.vary] becomes one
 # variant with its own runs/<name>__<param>-<val>/ directory and DAG chain.
-# Variants that only touch heated-stage sections (energy, heating, run) SHARE
-# one baseline warmup; variants touching mesh/flow/thermo/hardware/phase get
-# their own prep job automatically.
+#
+# maxCo sweep: the y+~1 mesh's near-wall cell was pinning Courant exactly at
+# maxCo=0.9, capping dt at ~2.5e-5s -- at that rate warmup_end=5.0s needs
+# ~92 days of wall-clock, not the 11:30 walltime budget. Each value below
+# gets its OWN prep job (maxCo added to submit.jl's WARMUP_KEYS) so the
+# warmup-stage dt growth is directly comparable across variants, not shared.
 # =============================================================================
-# [batch]
-# mode = "product"             # "product" (cross) | "zip" (1:1, equal lengths)
-# [batch.vary]
-# "energy.prop_relax"     = [0.3, 0.4, 0.6]
-# "run.adaptive.maxCo"    = [0.9, 5.0]
+[batch]
+mode = "product"
+[batch.vary]
+"run.adaptive.maxCo" = [50, 90, 150, 250]

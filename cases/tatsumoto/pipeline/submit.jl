@@ -48,7 +48,12 @@ const MESH_PARAM_KEYS = ("radius", "L_entrance", "L_heated", "L_exit", "core_rat
 
 # Varied keys with these prefixes invalidate the shared warmup:
 const WARMUP_PREFIXES = ("mesh.", "flow.", "thermo.", "hardware.", "phase.")
-const WARMUP_KEYS     = ("run.warmup_end", "run.time_step")
+const WARMUP_KEYS     = ("run.warmup_end", "run.time_step", "run.adaptive.maxCo")
+# ^ maxCo governs the prep (warmup) stage's own adaptive dt just as much as
+# heated's -- varying it without giving each variant its own prep would mean
+# all variants share ONE warmup at the baseline maxCo and only differ once
+# heated starts, silently defeating a sweep whose entire point is comparing
+# warmup-stage timestep growth across maxCo values.
 
 # ----------------------------------------------------------------- utilities
 function parse_args(argv)
