@@ -311,6 +311,18 @@ function MULTIPHASE(
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
     @time for iteration ∈ 1:iterations
+        # Optional time-based termination — exits as soon as the simulated
+        # time reaches `runtime.t_end`. Skipped when `t_end === nothing`.
+        # Without this, `Runtime(t_end=...)` is silently a no-op here: the
+        # constructor falls back to an `iterations` cap of >= 1e7 on the
+        # assumption "the time-check will normally trip first", so a run
+        # given only `t_end` never stops at it and instead burns walltime
+        # until SLURM kills it — with no checkpoint written, since that
+        # happens after this function returns.
+        if config.runtime.t_end !== nothing && time >= config.runtime.t_end
+            @info "Reached t_end = $(config.runtime.t_end) s after $(iteration-1) iterations — stopping."
+            break
+        end
 
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
