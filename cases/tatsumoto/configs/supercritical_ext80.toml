@@ -1,0 +1,93 @@
+# =============================================================================
+# SUPERCRITICAL N2 heat transfer — Tatsumoto 2010, Fig. 5, OUTLET-EXTENDED MESH
+# Same physics as supercritical.toml; adds an 80 mm unheated extension past the
+# heated section (L_exit) to check whether the outlet BC (Zerogradient p=0)
+# sitting directly at the heated section's end is influencing the solution
+# there. A single maxCo=90 run (not the full sweep) -- see the [batch] note.
+#
+# HPC (SLURM):  julia --project=. cases/tatsumoto/pipeline/submit.jl \
+#                     cases/tatsumoto/configs/supercritical_ext80.toml
+# =============================================================================
+
+[case]
+name = "supercritical_ext80"   # names runs/<name>/ (checkpoints, vtk, post)
+
+[mesh]
+scale = 0.001                  # UNV length units (mm) -> metres
+
+[mesh.geometry]                # all lengths in mm
+radius     = 2.7               # tube ID 5.4 mm (paper) -> R = 2.7
+L_entrance = 200.0             # unchanged from supercritical.toml
+L_heated   = 100.0             # unchanged from supercritical.toml
+L_exit     = 80.0              # NEW: unheated extension past the heated section
+core_ratio = 0.4
+
+[mesh.resolution]
+n_quarter = 10
+n_radial  = 50
+# 380 (not 300): keeps the SAME 1 mm axial cell size as supercritical.toml's
+# entrance/heated zones (200+100+80=380 @ 1mm/cell) rather than diluting
+# them to fit the extra 80mm into the old n_axial=300 -- otherwise this
+# wouldn't be a fair like-for-like comparison against the L_exit=0 mesh.
+n_axial   = 380
+
+[mesh.boundary_layer]
+# Same derivation as supercritical.toml -- y+~1 at U_in=3.7 m/s, sized at
+# the pseudocritical wall condition (see that file for the full Helmholtz
+# EOS sweep this was derived from). Geometry differs only downstream of the
+# heated section, so the near-wall spacing target is unchanged.
+first_cell = 0.000392
+
+[hardware]
+backend   = "CPU"
+workgroup = 128
+
+[flow]
+U_in           = 3.7
+T_in           = 78.0
+turb_intensity = 0.05
+D_hyd          = 5.4e-3
+
+[thermo]
+pressure   = 3.5e6
+T_table_lo = 75.0
+T_table_hi = 375.0
+n_points   = 3000
+p_lo       = 3.4e6
+p_hi       = 3.64e6
+n_p        = 12
+
+[energy]
+formulation = "temperature"
+Pr_t        = 0.85
+Pr_t_model  = "constant"
+prop_relax  = 0.4
+
+[heating]
+Q0  = 250.0
+tau = 2.0
+
+[run]
+time_step  = 1.0e-4
+warmup_end = 5.0
+heated_end = 13.0
+stop_T     = 124.0
+discard_until = 0.0
+post_stride   = 1
+
+write_interval_prep   = 25
+write_interval_heated = 25
+
+inner_loops        = 2
+n_outer_correctors = 3
+outer_tol          = 1.0e-3
+
+[run.adaptive]
+maxCo      = 90                # fixed, not swept -- see file header. maxCo=90
+                                # was the middle of the three successful values
+                                # on the original mesh, not the fastest (250)
+                                # or most conservative (150); a reasonable
+                                # single point for a first outlet-extension check.
+maxAlphaCo = 0.85
+minShrink  = 0.1
+maxGrow    = 1.1
