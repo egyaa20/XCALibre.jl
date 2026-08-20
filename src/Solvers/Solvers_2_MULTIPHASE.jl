@@ -1,5 +1,31 @@
 export multiphase!
 
+# Live per-cell rho/mu/cp/k from the Helmholtz/NIST table, using the
+# CURRENT (start-of-this-iteration) T and p_rgh -- a standard lagged
+# update in a segregated solver, matching how nueff/turbulence properties
+# are already refreshed each iteration before the equations that consume
+# them are assembled.
+#
+# `build_phase_table_mode`'s own docstring and `build_multiphase`'s
+# comment both say phases are allocated as ScalarFields specifically "so
+# the live per-cell update routine has somewhere to write into each
+# iteration" -- this was evidently always the intent; the call was just
+# never wired in, so every case using `fluid_properties = HelmholtzTable`
+# ran with rho/mu/cp/k frozen at whatever T_snapshot was, everywhere in
+# the domain, for the whole simulation.
+#
+# Dispatches on energyModel's type (Nothing for Isothermal) rather than
+# guarding inline, matching how step_multiphase_energy! already handles
+# the same distinction in this file.
+update_live_properties!(::Nothing, phases, model, p_rgh, config) = nothing
+function update_live_properties!(energyModel, phases, model, p_rgh, config)
+    fluid_props = model.fluid.physics_properties
+    hasproperty(fluid_props, :fluid_properties) || return nothing
+    update_phase_properties_from_table!(
+        phases, fluid_props.fluid_properties, model.energy.T, p_rgh, config)
+    return nothing
+end
+
 function multiphase!(
     model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2,
@@ -361,9 +387,24 @@ function MULTIPHASE(
                        alphaMaxLocal, alphaMinLocal, C_alpha, dt_cpu[1], time, config)
         ralpha = zero(TF)
 
-        # Mixture property update from the new alpha
+        # Refresh phases[i].rho/mu/cp/k per-cell from the table (T-lagged
+        # from last iteration) BEFORE the mixture blend below consumes
+        # them, so rho/rhof/nu/nuf/rhoPhi -- and therefore momentum,
+        # buoyancy (this case configures Gravity), and pressure -- see the
+        # same live properties the energy equation's k_m/cp_m already do.
+        update_live_properties!(energyModel, phases, model, p_rgh, config)
+
+        # Mixture property update from the new alpha. Passing the FULL
+        # per-cell phases[i].rho/mu fields (not the rho1_val/rho2_val
+        # scalars, which are a one-time snapshot taken before the loop --
+        # see their definition above) is what makes this a genuine
+        # per-cell blend rather than broadcasting cell 1's value over the
+        # whole domain: blend_properties!/blend_mixture_nu! already
+        # broadcast with `@.`, so an array-valued property_0/property_1
+        # works without changing either function.
         update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mueff,
-                                   rho1_val, rho2_val, mu1_val, mu2_val, config)
+                                   phases[main].rho.values, phases[secondary].rho.values,
+                                   phases[main].mu.values, phases[secondary].mu.values, config)
 
         # Interface curvature for surface tension (VOF only)
         if typeof(mp_model) <: VOF
