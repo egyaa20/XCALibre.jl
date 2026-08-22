@@ -139,8 +139,12 @@ maxGrow    = 1.1
 # ~92 days of wall-clock, not the 11:30 walltime budget. Each value below
 # gets its OWN prep job (maxCo added to submit.jl's WARMUP_KEYS) so the
 # warmup-stage dt growth is directly comparable across variants, not shared.
+#
+# 50 omitted: retried with more walltime earlier and still didn't clear
+# warmup in time (see the 11:30 walltime note) -- not worth the allocation
+# hours on a value that's already ruled out.
 # =============================================================================
 [batch]
 mode = "product"
 [batch.vary]
-"run.adaptive.maxCo" = [50, 90, 150, 250]
+"run.adaptive.maxCo" = [90, 150, 250]
