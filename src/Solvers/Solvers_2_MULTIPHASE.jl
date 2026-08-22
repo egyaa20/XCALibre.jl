@@ -394,17 +394,30 @@ function MULTIPHASE(
         # same live properties the energy equation's k_m/cp_m already do.
         update_live_properties!(energyModel, phases, model, p_rgh, config)
 
-        # Mixture property update from the new alpha. Passing the FULL
-        # per-cell phases[i].rho/mu fields (not the rho1_val/rho2_val
-        # scalars, which are a one-time snapshot taken before the loop --
-        # see their definition above) is what makes this a genuine
-        # per-cell blend rather than broadcasting cell 1's value over the
-        # whole domain: blend_properties!/blend_mixture_nu! already
-        # broadcast with `@.`, so an array-valued property_0/property_1
-        # works without changing either function.
+        # rho1f/rho2f/mu1f/mu2f were allocated once before the loop (see
+        # their definition above) and, before this fix, were left at their
+        # initial frozen-scalar broadcast forever. Refresh them from the
+        # now-live cell fields so the FACE blend below sees real per-face
+        # values too, not last iteration's (or the initial) snapshot.
+        interpolate!(rho1f, phases[main].rho, config)
+        interpolate!(rho2f, phases[secondary].rho, config)
+        interpolate!(mu1f,  phases[main].mu, config)
+        interpolate!(mu2f,  phases[secondary].mu, config)
+
+        # Mixture property update from the new alpha. CELL-sized
+        # phases[i].rho/mu.values feed the cell blend (rho, nu); the
+        # face-interpolated rho*f/mu*f above feed the face blend
+        # (rhof, nuf) -- these are DIFFERENT SIZES (n_cells vs n_faces) and
+        # must not be conflated: an earlier version of this fix passed the
+        # cell-sized arrays into both and crashed with a DimensionMismatch
+        # the moment mixed cell/face blending actually ran. The original
+        # rho1_val/rho2_val/mu1_val/mu2_val scalars (defined above, still
+        # used for the drift-flux terms) never hit this because a scalar
+        # broadcasts against either size trivially -- arrays don't.
         update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mueff,
                                    phases[main].rho.values, phases[secondary].rho.values,
-                                   phases[main].mu.values, phases[secondary].mu.values, config)
+                                   phases[main].mu.values, phases[secondary].mu.values,
+                                   rho1f.values, rho2f.values, mu1f.values, mu2f.values, config)
 
         # Interface curvature for surface tension (VOF only)
         if typeof(mp_model) <: VOF
@@ -599,19 +612,26 @@ high_order_alpha_flux!(::Mixture, phiHf, mdotf, alphaf_HO, alphaf_drift_up, phir
 
 
 # This needs to be turned into a fused kernel for performance
+#
+# rho1_val/rho2_val/mu1_val/mu2_val are CELL-sized (n_cells); the "f"
+# variants are FACE-sized (n_faces) -- genuinely different array lengths,
+# not interchangeable. Pass a plain Float64 scalar for both if the
+# constant-property (non-table) path is calling this, exactly as before;
+# broadcasting a scalar against either size still works unchanged.
 function update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mueff,
-                                    rho1_val, rho2_val, mu1_val, mu2_val, config)
+                                    rho1_val, rho2_val, mu1_val, mu2_val,
+                                    rho1f_val, rho2f_val, mu1f_val, mu2f_val, config)
     (; rho, rhof, nu, nuf, alpha, alphaf) = model.fluid
 
     blend_properties!(rho,  alpha,  rho1_val, rho2_val)
-    blend_properties!(rhof, alphaf, rho1_val, rho2_val)
+    blend_properties!(rhof, alphaf, rho1f_val, rho2f_val)
     blend_mixture_nu!(nu,  alpha,  rho,  mu1_val, mu2_val)
-    blend_mixture_nu!(nuf, alphaf, rhof, mu1_val, mu2_val)
+    blend_mixture_nu!(nuf, alphaf, rhof, mu1f_val, mu2f_val)
 
     update_nueff!(nueff, nuf, model.turbulence, config)
     @. mueff.values  = rhof.values * nueff.values
 
-    blend_rhoPhi!(model.fluid.model, rhoPhi, alpha_fluxf, mdotf, rhof, rho1_val, rho2_val)
+    blend_rhoPhi!(model.fluid.model, rhoPhi, alpha_fluxf, mdotf, rhof, rho1f_val, rho2f_val)
     return nothing
 end
 
