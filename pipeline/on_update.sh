@@ -47,13 +47,25 @@ command -v sbatch >/dev/null 2>&1 || { echo "FATAL: sbatch not on PATH"; exit 1;
 export JULIA_DEPOT_PATH="${CFD_DEPOT:-$HOME/.julia}"
 export JULIA_PKG_OFFLINE=true   # this snapshot's Manifest must already resolve
 
-CASE="cases/tatsumoto/configs/supercritical.toml"
 HPC="cases/tatsumoto/configs/hpc.toml"
 
-echo "on_update.sh: submitting $CASE for commit ${CFD_COMMIT:-unknown}"
+# --reprep on both: any warmup_t*.jld2 checkpoint already sitting under
+# runs/ for these variants was computed under the pre-fix solver (frozen
+# rho/mu/cp/k), so it must not be silently reused now that properties are
+# genuinely live -- see the property-fix commits on dev. Forcing a fresh
+# warmup here means this submission is correct regardless of what state
+# runs/ happens to be in, without needing an SSH session to go check.
+CASES=(
+  "cases/tatsumoto/configs/supercritical.toml"
+  "cases/tatsumoto/configs/supercritical_ext80.toml"
+)
 
-args=(cases/tatsumoto/pipeline/submit.jl "$CASE" --hpc "$HPC")
-[[ -n "${CFD_JOB_REPORT:-}" ]] && args+=(--job-report "$CFD_JOB_REPORT")
-[[ "${CFD_DRY_RUN:-0}" == "1" ]] && args+=(--dry-run)
+for CASE in "${CASES[@]}"; do
+  echo "on_update.sh: submitting $CASE for commit ${CFD_COMMIT:-unknown}"
 
-julia --project=. "${args[@]}"
+  args=(cases/tatsumoto/pipeline/submit.jl "$CASE" --hpc "$HPC" --reprep)
+  [[ -n "${CFD_JOB_REPORT:-}" ]] && args+=(--job-report "$CFD_JOB_REPORT")
+  [[ "${CFD_DRY_RUN:-0}" == "1" ]] && args+=(--dry-run)
+
+  julia --project=. "${args[@]}"
+done

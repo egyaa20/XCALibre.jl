@@ -1,5 +1,31 @@
 export multiphase!
 
+# Live per-cell rho/mu/cp/k from the Helmholtz/NIST table, using the
+# CURRENT (start-of-this-iteration) T and p_rgh -- a standard lagged
+# update in a segregated solver, matching how nueff/turbulence properties
+# are already refreshed each iteration before the equations that consume
+# them are assembled.
+#
+# `build_phase_table_mode`'s own docstring and `build_multiphase`'s
+# comment both say phases are allocated as ScalarFields specifically "so
+# the live per-cell update routine has somewhere to write into each
+# iteration" -- this was evidently always the intent; the call was just
+# never wired in, so every case using `fluid_properties = HelmholtzTable`
+# ran with rho/mu/cp/k frozen at whatever T_snapshot was, everywhere in
+# the domain, for the whole simulation.
+#
+# Dispatches on energyModel's type (Nothing for Isothermal) rather than
+# guarding inline, matching how step_multiphase_energy! already handles
+# the same distinction in this file.
+update_live_properties!(::Nothing, phases, model, p_rgh, config) = nothing
+function update_live_properties!(energyModel, phases, model, p_rgh, config)
+    fluid_props = model.fluid.physics_properties
+    hasproperty(fluid_props, :fluid_properties) || return nothing
+    update_phase_properties_from_table!(
+        phases, fluid_props.fluid_properties, model.energy.T, p_rgh, config)
+    return nothing
+end
+
 function multiphase!(
     model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2,
@@ -361,9 +387,37 @@ function MULTIPHASE(
                        alphaMaxLocal, alphaMinLocal, C_alpha, dt_cpu[1], time, config)
         ralpha = zero(TF)
 
-        # Mixture property update from the new alpha
+        # Refresh phases[i].rho/mu/cp/k per-cell from the table (T-lagged
+        # from last iteration) BEFORE the mixture blend below consumes
+        # them, so rho/rhof/nu/nuf/rhoPhi -- and therefore momentum,
+        # buoyancy (this case configures Gravity), and pressure -- see the
+        # same live properties the energy equation's k_m/cp_m already do.
+        update_live_properties!(energyModel, phases, model, p_rgh, config)
+
+        # rho1f/rho2f/mu1f/mu2f were allocated once before the loop (see
+        # their definition above) and, before this fix, were left at their
+        # initial frozen-scalar broadcast forever. Refresh them from the
+        # now-live cell fields so the FACE blend below sees real per-face
+        # values too, not last iteration's (or the initial) snapshot.
+        interpolate!(rho1f, phases[main].rho, config)
+        interpolate!(rho2f, phases[secondary].rho, config)
+        interpolate!(mu1f,  phases[main].mu, config)
+        interpolate!(mu2f,  phases[secondary].mu, config)
+
+        # Mixture property update from the new alpha. CELL-sized
+        # phases[i].rho/mu.values feed the cell blend (rho, nu); the
+        # face-interpolated rho*f/mu*f above feed the face blend
+        # (rhof, nuf) -- these are DIFFERENT SIZES (n_cells vs n_faces) and
+        # must not be conflated: an earlier version of this fix passed the
+        # cell-sized arrays into both and crashed with a DimensionMismatch
+        # the moment mixed cell/face blending actually ran. The original
+        # rho1_val/rho2_val/mu1_val/mu2_val scalars (defined above, still
+        # used for the drift-flux terms) never hit this because a scalar
+        # broadcasts against either size trivially -- arrays don't.
         update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mueff,
-                                   rho1_val, rho2_val, mu1_val, mu2_val, config)
+                                   phases[main].rho.values, phases[secondary].rho.values,
+                                   phases[main].mu.values, phases[secondary].mu.values,
+                                   rho1f.values, rho2f.values, mu1f.values, mu2f.values, config)
 
         # Interface curvature for surface tension (VOF only)
         if typeof(mp_model) <: VOF
@@ -558,19 +612,26 @@ high_order_alpha_flux!(::Mixture, phiHf, mdotf, alphaf_HO, alphaf_drift_up, phir
 
 
 # This needs to be turned into a fused kernel for performance
+#
+# rho1_val/rho2_val/mu1_val/mu2_val are CELL-sized (n_cells); the "f"
+# variants are FACE-sized (n_faces) -- genuinely different array lengths,
+# not interchangeable. Pass a plain Float64 scalar for both if the
+# constant-property (non-table) path is calling this, exactly as before;
+# broadcasting a scalar against either size still works unchanged.
 function update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mueff,
-                                    rho1_val, rho2_val, mu1_val, mu2_val, config)
+                                    rho1_val, rho2_val, mu1_val, mu2_val,
+                                    rho1f_val, rho2f_val, mu1f_val, mu2f_val, config)
     (; rho, rhof, nu, nuf, alpha, alphaf) = model.fluid
 
     blend_properties!(rho,  alpha,  rho1_val, rho2_val)
-    blend_properties!(rhof, alphaf, rho1_val, rho2_val)
+    blend_properties!(rhof, alphaf, rho1f_val, rho2f_val)
     blend_mixture_nu!(nu,  alpha,  rho,  mu1_val, mu2_val)
-    blend_mixture_nu!(nuf, alphaf, rhof, mu1_val, mu2_val)
+    blend_mixture_nu!(nuf, alphaf, rhof, mu1f_val, mu2f_val)
 
     update_nueff!(nueff, nuf, model.turbulence, config)
     @. mueff.values  = rhof.values * nueff.values
 
-    blend_rhoPhi!(model.fluid.model, rhoPhi, alpha_fluxf, mdotf, rhof, rho1_val, rho2_val)
+    blend_rhoPhi!(model.fluid.model, rhoPhi, alpha_fluxf, mdotf, rhof, rho1f_val, rho2f_val)
     return nothing
 end
 
