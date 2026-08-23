@@ -215,14 +215,24 @@ process_hook() {
   write_marker "$key" "hook-rc-$rc" "" "$(head -c 120 <<<"$msg" | tr '\n' ' ')"
   (( rc != 0 )) && { say "HOOK failed rc=$rc"; notify "xcalibre: hook failed for $COMMIT"; return; }
 
-  # hook reports submissions as "name jobid" lines
-  while read -r jname jid; do
+  # hook reports submissions as "name jobid rundir" lines. rundir is each
+  # job's own absolute output directory, NOT this hook trigger's snapshot
+  # dir ($RUNDIR, set above by snapshot()) -- a multi-job hook submission
+  # (e.g. a DAG/sweep) has one snapshot but many real per-job output dirs,
+  # and collect_artifacts later reads the "rundir" recorded here to find
+  # each job's summary/ for publishing. Tagging every job with the shared
+  # snapshot dir instead (the old behaviour, when the report only carried
+  # "name jobid") meant summary/ was always looked for in the wrong place.
+  local hook_snapshot_dir="$RUNDIR"
+  while read -r jname jid jrundir; do
     [[ "$jid" =~ ^[0-9]+$ ]] || continue
     date +%s >>"$SUBMITS"
-    NAME="$jname" write_marker "$COMMIT-$jname" submitted "$jid" "via hook"
+    RUNDIR="${jrundir:-$hook_snapshot_dir}" NAME="$jname" \
+      write_marker "$COMMIT-$jname" submitted "$jid" "via hook"
     say "SUBMIT $jname job=$jid commit=$COMMIT"
     notify "xcalibre: $jname submitted (job $jid, $COMMIT)"
   done <"$report"
+  RUNDIR="$hook_snapshot_dir"
 }
 
 # ------------------------------------------------------------------ tracking

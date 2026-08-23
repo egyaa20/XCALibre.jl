@@ -1,0 +1,10 @@
+# This repo is edited from Windows but the pipeline scripts run on Ada
+# (Linux). A CRLF shell script fails outright ("syntax error near
+# unexpected token $'do\r'") the moment it's deployed there directly
+# (scp) rather than reaching it through git, whose autocrlf normalization
+# only fixes up the committed blob, not files copied straight off a
+# Windows working tree. Force LF at checkout for anything that gets
+# executed as a script on the cluster, regardless of the local
+# core.autocrlf setting.
+*.sh  text eol=lf
+*.py  text eol=lf
