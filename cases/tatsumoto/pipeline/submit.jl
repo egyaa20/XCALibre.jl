@@ -308,20 +308,28 @@ sbatch!(script; dep=nothing, dry=false) = begin
 end
 
 """
-    report_job!(opts, label, jobid)
+    report_job!(opts, label, jobid, run_dir)
 
-Append "`label` `jobid`" to `opts["job_report"]` (if set) -- one line per
-submitted job. `hpc/poller.sh`'s hook mode reads this back to publish job
-state and notifications, exactly like the spec-file path already does for
-single-job runs; this is what lets a DAG (mesh -> prep -> heated, possibly
-one per batch variant) report itself the same way. Silently skipped for
-"DRY" ids (dry-run) and when job_report isn't set (interactive/local use).
+Append "`label` `jobid` `run_dir`" to `opts["job_report"]` (if set) -- one
+line per submitted job. `hpc/poller.sh`'s hook mode reads this back to
+publish job state and notifications, exactly like the spec-file path
+already does for single-job runs; this is what lets a DAG (mesh -> prep ->
+heated, possibly one per batch variant) report itself the same way.
+
+`run_dir` is each job's own absolute output directory (e.g.
+cases/tatsumoto/runs/<variant>/), not the poller's hook-trigger snapshot
+dir -- without it, every job from one hook trigger used to get tagged with
+the shared snapshot dir, so the poller's summary/ artifact publishing
+(validation.png, etc.) was looking in the wrong place for every hook job.
+
+Silently skipped for "DRY" ids (dry-run) and when job_report isn't set
+(interactive/local use).
 """
-function report_job!(opts, label, jobid)
+function report_job!(opts, label, jobid, run_dir)
     path = get(opts, "job_report", nothing)
     (path === nothing || jobid == "DRY") && return
     open(path, "a") do io
-        println(io, "$label $jobid")
+        println(io, "$label $jobid $run_dir")
     end
 end
 
@@ -353,7 +361,7 @@ function ensure_mesh!(mesh_ids, hpc, opts, case_toml, name, run_dir)
     id = sbatch!(js; dry=opts["dry"])
     mesh_ids[h] = id
     println("[$name]  mesh   $id  ($(basename(unv)))")
-    report_job!(opts, "$name-mesh", id)
+    report_job!(opts, "$name-mesh", id, run_dir)
     return id
 end
 
@@ -402,7 +410,7 @@ function main(argv)
             base_prep_id = sbatch!(js; dep=bmesh, dry=opts["dry"])
             println("[baseline]  prep job $base_prep_id  ($js)" *
                     (bmesh === nothing ? "" : "  (afterok:$bmesh)"))
-            report_job!(opts, "$base_name-prep", base_prep_id)
+            report_job!(opts, "$base_name-prep", base_prep_id, bdir)
         end
     end
 
@@ -439,7 +447,7 @@ function main(argv)
                 prep_id = sbatch!(js; dep=mesh_id, dry=opts["dry"])
                 println("[$name]  prep   $prep_id" *
                         (mesh_id === nothing ? "" : "  (afterok:$mesh_id)"))
-                report_job!(opts, "$name-prep", prep_id)
+                report_job!(opts, "$name-prep", prep_id, vdir)
             end
         end
         heat_id = nothing
@@ -452,14 +460,15 @@ function main(argv)
             heat_id = sbatch!(js; dep=hdep, dry=opts["dry"])
             println("[$name]  heated $heat_id" *
                     (hdep === nothing ? "" : "  (afterok:$hdep)"))
-            report_job!(opts, "$name-heated", heat_id)
+            report_job!(opts, "$name-heated", heat_id, vdir)
         end
         if do_post
-            js = write_job(hpc, "post", name, vdir, "", vtoml)
+            js = write_job(hpc, "post", name, vdir, "", vtoml;
+                           time_override=hpc["slurm"]["time_post"])
             pid = sbatch!(js; dep=heat_id, dry=opts["dry"])
             println("[$name]  post   $pid" *
                     (heat_id === nothing ? "" : "  (afterok:$heat_id)"))
-            report_job!(opts, "$name-post", pid)
+            report_job!(opts, "$name-post", pid, vdir)
         end
     end
 

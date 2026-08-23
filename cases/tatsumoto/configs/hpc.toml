@@ -16,6 +16,10 @@ time      = "11:30:00"         # walltime per job (HH:MM:SS); under shortq's
                                # not just defq
 time_prep = ""                 # optional per-stage override; empty -> `time`
 time_heated = ""
+time_post = "00:20:00"         # post.py is a lightweight plot script, not a
+                               # solve -- the default 11:30:00 would just
+                               # make it wait for a slot sized for the solver
+                               # jobs instead of scheduling quickly
 cpus_per_task = 32
 mem       = "64G"
 gpu       = false              # true -> adds --gres=gpu:1 and keeps the case's
@@ -42,7 +46,14 @@ cpus_per_task = 4
 mem           = "16G"
 
 [post]
-enable = false                 # true -> post.py submitted as a dependent job
-                               # (needs python3 + pyvista/matplotlib on the cluster;
-                               #  default: run post.py locally on synced results)
-python = "python3"
+enable = true                  # true -> post.py submitted as a dependent job,
+                               # afterok on heated, publishing validation.png
+                               # to pipeline-status automatically (no SSH
+                               # needed to go find it on scratch)
+# Bare "python3" on Ada has no pyvista/matplotlib -- this venv is the one
+# set up alongside the pipeline for exactly this (see postprocess_vtk.py /
+# postprocess_pressure.py, which already use it the same way). No mesa/GL
+# module needed here: unlike those two, post.py only reads VTU field data
+# via pyvista (no pv.Plotter/off-screen rendering) and plots with
+# matplotlib's default Agg backend, so there's no X11/EGL dependency to hit.
+python = "$HOME/cfd-pipeline/venv-pyvista/bin/python3"

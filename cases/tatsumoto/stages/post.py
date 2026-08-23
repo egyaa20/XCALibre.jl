@@ -46,7 +46,13 @@ POST_STRIDE   = int(CFG["run"].get("post_stride", 1))   # 1 = use every snapshot
 RUN_DIR     = CFG["case"].get("run_dir") or os.path.join(CAMPAIGN, "runs", CASE_NAME)
 RESULTS_DIR = os.path.join(RUN_DIR, "vtk")
 TIMES_CSV   = os.path.join(RESULTS_DIR, "times.csv")
-OUT_PNG     = os.path.join(RUN_DIR, "validation.png")
+# summary/ (not RUN_DIR directly): hpc/poller.sh publishes everything under
+# <rundir>/summary/ to the pipeline-status branch after each job -- writing
+# here means validation.png shows up there automatically, no SSH needed to
+# go looking for it on scratch.
+SUMMARY_DIR = os.path.join(RUN_DIR, "summary")
+os.makedirs(SUMMARY_DIR, exist_ok=True)
+OUT_PNG     = os.path.join(SUMMARY_DIR, "validation.png")
 
 R_WALL       = D_HYD / 2.0          # pipe radius
 NEARWALL_FAC = 0.9                  # cells with r >= 0.9R count as near-wall
