@@ -49,12 +49,6 @@ export JULIA_PKG_OFFLINE=true   # this snapshot's Manifest must already resolve
 
 HPC="cases/tatsumoto/configs/hpc.toml"
 
-# --reprep on both: any warmup_t*.jld2 checkpoint already sitting under
-# runs/ for these variants was computed under the pre-fix solver (frozen
-# rho/mu/cp/k), so it must not be silently reused now that properties are
-# genuinely live -- see the property-fix commits on dev. Forcing a fresh
-# warmup here means this submission is correct regardless of what state
-# runs/ happens to be in, without needing an SSH session to go check.
 CASES=(
   "cases/tatsumoto/configs/supercritical.toml"
   "cases/tatsumoto/configs/supercritical_ext80.toml"
@@ -63,7 +57,15 @@ CASES=(
 for CASE in "${CASES[@]}"; do
   echo "on_update.sh: submitting $CASE for commit ${CFD_COMMIT:-unknown}"
 
-  args=(cases/tatsumoto/pipeline/submit.jl "$CASE" --hpc "$HPC" --reprep)
+  # No --reprep: that was a one-time flag for the 2026-08-22 relaunch, to
+  # stop the live-property-fix sweep from silently reusing warmup
+  # checkpoints computed under the pre-fix (frozen-property) solver.
+  # Every checkpoint on disk now postdates that fix, so the default
+  # (reuse an existing checkpoint if present) is correct again -- hardcoding
+  # --reprep here permanently would mean every future push redoes warmup
+  # from scratch even when nothing warmup-relevant changed, silently
+  # burning hours on every single hook-triggered run.
+  args=(cases/tatsumoto/pipeline/submit.jl "$CASE" --hpc "$HPC")
   [[ -n "${CFD_JOB_REPORT:-}" ]] && args+=(--job-report "$CFD_JOB_REPORT")
   [[ "${CFD_DRY_RUN:-0}" == "1" ]] && args+=(--dry-run)
 
