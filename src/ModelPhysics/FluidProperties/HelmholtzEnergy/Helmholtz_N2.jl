@@ -207,10 +207,8 @@ end
 
 
 
-# Build the N2 EOS constant set. Exposed separately (not just inside the wrapper)
-# so the table builder can compute ψ and ∂ρ/∂T analytically with the same coefficients.
-function helmholtz_constants(::N2, ::Type{F} = Float64) where F <: AbstractFloat
-    return HelmholtzFluidConstants(
+function EOS_wrapper_N2(fluid::HelmholtzEnergyFluid, T::F, pressure::F) where F <: AbstractFloat
+    constants = HelmholtzFluidConstants(
         F(126.192),     # T_c
         F(11.1839e3),   # rho_c, multiplied by e3 for convenience
         F(8.314472),    # R_univ
@@ -274,7 +272,7 @@ function helmholtz_constants(::N2, ::Type{F} = Float64) where F <: AbstractFloat
         F(12.528e3), # p_triple
         F(5.0)       # Fluid dependent density guess multiplier to get liquid function
     )
-end
 
-EOS_wrapper_N2(fluid::HelmholtzEnergyFluid, T::F, pressure::F) where F <: AbstractFloat =
-    EOS_wrapper(fluid, T, pressure, helmholtz_constants(fluid, F))
+    EOS_wrapper(fluid, T, pressure, constants)
+
+end

@@ -110,19 +110,17 @@ function setField_Sphere3D!(; mesh, field, value::F, centre::V, radius::F) where
     return length(cells_in_region)
 end
 
-
 """
     setField_Expression!(; mesh, field, condition::Function, value_true::F,
                           value_false::Union{F,Nothing}=nothing
                         ) where {F <: AbstractFloat}
 
-Assigns `value_true` to every cell whose centre `(x, y, z)` satisfies the user-supplied
-predicate `condition(x, y, z) :: Bool`. If `value_false` is provided, all other cells
-get `value_false`; otherwise they are left unchanged.
+Assigns `value_true` to every cell whose centre `(x, y, z)` satisfies the user-supplied condition.
+If `value_false` is provided, all other cells get `value_false`; otherwise they are left unchanged.
 
 The `condition` can capture any variables from the calling scope via Julia's closure
-syntax — useful for parametric initial conditions like a sinusoidal interface for
-Rayleigh-Taylor or any expression that doesn't fit a box/sphere/circle primitive.
+syntax - useful for parametric initial conditions like a sinusoidal interface for
+Rayleigh-Taylor or any expression that doesn't fit a box/sphere/circle.
 
 # Input arguments
 

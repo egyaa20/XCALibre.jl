@@ -82,7 +82,14 @@ PARAM_DEFAULTS = {
     "n_radial":   20,      # segments on radial (wall-normal) edges; carries BL
     "n_axial":    300,     # total axial segments across the FULL pipe length;
                            # split across entrance/heated/exit proportionally
-                           # to zone length (uniform axial cell size)
+                           # to zone length (uniform axial cell size). Ignored
+                           # when the explicit per-zone counts below are set.
+    "n_ax_entrance": None, # explicit per-zone axial counts; all three must be
+    "n_ax_heated":   None, # set together (entrance/exit may be 0 when the
+    "n_ax_exit":     None, # zone length is 0)
+    "axial_ratio": 1.0,    # largest/smallest axial cell in the entrance and
+                           # exit zones, fine end towards the heated section;
+                           # heated zone is always uniform
 
     # -- boundary layer ------------------------------------------------------
     # Preferred: state the target first wall-normal cell height directly and
@@ -190,14 +197,28 @@ fc_diag = first_cell_of(L_RAD_DIAG, N_RADIAL, BL_SCALE)
 if N_AXIAL < 1:
     raise SystemExit("n_axial must be >= 1")
 
-# Per-zone axial counts: N_AXIAL split proportionally to zone length, giving a
-# uniform axial cell size across entrance/heated/exit. Each present zone
+# Per-zone axial counts: explicit when n_ax_* are set, otherwise N_AXIAL split
+# proportionally to zone length (uniform axial cell size). Each present zone
 # keeps at least 1 segment even if its share rounds to 0.
-AXIAL_CELL = Z_TOTAL / N_AXIAL
-n_ax_ent  = max(1, int(round(L_ENT  / AXIAL_CELL))) if L_ENT  > 0 else 0
-n_ax_heat = max(1, int(round(L_HEAT / AXIAL_CELL)))
-n_ax_exit = max(1, int(round(L_EXIT / AXIAL_CELL))) if L_EXIT > 0 else 0
+explicit_ax = [P["n_ax_entrance"], P["n_ax_heated"], P["n_ax_exit"]]
+if any(v is not None for v in explicit_ax):
+    if any(v is None for v in explicit_ax):
+        raise SystemExit("n_ax_entrance/n_ax_heated/n_ax_exit must be set together")
+    n_ax_ent, n_ax_heat, n_ax_exit = (int(v) for v in explicit_ax)
+    if (L_ENT > 0) != (n_ax_ent > 0) or (L_EXIT > 0) != (n_ax_exit > 0):
+        raise SystemExit("per-zone axial counts must be > 0 exactly for zones with length > 0")
+    if n_ax_heat < 1:
+        raise SystemExit("n_ax_heated must be >= 1")
+else:
+    AXIAL_CELL = Z_TOTAL / N_AXIAL
+    n_ax_ent  = max(1, int(round(L_ENT  / AXIAL_CELL))) if L_ENT  > 0 else 0
+    n_ax_heat = max(1, int(round(L_HEAT / AXIAL_CELL)))
+    n_ax_exit = max(1, int(round(L_EXIT / AXIAL_CELL))) if L_EXIT > 0 else 0
 n_ax_total = n_ax_ent + n_ax_heat + n_ax_exit
+
+AXIAL_RATIO = float(P["axial_ratio"])
+if AXIAL_RATIO < 1.0:
+    raise SystemExit("axial_ratio must be >= 1 (largest/smallest)")
 
 cross_cells = N_QUARTER ** 2 + 2 * N_QUARTER * N_RADIAL
 
@@ -206,8 +227,8 @@ print("  Quarter pipe : R = %g mm, total L = %g mm" % (R, Z_TOTAL))
 print("    entrance %g mm (%d cells) | heated %g mm (%d) | exit %g mm (%d)"
       % (L_ENT, n_ax_ent, L_HEAT, n_ax_heat, L_EXIT, n_ax_exit))
 print("  core_ratio = %g (core half-size %.4g mm)" % (CORE_RATIO, c))
-print("  n_quarter=%d, n_radial=%d, n_axial=%d (cell size ~%.4g mm)"
-      % (N_QUARTER, N_RADIAL, N_AXIAL, AXIAL_CELL))
+print("  n_quarter=%d, n_radial=%d, n_axial=%d (heated cell %.4g mm, axial_ratio %g)"
+      % (N_QUARTER, N_RADIAL, n_ax_total, L_HEAT / n_ax_heat, AXIAL_RATIO))
 print("  BL scale factor = %.4g (flip=%s)" % (BL_SCALE, BL_FLIP))
 print("  first wall cell ~ %.5g mm (axis edges), %.5g mm (diagonal)"
       % (fc_axis, fc_diag))
@@ -309,7 +330,9 @@ print("  faces: Inlet=%d Outlet=%d Sym1=%d Sym2=%d Wall_H=%d Wall_UH=%d"
 # ============================================================================
 # 4.  EDGE GROUPS — axial (per zone) and radial-to-wall (for the BL)
 # ============================================================================
-axial_ent, axial_heat, axial_exit = [], [], []
+axial_heat = []
+axial_ent_lo, axial_ent_hi = [], []    # graded zones, split by edge direction:
+axial_exit_lo, axial_exit_hi = [], []  # *_lo = edge start vertex at the lower Z
 bl_v0, bl_v1 = [], []          # radial-to-wall, split by which vertex is the wall
 r_tol = 0.05 * R
 
@@ -321,13 +344,16 @@ for e in geompy.SubShapeAll(domain, geompy.ShapeType["EDGE"]):
     p1 = geompy.PointCoordinates(verts[1])
     dx, dy, dz = abs(p1[0] - p0[0]), abs(p1[1] - p0[1]), abs(p1[2] - p0[2])
 
-    # Axial edge (along Z) -> bucket by the zone it spans.
+    # Axial edge (along Z) -> bucket by the zone it spans; the entrance and
+    # exit zones also split by direction so the grading can put the fine end
+    # towards the heated section on every edge.
     if dz > tol and dx < tol and dy < tol:
         zmid = 0.5 * (p0[2] + p1[2])
+        lo_first = p0[2] < p1[2]
         if zmid < Z_HEAT_START - tol:
-            axial_ent.append(e)
+            (axial_ent_lo if lo_first else axial_ent_hi).append(e)
         elif zmid > Z_HEAT_END + tol:
-            axial_exit.append(e)
+            (axial_exit_lo if lo_first else axial_exit_hi).append(e)
         else:
             axial_heat.append(e)
         continue
@@ -343,7 +369,8 @@ for e in geompy.SubShapeAll(domain, geompy.ShapeType["EDGE"]):
     (bl_v0 if on0 else bl_v1).append(e)
 
 print("  axial edges: entrance=%d heated=%d exit=%d"
-      % (len(axial_ent), len(axial_heat), len(axial_exit)))
+      % (len(axial_ent_lo) + len(axial_ent_hi), len(axial_heat),
+         len(axial_exit_lo) + len(axial_exit_hi)))
 print("  BL radial edges: wall-at-v0=%d wall-at-v1=%d" % (len(bl_v0), len(bl_v1)))
 
 # ============================================================================
@@ -354,12 +381,9 @@ mesh.Segment().NumberOfSegments(N_QUARTER)      # global default
 mesh.Quadrangle()
 mesh.Hexahedron()
 
-for edges, n, label in ((axial_ent, n_ax_ent, "entrance"),
-                        (axial_heat, n_ax_heat, "heated"),
-                        (axial_exit, n_ax_exit, "exit")):
-    if edges and n > 0:
-        mesh.Segment(geom=make_group(edges, "Axial_" + label, "EDGE")) \
-            .NumberOfSegments(n)
+if axial_heat and n_ax_heat > 0:
+    mesh.Segment(geom=make_group(axial_heat, "Axial_heated", "EDGE")) \
+        .NumberOfSegments(n_ax_heat)
 
 # BL grading. The wall must be the FINE end: the v0 group (wall at the edge
 # start) grows start->end so it takes scale > 1; the v1 group (wall at the
@@ -382,6 +406,20 @@ def apply_graded(edges, name, n, scale):
     print("  [%s] n=%d scale=%.4g" % (name, hyp.GetNumberOfSegments(),
                                       hyp.GetScaleFactor()))
 
+
+# Entrance/exit axial grading: fine end towards the heated section. The scale
+# factor is last/first along the edge, so it depends on each edge's direction.
+if abs(AXIAL_RATIO - 1.0) < 1e-12:
+    for edges, n, label in ((axial_ent_lo + axial_ent_hi, n_ax_ent, "entrance"),
+                            (axial_exit_lo + axial_exit_hi, n_ax_exit, "exit")):
+        if edges and n > 0:
+            mesh.Segment(geom=make_group(edges, "Axial_" + label, "EDGE")) \
+                .NumberOfSegments(n)
+else:
+    apply_graded(axial_ent_lo,  "Axial_entrance_lo", n_ax_ent, 1.0 / AXIAL_RATIO)
+    apply_graded(axial_ent_hi,  "Axial_entrance_hi", n_ax_ent, AXIAL_RATIO)
+    apply_graded(axial_exit_lo, "Axial_exit_lo",     n_ax_exit, AXIAL_RATIO)
+    apply_graded(axial_exit_hi, "Axial_exit_hi",     n_ax_exit, 1.0 / AXIAL_RATIO)
 
 apply_graded(bl_v0, "BL_WallAtV0", N_RADIAL, factor_v0)
 apply_graded(bl_v1, "BL_WallAtV1", N_RADIAL, factor_v1)
@@ -417,6 +455,7 @@ stats = {
     "first_cell_diag_mm": fc_diag,
     "bl_scale":    BL_SCALE,
     "axial_cells": {"entrance": n_ax_ent, "heated": n_ax_heat, "exit": n_ax_exit},
+    "axial_ratio": AXIAL_RATIO,
     "z_heated":    [Z_HEAT_START, Z_HEAT_END],
     "z_total":     Z_TOTAL,
     "params":      P,

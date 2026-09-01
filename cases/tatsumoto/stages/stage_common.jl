@@ -1,6 +1,6 @@
 # =============================================================================
 # Shared helpers for all tatsumoto stage scripts.
-# Include AFTER `using XCALibre, TOML`.
+# Include AFTER `using XCALibre, TOML, JLD2`.
 # =============================================================================
 
 # cases/tatsumoto/ — configs/, stages/, pipeline/, runs/ live under here.
@@ -41,37 +41,13 @@ function warmup_checkpoint(cfg, run_dir)
 end
 
 """
-    resolve_grid(gridname) -> path
-
-Find `examples/0_GRIDS/<gridname>.unv`; if only the committed `.unv.gz` exists
-(the quarter_pipe grids are stored gzipped — xfine is 130 MB raw), decompress
-it once with system gzip (present on any Linux/HPC; on Windows run
-`gzip -dk <file>` from Git Bash manually if this step fails).
-"""
-function resolve_grid(gridname)
-    dir = pkgdir(XCALibre, "examples/0_GRIDS")
-    unv = joinpath(dir, gridname * ".unv")
-    isfile(unv) && return unv
-    gz = unv * ".gz"
-    if isfile(gz)
-        @info "Decompressing $(basename(gz)) (one-time)..."
-        success(`gzip -dk $gz`) ||
-            error("gzip -dk failed for $gz — decompress manually and rerun.")
-        return unv
-    end
-    error("Grid '$gridname' not found: neither $unv nor $gz exists.")
-end
-
-"""
     resolve_mesh(cfg) -> path
 
-Mesh file for this case, covering both sources:
+Mesh file for this case:
 
-  * generated — `[mesh.geometry]` present: the mesh was built by SALOME on the
-    cluster and `submit.jl` recorded its cache path in `[mesh] generated_file`.
-    Nothing is hashed or derived here; the materialised case.toml is the single
-    source of truth so a run always uses exactly the mesh its DAG built.
-  * named — legacy `[mesh] grid = "quarter_pipe_fine"` from examples/0_GRIDS.
+  * generated — `[mesh.geometry]` present: built by SALOME on the cluster,
+    `submit.jl` recorded its cache path in `[mesh] generated_file`.
+  * named — `[mesh] grid = "<name>"` from examples/0_GRIDS.
 """
 function resolve_mesh(cfg)
     m = cfg["mesh"]
@@ -86,16 +62,68 @@ function resolve_mesh(cfg)
     end
     haskey(m, "grid") || error(
         "[mesh] needs either `grid = \"<name>\"` or a [mesh.geometry] block")
-    return resolve_grid(m["grid"])
+    unv = joinpath(pkgdir(XCALibre, "examples/0_GRIDS"), m["grid"] * ".unv")
+    isfile(unv) && return unv
+    gz = unv * ".gz"
+    if isfile(gz)
+        @info "Decompressing $(basename(gz)) (one-time)..."
+        success(`gzip -dk $gz`) || error("gzip -dk failed for $gz")
+        return unv
+    end
+    error("Grid '$(m["grid"])' not found: neither $unv nor $gz exists.")
+end
+
+"""
+    save_checkpoint(path; time, fields...)
+
+JLD2 checkpoint of the named fields' cell values plus the physical time.
+"""
+function save_checkpoint(path; time, fields...)
+    data = Dict{String,Any}("time" => Float64(time))
+    for (name, field) in pairs(fields)
+        if field isa VectorField
+            data[string(name)] = hcat(Array(field.x.values), Array(field.y.values),
+                                      Array(field.z.values))
+        else
+            data[string(name)] = Array(field.values)
+        end
+    end
+    JLD2.save(path, data)
+    return path
+end
+
+"""
+    load_checkpoint!(path; fields...) -> time
+
+Restore the named fields from a JLD2 checkpoint written by `save_checkpoint`.
+Fields absent from the file are skipped with a warning.
+"""
+function load_checkpoint!(path; fields...)
+    data = JLD2.load(path)
+    for (name, field) in pairs(fields)
+        key = string(name)
+        if !haskey(data, key)
+            @warn "Checkpoint has no field '$key' — left at its initial value"
+            continue
+        end
+        vals = data[key]
+        if field isa VectorField
+            copyto!(field.x.values, vals[:, 1])
+            copyto!(field.y.values, vals[:, 2])
+            copyto!(field.z.values, vals[:, 3])
+        else
+            copyto!(field.values, vals)
+        end
+    end
+    return Float64(data["time"])
 end
 
 """
     run_solver!(model, config; kwargs...)
 
-Call the multiphase solver with only the kwargs the INSTALLED solver supports.
-The solver is being rebuilt feature-by-feature (PIMPLE outer correctors,
-stop_T checkpointing, ... come and go); unsupported kwargs are dropped with a
-warning instead of a MethodError, so the same case TOML works throughout.
+Call the multiphase solver with only the kwargs the INSTALLED solver supports;
+unsupported kwargs are dropped with a warning instead of a MethodError, so the
+same case TOML works as solver features come and go.
 """
 function run_solver!(model, config; kwargs...)
     f = XCALibre.Solvers.multiphase!

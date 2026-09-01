@@ -2,42 +2,34 @@ Manifest.toml
 test/Manifest.toml
 docs/build/*
 docs/Manifest
-.vscode/*
 data/mesh.jld2
 data/fields.jld2
-results.vtk
 unv_sample_meshes/*
+constant/
+/[0-9]*/
+dev/
+
+*.csv
+*.unv
 *.vtk
 *.vtu
 *.pb.gz
 *.foam
-*.csv
+
 !NIST_*.csv
-[0-9]*/
-constant/
-
-
-
-DATA_FOR_DISSERTATION/*
+*.txt
+CLAUDE.md
+AGENTS.md
+.claudeignore
 *.jld2
-VOF_cases/
-test/eos_comparison/
-test/mixture_testing/
-test/HeatFlux
-test/prep_heatflux.jl
-test/HeatFlux_1MPa.jl
-test/HeatFlux.jl
-test/tatsumoto/*
-# examples/0_GRIDS is collaterally ignored by the [0-9]*/ rule above.
-# Re-include ONLY the gzipped grids (large raw .unv stay local; stages
-# auto-decompress the .gz on first use).
-!examples/0_GRIDS/
-examples/0_GRIDS/*
-!examples/0_GRIDS/*.unv.gz
+*.log
+*.bin
+.codex
+.agents
+.claude
+.vscode
+dev/
 
-# Simulation campaign outputs (checkpoints, VTK, SLURM logs)
+# Case run outputs (checkpoints, VTU series, SLURM logs)
 cases/**/runs/
-
-# Python bytecode
 __pycache__/
-*.pyc

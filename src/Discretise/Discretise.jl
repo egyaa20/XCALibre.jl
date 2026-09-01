@@ -11,6 +11,7 @@ using GPUArrays
 
 using LinearAlgebra
 using SparseMatricesCSR
+using Statistics
 
 using XCALibre.Multithread
 using XCALibre.Mesh
@@ -38,16 +39,16 @@ include("boundary_conditions/fixedTemperature_interpolation.jl")
 include("boundary_conditions/empty.jl")
 include("boundary_conditions/empty_interpolation.jl")
 include("boundary_conditions/neumann.jl")
+include("boundary_conditions/heatflux.jl")
+include("boundary_conditions/heatflux_interpolation.jl")
 include("boundary_conditions/extrapolated.jl")
 include("boundary_conditions/zerogradient.jl")
 include("boundary_conditions/zerogradient_interpolation.jl")
+include("boundary_conditions/outlet.jl")
+include("boundary_conditions/outlet_interpolation.jl")
 include("boundary_conditions/neumannFunction.jl")
 include("boundary_conditions/neumannFunction_interpolation.jl")
 include("boundary_conditions/neumann_interpolation.jl")
-include("boundary_conditions/fixedFluxPressure.jl")
-include("boundary_conditions/fixedFluxPressure_interpolation.jl")
-include("boundary_conditions/inletOutlet.jl")
-include("boundary_conditions/inletOutlet_interpolation.jl")
 include("boundary_conditions/periodic.jl")
 include("boundary_conditions/periodic_interpolation.jl")
 include("boundary_conditions/symmetry.jl")
@@ -56,6 +57,8 @@ include("boundary_conditions/wall.jl")
 include("boundary_conditions/wall_interpolation.jl")
 include("boundary_conditions/rotating_wall.jl")
 include("boundary_conditions/rotating_wall_interpolation.jl")
+include("boundary_conditions/slip.jl")
+include("boundary_conditions/slip_interpolation.jl")
 
 
 end

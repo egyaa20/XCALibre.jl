@@ -3,14 +3,8 @@ using LinearAlgebra
 using SparseArrays
 using SparseMatricesCSR
 using StaticArrays 
-using ThreadPinning
+using Statistics
 using Test
-
-# @info "Pinning Threads"
-# pinthreads(:cores)
-
-# @info "Setting BLAS threads to 1"
-# BLAS.set_num_threads(1)
 
 workgroupsize(mesh) = length(mesh.cells) ÷ Threads.nthreads()
 
@@ -30,16 +24,37 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_DILU.jl")
     end
 
+    @testset "Mixture Multiphase Unit Test" begin
+        include("unit_test_laplace.jl")
+    end
+
+    @testset "AMG" begin
+        include("test_AMG.jl")
+        include("test_AMG_matrices.jl")
+    end
+
     @testset "Laplace Unit Test" begin
         include("unit_test_laplace.jl")
     end
 
-    @testset "setFields Function Unit Test" begin
-        include("unit_test_setFields.jl")
+    @testset "Wall Distance Unit Test" begin
+        include("unit_test_wall_distance.jl")
     end
+
+    # @testset "setFields Function Unit Test" begin
+    #     include("unit_test_setFields.jl")
+    # end
 
     @testset "Fluid Properties Unit Test" begin
         include("unit_test_fluidProperties.jl")
+    end
+
+    @testset "Helmholtz Property Table Unit Test" begin
+        include("unit_test_propertyTable.jl")
+    end
+
+    @testset "Multiphase Energy Unit Test" begin
+        include("unit_test_multiphase_energy.jl")
     end
 
     @testset "Laplace Functionality Test" begin
@@ -66,19 +81,6 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
             include(test_path)
         end
     end
-    
-    @testset "Multiphase" begin
-
-        test_files = [
-            "multiphase_dam_break.jl"
-            "multiphase_hydrostatic_column.jl"
-        ]
-
-        for test ∈ test_files
-            test_path = joinpath(TEST_CASES_DIR, test)
-            include(test_path)
-        end
-    end
 
     @testset "Post-processing unit Test" begin
         include("unit_test_field_average.jl")
@@ -95,6 +97,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
             "2d_incompressible_flatplate_KOmega_lowRe.jl",
             "2d_incompressible_flatplate_KOmega_HighRe.jl",
             "2d_incompressible_laminar_BFS.jl",
+            "2d_incompressible_laminar_rotatingFlatplate_MRF.jl",
             "2d_incompressible_transient_KOmega_BFS_lowRe.jl",
             "2d_incompressible_transient_laminar_BFS.jl",
             "2d_incompressible_transient_laminar_BFS_CrankNicolson.jl",
@@ -116,13 +119,36 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         test_files = [
             "2d_compressible_KOmega_flatplate_fixedT.jl",
             "2d_compressible_laminar_flatplate_fixedT.jl",
-            "2d_compressible_transient_laminar_heated_cylinder.jl"
+            "2d_compressible_transient_laminar_heated_cylinder.jl",
+            "2d_compressible_transient_cylinder_energy_models.jl",
+            "2d_compressible_supersonic_compression_corner.jl"
         ]
 
         for test ∈ test_files
             test_path = joinpath(TEST_CASES_DIR, test)
             include(test_path)
         end
+    end
+
+    @testset "Godunov Solver" begin
+        include(joinpath(TEST_CASES_DIR, "2d_godunov_supersonic_cylinder.jl"))
+    end
+
+    @testset "Multiphase Solver" begin
+        test_files = [
+            "2d_multiphase_gravity.jl",
+            "2d_multiphase_hydrostatic.jl",
+            "2d_multiphase_mixture.jl"
+        ]
+
+        for test ∈ test_files
+            test_path = joinpath(TEST_CASES_DIR, test)
+            include(test_path)
+        end
+    end
+
+    @testset "Thin Film Solver" begin
+        include(joinpath(TEST_CASES_DIR, "2d_EFM.jl"))
     end
 
     foreach(rm, filter(endswith(".vtk"), readdir(pwd(), join=true)))

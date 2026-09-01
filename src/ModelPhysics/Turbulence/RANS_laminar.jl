@@ -6,7 +6,9 @@ export Laminar
 
 Laminar model definition for physics API.
 """
-struct Laminar <: AbstractRANSModel end 
+struct Laminar{SF} <: AbstractDummyTurbulenceModel
+    nut::SF
+end 
 Adapt.@adapt_structure Laminar
 
 # Model type definition (hold equation definitions and internal data)
@@ -21,8 +23,21 @@ RANS{Laminar}() = begin # Empty constructor
     RANS{Laminar,ARG}(args)
 end
 
+LES{Laminar}() = begin # Empty constructor
+    args = (); ARG = typeof(args)
+    LES{Laminar,ARG}(args)
+end
+
 # Functor as constructor (internally called by Physics API): Returns fields and user data
-(rans::RANS{Laminar, ARG})(mesh) where ARG = Laminar()
+(model::RANS{Laminar, ARG})(mesh) where ARG = begin
+    nut = ConstantScalar(mesh)
+    Laminar(nut)
+end
+
+(model::LES{Laminar, ARG})(mesh) where ARG = begin
+    nut = ConstantScalar(mesh)
+    Laminar(nut)
+end
 
 # Model initialisation
 """
@@ -72,6 +87,9 @@ Run turbulence model transport equations.
 """
 function turbulence!(rans::LaminarModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, prev, time,config
     ) where {T,F,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI}
+    (; U, Uf, gradU) = S
+    grad!(gradU, Uf, U, config.boundaries.U, time, config)
+    limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     nothing
 end
 
@@ -87,11 +105,11 @@ end
 # Specialise VTK writer
 function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
     ) where {T,F,SO,M,Tu<:Laminar,E,D,BI}
-    
     if typeof(model.fluid)<:AbstractCompressible
         args = (
             ("U", model.momentum.U), 
             ("p", model.momentum.p),
+            ("rho", model.fluid.rho),
             ("T", model.energy.T)
         )
     else
@@ -104,10 +122,10 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
 end
 
 function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
-    ) where {T,F<:Multiphase,SO,M,Tu<:Laminar,E,D,BI}
+    ) where {T,F<:Multiphase,SO,M,Tu<:Laminar,E<:Nothing,D,BI}
 
     args = (
-        ("U", model.momentum.U),
+        ("U", model.momentum.U), 
         ("p", model.momentum.p),
         ("alpha", model.fluid.alpha),
         ("rho", model.fluid.rho),
@@ -115,35 +133,6 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
     )
     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
-
-# Multiphase + Laminar + MultiphaseTemperature: dump T alongside the usual fields.
-function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
-    ) where {T,F<:Multiphase,SO,M,Tu<:Laminar,E<:MultiphaseTemperature,D,BI}
-
-    args = (
-        ("U", model.momentum.U),
-        ("p", model.momentum.p),
-        ("alpha", model.fluid.alpha),
-        ("rho", model.fluid.rho),
-        ("p_rgh", model.fluid.p_rgh),
-        ("T", model.energy.T),
-    )
-    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
-end
-
-
-# function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
-#     ) where {T,F<:Multiphase,SO,M,Tu<:Laminar,E,D,BI}
-
-#     args = (
-#         ("U", model.momentum.U), 
-#         ("p", model.momentum.p),
-#         ("alpha", model.fluid.alpha),
-#         ("rho", model.fluid.rho),
-#         ("p_rgh", model.fluid.p_rgh)
-#     )
-#     write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
-# end
 
 function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
     ) where {T,F,SO,M,Tu<:Laminar,E<:Nothing,D,BI}
@@ -155,11 +144,3 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
 end
 
 
-function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
-    ) where {T,F<:Nothing,SO,M,Tu<:Nothing,E<:Conduction,D,BI}
-    
-    args = (
-        ("T", model.energy.T),
-    )
-    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
-end

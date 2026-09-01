@@ -2,7 +2,6 @@ export SolverSetup, Runtime, Schemes
 export explicit_relaxation!, implicit_relaxation!, implicit_relaxation_diagdom!, setReference!
 export solve_system!
 export solve_equation!
-export residual!
 export AdaptiveTimeStepping
 
 struct SolverSetup{
@@ -56,7 +55,7 @@ This function is used to provide solver settings that will be used internally in
 - `relax`: specifies the relaxation factor to be used e.g. set to 1 for no relaxation
 - `smoother`: specifies smoothing method to be applied before discretisation. `JacobiSmoother`: is currently the only choice (defaults to `nothing`)
 - `limit`: used in some solvers to bound the solution within these limits e.g. (min, max). It defaults to `nothing`
-- `itmax`: maximum number of iterations in a single solver pass (defaults to 1000) 
+- `itmax`: maximum number of iterations in a single solver pass (defaults to 1000, or 200 for `AMG`)
 - `atol`: absolute tolerance for the solver (default to eps(FloatType)^0.9)
 - `rtol`: set relative tolerance for the solver (defaults to 1e-1)
 - `float_type`: specifies the floating point type to be used by the solver. It is also used to estimate the absolute tolerance for the solver (defaults to `Float64`)
@@ -69,7 +68,7 @@ SolverSetup(;
         convergence, 
         relax, 
         limit=nothing,
-        itmax::I=1000, 
+        itmax::I=(solver isa AMG ? 200 : 1000),
         atol=(eps(float_type))^0.9,
         rtol=1e-1 |> float_type
         ) where{S1,S2,PT,I} = 
@@ -110,7 +109,7 @@ simulations. If not provided, a fixed time step is used.
 
 - `maxCo::AbstractFloat`: target maximum Courant number. The time step will be adjusted
   such that the computed Courant number approaches this value.
-- `maxCo::AbstractFloat`: target maximum Alpha Courant number. The time step will be adjusted
+- `maxAlphaCo::AbstractFloat`: target maximum Alpha Courant number. The time step will be adjusted
   such that the computed Courant number approaches this value.
 - `minShrink::AbstractFloat`: lower bound on the multiplicative factor applied to the
   current time step. Prevents excessively large reductions in a single update.
@@ -124,12 +123,12 @@ AdaptiveTimeStepping(;
     maxGrow=1.2
 ) = AdaptiveTimeStepping(float(maxCo), float(maxAlphaCo), float(minShrink), float(maxGrow))
 
-struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping}, TE}
+struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping}}
     iterations::I
     dt::V
     write_interval::I
     adaptive::A
-    t_end::TE   # Either `nothing` (use `iterations` as the only stop) or a Float
+    t_end::Union{Nothing,F}
 end
 Adapt.@adapt_structure Runtime
 
@@ -157,49 +156,27 @@ This is a convenience function to set the top-level runtime information. The inp
 
 # Input arguments
 
-- `iterations::Integer`: number of solver iterations. Optional when `t_end` is provided; in that case a large safety cap is computed automatically and the loop exits via the `t_end` check.
+- `iterations::Integer`: specifies the number of iterations in a simulation run.
 - `write_interval::Integer`: defines how often simulation results are written to file (on the current working directory). The interval is currently based on number of iterations. Set to `-1` to run without writing results to file.
 - `time_step::AbstractFloat`: the time step to use in the simulation. Notice that for steady solvers this is simply a counter and it is recommended to simply use `1`.
 - `adaptive::Union{Nothing, AdaptiveTimeStepping}`: optionally enables adaptive time stepping. Pass an `AdaptiveTimeStepping` object to automatically adjust `dt` based on the Courant number during transient simulations. Defaults to `nothing`, meaning a fixed time step is used.
-- `t_end::Union{Nothing, AbstractFloat}`: optional physical-time termination. When set, the time-stepping loop exits as soon as the simulated time reaches `t_end`, regardless of the `iterations` count. Either `iterations` or `t_end` must be supplied — pass both to use whichever stops first. Defaults to `nothing`.
 
 # Example
 
 ```julia
-# Iteration-bound run
 runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
-
-# Time-bound transient run — solver auto-caps `iterations`
-runtime = Runtime(time_step=1.0e-3, write_interval=200, t_end=12.0)
-
-# Belt-and-braces — stop at the first of either limit
-runtime = Runtime(iterations=20_000, time_step=1.0e-3,
-                  write_interval=200, t_end=12.0)
 ```
 """
-Runtime(; iterations=nothing,
-          write_interval,
-          time_step,
+Runtime(; iterations::Integer=10_000_000,
+          write_interval::Integer,
+          time_step::Number,
           adaptive=nothing,
           t_end=nothing) = begin
 
-    isnothing(iterations) && isnothing(t_end) &&
-        error("Runtime: must specify at least one of `iterations` or `t_end`.")
-
     val = float(time_step)
-    t_end_val = isnothing(t_end) ? nothing : float(t_end)
-
-    # When only `t_end` is given, default `iterations` to a large safety
-    # cap that the time-check will normally trip first. Roughly 10× the
-    # time-step bound, with a hard floor of 1e7 to avoid pathological
-    # short caps from very small dt or non-positive t_end.
-    iter_val = if isnothing(iterations)
-        max(round(Int, 10 * t_end_val / val), 10_000_000)
-    else
-        Int(iterations)
-    end
-
-    Runtime(iter_val, [val], write_interval, adaptive, t_end_val)
+    t_end_val = t_end === nothing ? nothing : oftype(val, t_end)
+    it, wi = promote(iterations, write_interval)
+    Runtime(it, [val], wi, adaptive, t_end_val)
 end
 
 # Set schemes function definition with default set variables
@@ -242,12 +219,16 @@ The `Schemes` struct is used at the top-level API to help users define discretis
 end
 
 
+# eqn.model.terms[1].flux implies that the time term must always be defined first when constructing an equation.
 function solve_equation!(
     eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup, config; rho_prev=eqn.model.terms[1].flux, time=nothing, ref=nothing, irelax=nothing
     ) where {T<:ScalarModel,M,E,S,P}
 
-    discretise!(eqn, phi, config; rho_prev=rho_prev)
+    discretise!(eqn, phi, config, rho_prev=rho_prev)  
     apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
+    if length(eqn.model.terms) == 1 && typeof(eqn.model.terms[1]) <: Laplacian
+        make_symmetric!(eqn, config) # added this to test stability of periodic boundaries
+    end
     setReference!(eqn, ref, 1, config)
     if !isnothing(irelax)
         implicit_relaxation!(eqn, phi.values, irelax, nothing, config)
@@ -258,13 +239,14 @@ function solve_equation!(
     return res
 end
 
+# psiEqn.model.terms[1].flux implies that the time term must always be defined first when constructing an equation.
 function solve_equation!(
     psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir, config; rho_prev=psiEqn.model.terms[1].flux, time=nothing
     ) where {T<:VectorModel,M,E,S,P}
 
     mesh = psi.mesh
 
-    discretise!(psiEqn, psi, config; rho_prev=rho_prev)
+    discretise!(psiEqn, psi, config, rho_prev=rho_prev)
     update_equation!(psiEqn, config)
     
     apply_boundary_conditions!(psiEqn, psiBCs, xdir, time, config)
@@ -313,7 +295,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
 
     krylov_solve!(
         solver, opA, b, values; 
-        M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon)
+        M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon), history=false
         )
 
     # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution
@@ -327,9 +309,9 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     kernel! = _copy!(_setup(backend, workgroup, ndrange)...)
     kernel!(values, x)
 
-    Krylov.iteration_count(solver) == itmax && @warn "Maximum number of iterations reached!"
+    iterations = Krylov.iteration_count(solver)
+    iterations == itmax && @warn "Maximum number of iterations reached!"
 
-    # println(statistics(solver).niter)
     res = residual(phiEqn, component, config)
     return res
 end
@@ -387,7 +369,7 @@ end
     @inbounds begin
         nIndex = spindex(rowptr, colval, i, i)
         nzval[nIndex] /= alpha
-        b[i] += (1.0 - alpha)*nzval[nIndex]*field[i]
+        b[i] += (one(alpha) - alpha)*nzval[nIndex]*field[i]
     end
 end
 
@@ -461,18 +443,8 @@ end
 
     @inbounds begin
         cIndex = spindex(rowptr, colval, cellID, cellID)
-        # Classical big-number Dirichlet pin: add a dominant value to the
-        # diagonal and the matching term to the RHS. With M ≫ ||A||,
-        # x[cellID] → pRef to machine precision, the matrix stays SPD, and
-        # the sparse structure is untouched. Strictly stronger than the
-        # previous "double the diagonal" soft pin, which left the pinned
-        # cell weakly anchored and allowed the constant-nullspace drift that
-        # breaks symmetry on all-Neumann p_rgh systems (FixedFluxPressure
-        # outlet + walls).
-        T = eltype(nzval)
-        M = T(1.0e15)
-        nzval[cIndex] += M
-        b[cellID]    += M * pRef
+        b[cellID] = nzval[cIndex]*pRef
+        nzval[cIndex] += nzval[cIndex]
     end
 end
 
@@ -480,6 +452,18 @@ function residual(eqn, component, config)
     (; A, R, Fx) = eqn.equation
     b = _b(eqn, component)
     values = get_values(get_phi(eqn), component)
+    (; backend, workgroup) = config.hardware
+
+    rowptr = _rowptr(A)
+    colval = _colval(A)
+    nzval = _nzval(A)
+    ndrange = length(values)
+    kernel! = _scaled_residual!(_setup(backend, workgroup, ndrange)...)
+    kernel!(R, Fx, rowptr, colval, nzval, values, b)
+
+    denominator = sum(Fx)
+    denominator = ifelse(denominator > eps(denominator), denominator, one(denominator))
+    Residual = sum(R) / denominator
 
     # # Openfoam's residual definition (not optimised)
     # Fx .= A*values
@@ -491,13 +475,66 @@ function residual(eqn, component, config)
     # Residual = T1/(T2 + T3)
 
     # Previous definition
-    Fx .= A * values
-    # @inbounds @. R = (b - Fx)^2
-    xcal_foreach(R, config) do i 
-            R[i] = (b[i] - Fx[i])^2
-    end
-    normb = norm(b)
-    denominator = ifelse(normb>0,normb, 1)
-    Residual = sqrt(mean(R)) / denominator
+    # Fx .= A * values
+    # xcal_foreach(R, config) do i
+    #         @inbounds R[i] = (b[i] - Fx[i])^2
+    # end
+    # normb = norm(b)
+    # denominator = ifelse(normb > eps(normb), normb, one(normb))
+    # Residual = sqrt(sum(R)) / denominator
     return Residual
+end
+
+@kernel function _scaled_residual!(R, Fx, @Const(rowptr), @Const(colval), @Const(nzval), @Const(values), @Const(b))
+    i = @index(Global)
+    Ax = zero(eltype(R))
+    Dx = zero(eltype(R))
+    xi = values[i]
+
+    @inbounds for nzi ∈ rowptr[i]:(rowptr[i + 1] - 1)
+        Aij = nzval[nzi]
+        j = colval[nzi]
+        Ax += Aij * values[j]
+        if j == i
+            Dx = Aij * xi
+        end
+    end
+
+    @inbounds begin
+        R[i] = abs(b[i] - Ax)
+        Fx[i] = abs(Dx)
+    end
+end
+
+function make_symmetric!(eqn, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    (; b, A) = eqn.equation
+    mesh = get_phi(eqn).mesh
+    (; faces) = mesh
+    nzval = _nzval(A)
+    colval = _colval(A)
+    rowptr = _rowptr(A)
+
+    nbfaces = mesh.boundary_cellsID |> length
+    ndrange = length(faces) - nbfaces
+    kernel! = _make_symmetric!(_setup(backend, workgroup, ndrange)...)
+    kernel!(colval, rowptr, nzval, faces, nbfaces)
+end
+
+@kernel function _make_symmetric!(colval, rowptr, nzval, faces, nbfaces)
+    i = @index(Global)
+    fID = i + nbfaces
+
+    face = faces[fID]
+    (; ownerCells) = face 
+    cID1 = ownerCells[1]
+    cID2 = ownerCells[2]
+
+    cIndex1 = spindex(rowptr, colval, cID1, cID2)
+    cIndex2 = spindex(rowptr, colval, cID2, cID1)
+
+    Apn = nzval[cIndex1]
+    nzval[cIndex2] = Apn
+
 end

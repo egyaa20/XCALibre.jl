@@ -20,7 +20,7 @@ time_post = "00:20:00"         # post.py is a lightweight plot script, not a
                                # solve -- the default 11:30:00 would just
                                # make it wait for a slot sized for the solver
                                # jobs instead of scheduling quickly
-cpus_per_task = 32
+cpus_per_task = 16
 mem       = "64G"
 gpu       = false              # true -> adds --gres=gpu:1 and keeps the case's
                                # [hardware] backend; false -> backend forced to CPU

@@ -1,150 +1,87 @@
 # =============================================================================
-# SUPERCRITICAL N2 heat transfer — Tatsumoto 2010, Fig. 5
-# P = 3.5 MPa (supercritical), T_in = 78 K, vertical heated quarter-pipe.
+# SUPERCRITICAL N2 heat transfer — Tatsumoto 2010
+# P = 3.5 MPa (supercritical), T_in = 78 K, U_in = 3.7 m/s, vertical heated
+# quarter-pipe. Solver: Solvers_5_Multiphase.jl (dev_cryogenic) with
+# HelmholtzTable properties, Energy{HelmholtzEnthalpy}, HeatFlux wall BCs.
 #
 # Single run:   julia --project=. cases/tatsumoto/pipeline/submit.jl \
 #                     cases/tatsumoto/configs/supercritical.toml --local
 # HPC (SLURM):  julia --project=. cases/tatsumoto/pipeline/submit.jl \
 #                     cases/tatsumoto/configs/supercritical.toml
-# Batch sweep:  uncomment [batch] below — every combination becomes a DAG chain.
 # =============================================================================
 
 [case]
 name = "supercritical"         # names runs/<name>/ (checkpoints, vtk, post)
-# prep_stage   = "prep.jl"     # defaults; boiling.toml overrides these
-# heated_stage = "heated.jl"
 
 [mesh]
 # Built on the cluster by SALOME (cases/tatsumoto/mesh/quarter_pipe.py) into a
 # content-addressed cache; change any value below and the next submit builds a
-# new mesh, leaving the old one cached. To use a committed grid instead, delete
-# the three sub-tables and set `grid = "quarter_pipe_xfine"`.
+# new mesh, leaving the old one cached.
 scale = 0.001                  # UNV length units (mm) -> metres
 
 [mesh.geometry]                # all lengths in mm
 radius     = 2.7               # tube ID 5.4 mm (paper) -> R = 2.7
 L_entrance = 200.0             # unheated development length (paper: 200 mm = 37d)
 L_heated   = 100.0             # heated section (paper: 100 mm)
-L_exit     = 0.0               # unheated extension past the heated section
+L_exit     = 100.0             # unheated outlet extension past the heated section
 core_ratio = 0.4               # O-grid core half-size as a fraction of R
 
 [mesh.resolution]
-n_quarter = 10                 # circumferential / core-square segments
-n_radial  = 50                 # wall-normal segments (these carry the BL)
-n_axial   = 300                # total axial segments, split across
-                                # entrance/heated/exit by length (300 mm total
-                                # -> 1 mm cells at L_entrance=200/L_heated=100)
+n_quarter     = 8              # circumferential / core-square segments
+n_radial      = 55             # wall-normal segments (these carry the BL)
+n_ax_entrance = 80             # explicit per-zone axial counts
+n_ax_heated   = 120            #   heated cell = 100/120 = 0.833 mm, uniform
+n_ax_exit     = 40
+axial_ratio   = 3.0            # largest/smallest axial cell in entrance/exit,
+                               # fine end towards the heated section
+# total ~ 226,560 cells (cross-section 944 x 240 axial)
 
 [mesh.boundary_layer]
-# Target first wall-normal cell height [mm]; the grading ratio is solved for
-# it. first_cell below is sized for y+ ~ 1 at U_in = 3.7 m/s (see the run
-# note in [flow] below) — the two setpoints need different values since
-# 3.7 m/s has a far thinner viscous sublayer than 0.24 m/s, so this is the
-# natural key to vary per variant.
-first_cell = 0.000392          # y+ ~ 1 at U_in=3.7 m/s, sized at the WALL
-                                # condition, not the inlet — the BL spacing is
-                                # one fixed value swept the length of the pipe
-                                # (structured extrusion, can't vary axially),
-                                # so it has to cover the worst point along it.
-                                #
-                                # nu = mu/rho is NOT monotonic in T here: mu
-                                # falls faster than rho as the wall heats
-                                # toward Tc'=126.8K, so nu bottoms out AT Tc',
-                                # not at either end of the range (Helmholtz EOS
-                                # @ 3.5 MPa: rho 812->328 kg/m3, mu 165->19
-                                # uPa.s from 78K to 126.8K; past Tc' rho keeps
-                                # falling but mu flattens, so nu turns back up).
-                                # Blasius/Fanning at each T (U=3.7 m/s bulk):
-                                #   T=78.0K (inlet): first_cell=1.166 um
-                                #   T=126.8K (Tc'):  first_cell=0.392 um  <- used
-                                #   T=150.0K:        first_cell=0.612 um
-                                # Using the inlet value alone would have been
-                                # ~3x too coarse exactly where the case exists
-                                # to resolve the deterioration regime.
-                                # BL grading ratio: n_radial=50 gives ~491.9
-                                # (~13.5% per-cell growth) for this first_cell,
-                                # vs ~1300 (~46% growth) at n_radial=20 — 50
-                                # was chosen to ease that, at ~2.2x the cell
-                                # count (150k -> 330k total).
-                                # For 0.24 m/s redo this sweep — the wall
-                                # temperature profile differs.
+first_cell = 0.0008            # first wall cell height [mm] = 0.8 um.
+                               # y+ (first cell CENTRE, 0.4 um) ~ 1.0 at the
+                               # pseudo-critical wall state for U_in=3.7 m/s
+                               # (delta_nu = 0.39 um at Tc' = 126.8 K, 3.5 MPa),
+                               # ~0.35 at the 78 K inlet state. Growth ratio
+                               # with n_radial=55 comes out ~1.10.
 
 [hardware]
-backend   = "CPU"              # "CPU" | "CUDA"  (submit.jl forces CPU when hpc.toml gpu=false)
+backend   = "CPU"              # "CPU" | "CUDA"
 workgroup = 128                # ignored (AutoTune) on CPU
 
 [flow]
-U_in           = 3.7           # inlet bulk velocity [m/s] — validation setpoint;
-                                # mesh.boundary_layer.first_cell is sized for
-                                # this U_in (y+ ~ 1). Changing U_in without
-                                # rechecking first_cell will silently change
-                                # the achieved y+.
+U_in           = 3.7           # inlet bulk velocity [m/s] — validation setpoint
 T_in           = 78.0          # inlet / bath temperature [K]
 turb_intensity = 0.05          # inlet turbulence intensity (fraction)
 D_hyd          = 5.4e-3        # hydraulic diameter [m] (tube ID)
 
 [thermo]
-pressure   = 3.5e6             # operating (absolute) pressure [Pa]
+pressure   = 3.5e6             # operating (absolute) pressure [Pa] = table p_ref
 T_table_lo = 75.0              # property-table T bounds [K]
 T_table_hi = 375.0
-n_points   = 3000              # base T resolution (auto-refined ×3 in T_c±10 K, ×5 in ±1 K)
-p_lo       = 3.4e6             # table pressure bounds [Pa] (absolute)
-p_hi       = 3.64e6
-n_p        = 12                # pressure samples (uniform, linear interpolation)
+n_points   = 6000              # uniform table: dT = 0.05 K, resolves the
+                               # cp peak at Tc' = 126.8 K
 
 [energy]
-# NOTE: "enthalpy" (VariableSensibleEnthalpy) is pending re-add to the rebuilt
-# multiphase solver — use "temperature" until then.
-formulation = "temperature"
-Pr_t        = 0.85             # turbulent Prandtl number (Pr_t_model = "constant")
-Pr_t_model  = "constant"       # "constant" | "kays_crawford"
-prop_relax  = 0.4              # ρ/ρcp under-relaxation across outer correctors (0,1]
+Pr_t = 0.85                    # turbulent Prandtl number
 
 [heating]
-Q0  = 250.0                    # ramp prefactor [W/m^2]:  q(t) = Q0·exp(t/tau)
+Q0  = 250.0                    # ramp prefactor [W/m^2]:  q(t) = Q0*exp(t/tau)
 tau = 2.0                      # ramp time constant [s] (paper value)
 
 [run]
 time_step  = 1.0e-4            # base dt [s] (adaptive grows from here)
 warmup_end = 5.0               # stage-2 flow-development stop time [s]
 heated_end = 13.0              # stage-3 heated stop time [s]
-stop_T     = 124.0             # one-shot checkpoint when hottest cell reaches this [K]
 discard_until = 0.0            # post.py ignores heated data before this time [s]
 post_stride   = 1              # post.py: plot every Nth snapshot
 
-# Both lowered from 5000/500: with the t_end fix, prep/heated iteration
-# counts are only in the hundreds-to-low-thousands (maxCo=90 heated: 1241
-# iterations for 3.0s), so the old cadences meant ZERO periodic VTK writes
-# during warmup and only ~2-3 during heated -- no visualisable non-heated
-# fields, and too few points for a good q-vs-deltaT curve in post.py.
 write_interval_prep   = 25     # VTK cadence [iterations], warmup stage
 write_interval_heated = 25     # heated stage
 
-inner_loops        = 2         # PISO pressure correctors
-n_outer_correctors = 3         # PIMPLE outer correctors (ignored if solver lacks them)
-outer_tol          = 1.0e-3
+inner_loops = 2                # PISO pressure correctors
 
 [run.adaptive]
 maxCo      = 0.9
 maxAlphaCo = 0.85
 minShrink  = 0.1
 maxGrow    = 1.1
-
-# =============================================================================
-# BATCH MODE — every combination (mode="product") of [batch.vary] becomes one
-# variant with its own runs/<name>__<param>-<val>/ directory and DAG chain.
-#
-# maxCo sweep: the y+~1 mesh's near-wall cell was pinning Courant exactly at
-# maxCo=0.9, capping dt at ~2.5e-5s -- at that rate warmup_end=5.0s needs
-# ~92 days of wall-clock, not the 11:30 walltime budget. Each value below
-# gets its OWN prep job (maxCo added to submit.jl's WARMUP_KEYS) so the
-# warmup-stage dt growth is directly comparable across variants, not shared.
-#
-# 50 omitted: retried with more walltime earlier and still didn't clear
-# warmup in time (see the 11:30 walltime note) -- not worth the allocation
-# hours on a value that's already ruled out.
-# =============================================================================
-[batch]
-mode = "product"
-[batch.vary]
-"run.adaptive.maxCo" = [90, 150, 250]

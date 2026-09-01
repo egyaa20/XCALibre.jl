@@ -45,11 +45,9 @@ residuals.p
 run!() = nothing # dummy function for providing general documentation
 
 
-
 run!(
     model::Physics{T,F,SO,M,Tu,E,D,BI}, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=3,
-    n_outer_correctors=1, outer_tol=1.0e-3,
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=3
     ) where{T,F<:Multiphase,SO,M,Tu,E,D,BI} =
 begin
     residuals = multiphase!(
@@ -58,13 +56,9 @@ begin
         pref=pref,
         ncorrectors=ncorrectors,
         inner_loops=inner_loops,
-        n_outer_correctors=n_outer_correctors,
-        outer_tol=outer_tol,
         )
     return residuals
 end
-
-
 
 # Laplace solver (steady)
 """
@@ -144,7 +138,52 @@ run!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} = 
 begin
+    residuals=nothing
     residuals = simple!(
+        model, config, 
+        output=output,
+        pref=pref, 
+        ncorrectors=ncorrectors, 
+        inner_loops=inner_loops
+    )
+
+    return residuals
+end
+
+# Incompressible solver (steady) with multiple reference frames (MRF)
+"""
+    run!(
+        model::Physics{T,F,M,Tu,E,D,BI}, config;
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+        ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} = 
+    begin
+        residuals = simple!(model, config, pref=pref)
+        return residuals
+    end
+
+Calls the incompressible steady solver using the SIMPLE-MRF algorithm.
+
+# Input
+- `model` represents the `Physics` model defined by user.
+- `config` Configuration structure defined by user with solvers, schemes, runtime and hardware structures configuration details.
+- `output` select the format used for simulation results from `VTK()` or `OpenFOAM()` (default = `VTK()`)
+- `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only.
+
+# Output
+
+This function returns a `NamedTuple` for accessing the residuals (e.g. `residuals.Ux`) with the following entries:
+
+- `Ux`  - Vector of x-velocity residuals for each iteration.
+- `Uy`  - Vector of y-velocity residuals for each iteration.
+- `Uz`  - Vector of y-velocity residuals for each iteration.
+- `p`   - Vector of pressure residuals for each iteration.
+"""
+run!(
+    model::Physics{T,F,M,Tu,E,D,BI}, config; 
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    ) where{T<:Steady,F<:Incompressible_MRF,M,Tu,E,D,BI} = 
+begin
+    residuals = simple_MRF!(
         model, config, 
         output=output,
         pref=pref, 
@@ -153,6 +192,7 @@ begin
         )
     return residuals
 end
+
 
 # Incompressible solver (transient)
 """
@@ -185,9 +225,23 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 
 """
 run!(
-    model::Physics{T,F,M,Tu,E,D,BI}, config; 
+    model::Physics{T,F,S,M,Tu,E,D,BI}, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
-    ) where{T<:Transient,F<:Incompressible,M,Tu,E,D,BI} = 
+    ) where{T<:Transient,F<:Incompressible,S,M<:EFM,Tu,E,D,BI} = 
+begin
+    
+    residuals=filmModel!(
+        model,config,
+        output=output,
+        inner_loops=inner_loops
+    )
+    return residuals
+end
+
+run!(
+    model::Physics{T,F,S,M,Tu,E,D,BI}, config; 
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
+    ) where{T<:Transient,F<:Incompressible,S,M,Tu,E,D,BI} = 
 begin
     residuals = piso!(
         model, config, 
@@ -195,7 +249,7 @@ begin
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops
-        )
+    )
     return residuals
 end
 
@@ -309,14 +363,43 @@ end
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
-    ) where{T<:Transient,F<:Compressible,M,Tu,E,D,BI} = 
+    ) where{T<:Transient,F<:Compressible,M,Tu,E,D,BI} =
 begin
     residuals = cpiso!(
-        model, config, 
+        model, config,
         output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
+        pref=pref,
+        ncorrectors=ncorrectors,
         inner_loops=inner_loops
         )
+    return residuals
+end
+
+# Density-based solver (explicit, for supersonic/hypersonic flows)
+"""
+    run!(
+        model::Physics{T,F,M,Tu,E,D,BI}, config;
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+        ) where{T,F<:SupersonicFlow,M,Tu,E,D,BI}
+
+Calls the explicit density-based solver using the Rusanov (Local Lax-Friedrichs) flux
+for supersonic/hypersonic compressible flows.
+
+# Input
+- `model` represents the `Physics` model defined by user.
+- `config` Configuration structure defined by user.
+- `output` select the format used for simulation results (default = `VTK()`)
+
+# Output
+
+Returns a `NamedTuple` with the field:
+- `rho` - Vector of density L2 residuals for each iteration.
+"""
+run!(
+    model::Physics{T,F,M,Tu,E,D,BI}, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    ) where{T,F<:SupersonicFlow,M,Tu,E,D,BI} =
+begin
+    residuals = godunov!(model, config, output=output)
     return residuals
 end

@@ -53,7 +53,14 @@ end
     kf = FaceScalarField(mesh)
     omegaf = FaceScalarField(mesh)
     nutf = FaceScalarField(mesh)
-    coeffs = rans.args
+    scalar = ScalarFloat(mesh)
+    coeffs = (
+        β⁺=scalar(rans.args.β⁺),
+        α1=scalar(rans.args.α1),
+        β1=scalar(rans.args.β1),
+        σk=scalar(rans.args.σk),
+        σω=scalar(rans.args.σω),
+    )
     KOmega(k, omega, nut, kf, omegaf, nutf, coeffs)
 end
 
@@ -231,6 +238,7 @@ function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration
         args = (
             ("U", model.momentum.U), 
             ("p", model.momentum.p),
+            ("rho", model.fluid.rho),
             ("T", model.energy.T),
             ("k", model.turbulence.k),
             ("omega", model.turbulence.omega),

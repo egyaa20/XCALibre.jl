@@ -1,10 +1,19 @@
-# This repo is edited from Windows but the pipeline scripts run on Ada
-# (Linux). A CRLF shell script fails outright ("syntax error near
-# unexpected token $'do\r'") the moment it's deployed there directly
-# (scp) rather than reaching it through git, whose autocrlf normalization
-# only fixes up the committed blob, not files copied straight off a
-# Windows working tree. Force LF at checkout for anything that gets
-# executed as a script on the cluster, regardless of the local
-# core.autocrlf setting.
-*.sh  text eol=lf
-*.py  text eol=lf
+# Set the default behavior to handle all files as text and normalise to LF
+* text=auto eol=lf
+
+# Explicitly mark source code and configuration files as text with LF endings
+*.jl text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.csv text eol=lf
+*.gitignore text eol=lf
+
+# Explicitly declare binary assets so they are not normalized or diff-ed incorrectly
+*.png binary
+*.gif binary
+*.unv binary
+*.msh binary
+*.svg binary
+*.geo binary

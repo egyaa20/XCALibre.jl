@@ -13,28 +13,30 @@ cIndex - Index of the cell based on sparse matrix. Use to index "nzval_array"
     term::Operator{F,P,I,Time{SteadyState}}, 
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
     # nothing
-    0.0, 0.0 # add types if this approach works
+    z = zero(eltype(nzval_array))
+    z, z
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Time{SteadyState}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
-    0.0, 0.0
+    z = zero(cell.volume)
+    z, z
 end
 
 ## Euler
 @inline function scheme!(
     term::Operator{F,P,I,Time{Euler}}, 
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
-
     0.0, 0.0 # add types if this approach works
 end
+
 @inline scheme_source!(
     term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
         volume = cell.volume
         vol_rdt = volume/runtime.dt[1]
-        rho = term.flux[cID]   # works for ConstantScalar and ScalarField
-
+        rho = term.flux[cID]
+        
         ac = rho * vol_rdt
-        b  = rho_prev[cID] * prev[cID] * vol_rdt
+        b = rho_prev[cID]*prev[cID]*vol_rdt
         return ac, b
 end
 @inline scheme_source!(
@@ -58,21 +60,20 @@ end
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Time{CrankNicolson}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
-        # See the Euler ScalarField branch for the rationale — same fix.
-        volume = cell.volume
-        vol_rdt = volume/runtime.dt[1]
-        rho = term.flux[cID]
-        ac = rho * vol_rdt
-        b  = rho_prev[cID] * prev[cID] * vol_rdt
-        return ac, b
-end
-@inline scheme_source!(
-    term::Operator{F,P,I,Time{CrankNicolson}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:VectorField,I} = begin # Special case for U_eqn (rho)
         volume = cell.volume
         vol_rdt = volume/runtime.dt[1]
         rho = term.flux[cID]
         
-        # Increment sparse and b arrays 
+        ac = rho * vol_rdt
+        b = rho_prev[cID]*prev[cID]*vol_rdt # Careful with non U_eqn (e.g. T eqn.)
+        return ac, b
+end
+@inline scheme_source!(
+    term::Operator{F,P,I,Time{CrankNicolson}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:VectorField,I} = begin
+        volume = cell.volume
+        vol_rdt = volume/runtime.dt[1]
+        rho = term.flux[cID]
+        
         ac = rho * vol_rdt
         b = rho_prev[cID]*prev[cID]*vol_rdt
         return ac, b
@@ -87,6 +88,9 @@ end
 
     
     (; area, normal, delta, e) = face
+    Sf = ns*area*normal
+    Af = norm(Sf)
+
     ## Potential simplified form for performance, needs checking before use in release
     # dPN = cellN.centre - cell.centre
     # n = ns*normal
@@ -94,13 +98,20 @@ end
     # Ef = dPN*(one(typeof(ns))/(dPN⋅n))*area # a little faster but a few more iter
 
     # Use form below to ensure correctness, could be simplified for performance
-    Sf = ns*area*normal # original
     e = ns*e # original
     Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
     Ef_mag = norm(Ef)
     ap = term.sign*(term.flux[fID]*Ef_mag)/delta
 
+
     # ap = term.sign*(term.flux[fID]*area)/delta # Initial form used
+
+    # ap = term.sign*(term.flux[fID]*Af)/Δ # minimum correction formulation
+
+    # Test formulation using vector d instead of e to explore any stability benefits
+    # Ef = ((Sf⋅Sf)/(Sf⋅d))*d
+    # Ef_mag = norm(Ef)
+    # ap = term.sign*(term.flux[fID]*Ef_mag)/Δ
     
     # Increment sparse array
     ac = -ap
@@ -119,25 +130,16 @@ end
     term::Operator{F,P,I,Divergence{Linear}}, 
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    # Retrieve mesh centre values
-    f = face.centre
-    C = cell.centre
-    N = cellN.centre
 
-    # calculate distance vectors
-    d_fC = C - f 
-    d_fN = N - f
+    w = face.weight
+    # signbit(ns) ? w = one(w) - w : w
+    half = typeof(w)(0.5)
+    w = half + ns*(w - half)
     
-    # Calculate weights using normal functions
-    weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
-    one_minus_weight = one(eltype(weight)) - weight
-
-    # Calculate required increment
+    # Calculate link coefficients
     ap = term.sign*(term.flux[fID]*ns)
-    # ac = ap*one_minus_weight
-    # an = ap*weight
-    ac = ap*weight
-    an = ap*one_minus_weight
+    ac = ap*w
+    an = ap*(one(w) - w)
     return ac, an
 end
 @inline scheme_source!(
@@ -150,10 +152,11 @@ end
     term::Operator{F,P,I,Divergence{Upwind}}, 
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    # Calculate required increment
+    # Calculate link coefficients
     ap = term.sign*(term.flux[fID]*ns)
-    ac = max(ap, 0.0) 
-    an = -max(-ap, 0.0)
+    z = zero(ap)
+    ac = max(ap, z)
+    an = -max(-ap, z)
     return ac, an
 end
 @inline scheme_source!(
@@ -166,29 +169,21 @@ end
     term::Operator{F,P,I,Divergence{LUST}}, 
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    # Retrieve mesh centre values
-    f = face.centre
-    C = cell.centre
-    N = cellN.centre
-
-    # calculate distance vectors
-    d_fC = C - f 
-    d_fN = N - f
     
-    # Calculate weights using normal functions
-    weight = norm(d_fN)/(norm(d_fC) + norm(d_fN))
-    one_minus_weight = one(eltype(weight)) - weight
+    w = face.weight
+    signbit(ns) ? w = one(w) - w : w
 
-    # Calculate coefficients
+    # Calculate link coefficients
     ap = term.sign*(term.flux[fID]*ns)
-    # acLinear = ap*one_minus_weight
-    # anLinear = ap*weight
-    acLinear = ap*weight 
-    anLinear = ap*one_minus_weight
-    acUpwind = max(ap, 0.0) 
-    anUpwind = -max(-ap, 0.0)
-    ac = 0.75*acLinear + 0.25*acUpwind
-    an = 0.75*anLinear + 0.25*anUpwind
+    acLinear = ap*w 
+    anLinear = ap*(one(w) - w)
+    z = zero(ap)
+    acUpwind = max(ap, z)
+    anUpwind = -max(-ap, z)
+    three_quarters = typeof(ap)(0.75)
+    quarter = typeof(ap)(0.25)
+    ac = three_quarters*acLinear + quarter*acUpwind
+    an = three_quarters*anLinear + quarter*anUpwind
     return ac, an
 end
 @inline scheme_source!(
@@ -201,11 +196,13 @@ end
     term::Operator{F,P,I,Divergence{BoundedUpwind}}, 
     nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    # Calculate required increment
-    volume = cell.volume
+    # $$\mathcal{D}_{bounded} = \sum_f \phi_f \psi_f - \psi_P \sum_f \phi_f$$
+    # phif =  max(phif, 0) - max(-phi_f, 0)$
+    # phif psif =  max(phif, 0) psi_P - max(-phi_f, 0)$ psi_N
     ap = term.sign*(term.flux[fID]*ns)
-    ac = max(ap, 0.0) - term.flux[fID]#*volume 
-    an = -max(-ap, 0.0)
+    z = zero(ap)
+    ac = max(-ap, z)
+    an = -max(-ap, z)
     return ac, an
 end
 @inline scheme_source!(
@@ -219,7 +216,8 @@ end
     term::Operator{F,P,I,Si}, 
     nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
-    0.0, 0.0
+    z = zero(eltype(nzval_array))
+    z, z
 end
 @inline scheme_source!(
     term::Operator{F,P,I,Si}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
@@ -227,5 +225,5 @@ end
     # Retrieve and calculate flux for cell 
     flux = term.sign*term.flux[cID]*cell.volume # indexed with cID
     ac = flux # indexed with cIndex
-    ac, 0.0
+    ac, zero(ac)
 end

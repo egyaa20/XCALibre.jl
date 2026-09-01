@@ -1,5 +1,6 @@
 export FixedTemperature
 export Enthalpy
+export IEnergy
 
 """
     FixedTemperature(name::Symbol, model::Enthalpy; T::Number)
@@ -28,14 +29,36 @@ Adapt.@adapt_structure FixedTemperature
 end
 Adapt.@adapt_structure FixedTemperatureValue
 
-# Temperature models (Enthalpy only for now!)
+# Temperature models
 @kwdef struct Enthalpy{C,F}
     cp::C
     Tref::F
 end
 
-# API-Level constructor for FixedTemperature
+"""
+    IEnergy{C,F}
+
+BC converter for internal energy formulation: `e = cv*(T - Tref)` where `cv` is
+the specific heat at constant volume.
+
+# Fields
+- `cv`: Specific heat at constant volume.
+- `Tref`: Reference temperature.
+
+# Example
+    FixedTemperature(:inlet, T=300.0, IEnergy(cv=718.0, Tref=288.15))
+"""
+@kwdef struct IEnergy{C,F}
+    cv::C
+    Tref::F
+end
+
+# API-Level constructors for FixedTemperature
 FixedTemperature(name, model::Enthalpy; T) = begin
+    FixedTemperature(name, FixedTemperatureValue(T=T, energy_model=model))
+end
+
+FixedTemperature(name, model::IEnergy; T) = begin
     FixedTemperature(name, FixedTemperatureValue(T=T, energy_model=model))
 end
 
@@ -45,6 +68,14 @@ end
     Tref = model.Tref
     h = cp*(T - Tref)
     return h
+end
+
+# Conversion temperature to internal energy
+@inline (model::IEnergy)(T) = begin
+    cv = model.cv
+    Tref = model.Tref
+    e = cv*(T - Tref)
+    return e
 end
 
 adapt_value(value::FixedTemperatureValue, mesh) = begin
@@ -80,12 +111,12 @@ end
 end
 
 
+# Bounded = upwind boundary with -Sp(div phi): subtract ap from the diagonal
 @define_boundary FixedTemperature Divergence{BoundedUpwind} begin
     (; T, energy_model) = bc.value
-    flux = term.flux[fID]
-    ap = term.sign*(flux)
+    ap = term.sign*(term.flux[fID])
     h = energy_model(T)
-    -flux, -ap*h
+    -ap, -ap*h
 end
 
 @define_boundary FixedTemperature Laplacian{Linear} begin
@@ -97,4 +128,3 @@ end
     h = energy_model(T)
     ap, ap*h
 end
-

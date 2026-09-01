@@ -45,9 +45,9 @@ Base.@kwdef struct ConstMu{T<:AbstractFloat} <: AbstractViscosityModel
     mu::T
 end
 (mu::ConstMu)(phase, model) = begin
-    nu_field = phase.nu
-    mu_val = phase.mu.mu
-    rho_val = phase.density.rho
+    mu_field = phase.mu
+    mu_val = phase.mu[1]
+    rho_val = phase.rho[1]
     
-    initialise!(nu_field, mu_val/rho_val)
+    initialise!(mu_field, mu_val/rho_val)
 end

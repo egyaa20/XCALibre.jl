@@ -51,7 +51,6 @@ HPC="cases/tatsumoto/configs/hpc.toml"
 
 CASES=(
   "cases/tatsumoto/configs/supercritical.toml"
-  "cases/tatsumoto/configs/supercritical_ext80.toml"
 )
 
 for CASE in "${CASES[@]}"; do

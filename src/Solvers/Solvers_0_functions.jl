@@ -1,6 +1,6 @@
 export flux!, update_nueff!, inverse_diagonal!, remove_pressure_source!, H!, correct_velocity!
 
-## UPDATE VISCOSITY
+## UPDATE EFFECTIVE VISCOSITY
 
 function update_nueff!(nueff, nu, turb_model, config)
     (; mesh) = nueff
@@ -241,7 +241,7 @@ end
         sumy -= D*Uy[i]
         sumz -= D*Uz[i]
 
-        rD = 1.0/D
+        rD = one(D)/D
         Hx[i] = (bx[i] - sumx)*rD
         Hy[i] = (by[i] - sumy)*rD
         Hz[i] = (bz[i] - sumz)*rD
@@ -270,7 +270,7 @@ end
     dt = runtime.dt[1]
     umag = norm(U[i])
     volume = cells[i].volume
-    dx = volume^0.333333
+    dx = volume^(one(volume)/typeof(volume)(3))
     cellsCourant[i] = umag * dt / dx
 end
 
@@ -280,11 +280,9 @@ end
     dt = runtime.dt[1]
     umag = norm(U[i])
     volume = cells[i].volume
-    dx = volume^0.5
+    dx = sqrt(volume)
     cellsCourant[i] = umag * dt / dx
 end
-
-
 
 ## ALPHA COURANT NUMBER
 
@@ -330,9 +328,8 @@ end
 # @inline nearInterface(α) = pos0(α - 0.01) * pos0(0.99 - α)
 
 
-
-
-update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, args...) = nothing
+update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, ::Any) = nothing
+update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, ::Any, ::Any) = nothing
 
 function update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, courant)
     (; maxCo, maxGrow, minShrink) = runtime.adaptive
@@ -341,9 +338,6 @@ function update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, 
     new_dt_factor = clamp(courant_factor, minShrink, maxGrow)
     runtime.dt .= runtime.dt .* new_dt_factor
 end
-
-# dispatch based on multiphase solver or smth else
-# don't forget the CHANGELOG
 
 function update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, courant, alphaCourant)
     (; maxCo, maxAlphaCo, maxGrow, minShrink) = runtime.adaptive

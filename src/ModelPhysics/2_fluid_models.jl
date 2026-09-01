@@ -1,9 +1,10 @@
 export AbstractFluid, AbstractIncompressible, AbstractCompressible
 export Fluid
-export Incompressible, WeaklyCompressible, Compressible
+export Incompressible, Incompressible_MRF, WeaklyCompressible, Compressible
 export Phase, Fluid, Multiphase
 export AbstractModel, AbstractEosModel, AbstractViscosityModel
 export AbstractMultiphaseModel, VOF, Mixture
+export Incompressible, WeaklyCompressible, Compressible, SupersonicFlow
 
 abstract type AbstractFluid end
 abstract type AbstractIncompressible <: AbstractFluid end
@@ -14,6 +15,7 @@ abstract type AbstractPhase <: AbstractMultiphase end
 abstract type AbstractModel end
 abstract type AbstractEosModel <: AbstractModel end
 abstract type AbstractViscosityModel <: AbstractModel end
+abstract type AbstractMultiphaseModel end
 
 
 Base.show(io::IO, fluid::AbstractFluid) = print(io, typeof(fluid).name.wrapper)
@@ -61,11 +63,51 @@ end
 (fluid::Fluid{Incompressible, ARG})(mesh) where ARG = begin
     coeffs = fluid.args
     (; rho, nu) = coeffs
-    nu = ConstantScalar(nu)
+    scalar = ScalarFloat(mesh)
+    nu = ConstantScalar(scalar(nu))
     nuf = nu
-    rho = ConstantScalar(rho)
+    rho = ConstantScalar(scalar(rho))
     rhof = rho
     Incompressible(nu, rho, nuf, rhof)
+end
+
+"""
+    Incompressible_MRF <: AbstractIncompressible
+
+Incompressible fluid model containing fluid field parameters for incompressible flows that utilise multiple reference frames (MRF).
+
+### Fields
+- 'nu'   -- Fluid kinematic viscosity.
+- 'rho'  -- Fluid density.
+- 'frames' -- Reference frames information.
+
+### Examples
+- `Fluid{Incompressible}(nu=0.001, rho=1.0)` - Constructor with default values.
+"""
+@kwdef struct Incompressible_MRF{S1, S2, F1, F2, RefFrames} <: AbstractIncompressible
+    nu::S1
+    rho::S2
+    nuf::F1
+    rhof::F2
+    refFrames::RefFrames
+end
+Adapt.@adapt_structure Incompressible_MRF
+
+Fluid{Incompressible_MRF}(; nu, rho=1.0, refFrames) = begin
+    coeffs = (nu=nu, rho=rho, refFrames=refFrames)
+    ARG = typeof(coeffs)
+    Fluid{Incompressible_MRF,ARG}(coeffs)
+end
+
+(fluid::Fluid{Incompressible_MRF, ARG})(mesh) where ARG = begin
+    coeffs = fluid.args
+    (; rho, nu, refFrames) = coeffs
+    scalar = ScalarFloat(mesh)
+    nu = ConstantScalar(scalar(nu))
+    nuf = nu
+    rho = ConstantScalar(scalar(rho))
+    rhof = rho
+    Incompressible_MRF(nu, rho, nuf, rhof, refFrames)
 end
 
 """
@@ -84,7 +126,7 @@ Weakly compressible fluid model containing fluid field parameters for weakly com
 - `Fluid{WeaklyCompressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7)` - Constructor with 
 default values.
 """
-struct WeaklyCompressible{S1, S2, F1, F2, T} <: AbstractCompressible
+struct WeaklyCompressible{S1, S2, F1, F2, T, VM} <: AbstractCompressible
     nu::S1
     rho::S2
     nuf::F1
@@ -93,6 +135,7 @@ struct WeaklyCompressible{S1, S2, F1, F2, T} <: AbstractCompressible
     gamma::T
     Pr::T
     R::T
+    visc_model::VM
 end
 Adapt.@adapt_structure WeaklyCompressible
 
@@ -109,12 +152,10 @@ end
     gamma = ConstantScalar(gamma)
     Pr = ConstantScalar(Pr)
     R = ConstantScalar(cp.values*(1.0 - (1.0/gamma.values)))
-
-    nu = ConstantScalar(nu)
+    nu, nuf, visc_model = initialise_viscosity(nu, mesh)
     rho = ScalarField(mesh)
-    nuf = nu
     rhof = FaceScalarField(mesh)
-    WeaklyCompressible(nu, rho, nuf, rhof, cp, gamma, Pr, R)
+    WeaklyCompressible(nu, rho, nuf, rhof, cp, gamma, Pr, R, visc_model)
 end
 
 """
@@ -132,7 +173,7 @@ Compressible fluid model containing fluid field parameters for compressible flow
 ### Examples
 - `Fluid{Compressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7)` - Constructur with default values.
 """
-@kwdef struct Compressible{S1, S2, F1, F2, T} <: AbstractCompressible
+@kwdef struct Compressible{S1, S2, F1, F2, T, VM} <: AbstractCompressible
     nu::S1
     rho::S2
     nuf::F1
@@ -141,6 +182,7 @@ Compressible fluid model containing fluid field parameters for compressible flow
     gamma::T
     Pr::T
     R::T
+    visc_model::VM
 end
 Adapt.@adapt_structure Compressible
 
@@ -157,12 +199,10 @@ end
     gamma = ConstantScalar(gamma)
     Pr = ConstantScalar(Pr)
     R = ConstantScalar(cp.values*(1.0 - (1.0/gamma.values)))
-
-    nu = ConstantScalar(nu)
+    nu, nuf, visc_model = initialise_viscosity(nu, mesh)
     rho = ScalarField(mesh)
-    nuf = nu
     rhof = FaceScalarField(mesh)
-    Compressible(nu, rho, nuf, rhof, cp, gamma, Pr, R)
+    Compressible(nu, rho, nuf, rhof, cp, gamma, Pr, R, visc_model)
 end
 
 
@@ -174,22 +214,16 @@ Configuration structure for a single fluid phase.
 ### Fields
 - `rho` -- Density model (Equation of State) for the phase.
 - `mu`  -- Viscosity model for the phase.
-- `cp`  -- Specific heat capacity at constant pressure [J/(kg·K)]. Used by the
-           multiphase temperature energy model. Defaults to 0.0 (ignored when
-           the energy model is `Isothermal`).
-- `k`   -- Thermal conductivity [W/(m·K)]. Same role as `cp`.
 """
-struct Phase{E<:AbstractEosModel, V<:AbstractViscosityModel, CP, K} <: AbstractPhase
+struct Phase{E<:AbstractEosModel, V<:AbstractViscosityModel} <: AbstractPhase
     rho::E
     mu::V
-    cp::CP
-    k::K
 end
 
-function Phase(; rho, mu, cp=0.0, k=0.0) # cp/k optional — only used by MultiphaseTemperature energy model
+function Phase(; rho, mu) # Covers all combinations e.g. mu=1.8e-5 or mu=SutherlandModel() etc
     rho_model = rho isa AbstractFloat ? ConstEos(rho) : rho
     mu_model = mu  isa AbstractFloat ? ConstMu(mu) : mu
-    return Phase(rho_model, mu_model, cp, k)
+    return Phase(rho_model, mu_model)
 end
 
 @kwdef struct PhaseState{E<:AbstractEosModel, V<:AbstractViscosityModel, S1,S2,S3,S4,S5} <: AbstractPhase
@@ -208,8 +242,8 @@ Adapt.@adapt_structure PhaseState
 function build_phase(phase_setup::Phase, mesh)
     rho   = phase_setup.rho isa ConstEos ? ConstantScalar(phase_setup.rho.rho) : ScalarField(mesh)
     mu    = phase_setup.mu  isa ConstMu ? ConstantScalar(phase_setup.mu.mu) : ScalarField(mesh)
-    cp    = ConstantScalar(phase_setup.cp)
-    k     = ConstantScalar(phase_setup.k)
+    k     = ScalarField(mesh)
+    cp    = ScalarField(mesh)
     beta  = ScalarField(mesh)
 
     return PhaseState(
@@ -224,70 +258,22 @@ function build_phase(phase_setup::Phase, mesh)
 end
 
 """
-    build_phase_table_mode(phase_setup, mesh)
-
-Variant of `build_phase` used when `fluid_properties::HelmholtzTable` is
-present on `Fluid{Multiphase}`. All four T-dependent properties (rho,
-mu, cp, k) are allocated as `ScalarField`s rather than `ConstantScalar`s
-so the live update routine can mutate them per cell at every outer
-iteration. Initial values are populated from the supplied `phase_setup`
-constants (which themselves came from the snapshot at `T_snapshot`).
-"""
-function build_phase_table_mode(phase_setup::Phase, mesh)
-    rho   = ScalarField(mesh); initialise!(rho, phase_setup.rho.rho)
-    mu    = ScalarField(mesh); initialise!(mu,  phase_setup.mu.mu)
-    cp    = ScalarField(mesh); initialise!(cp,  phase_setup.cp)
-    k     = ScalarField(mesh); initialise!(k,   phase_setup.k)
-    beta  = ScalarField(mesh)
-
-    return PhaseState(
-        rho_model = phase_setup.rho,
-        mu_model = phase_setup.mu,
-        rho=rho,
-        mu=mu,
-        k=k,
-        cp=cp,
-        beta=beta
-    )
-end
-
-
-"""
-    AbstractMultiphaseModel
-
-Tag type for multiphase interface/coupling models. Concrete subtypes (`VOF`,
-`Mixture`) carry the solver-specific knobs and are used to dispatch inside the
-multiphase solver (e.g. `model.fluid.model isa VOF`).
-"""
-abstract type AbstractMultiphaseModel end
-
-"""
-    VOF(; sigma=0.0, cAlpha=1.0, smooth=0, cycles=1) <: AbstractMultiphaseModel
+    VOF(; sigma=0.0, cAlpha=1.0) <: AbstractMultiphaseModel
 
 Volume-of-Fluid interface-capturing settings.
 
 ### Fields
 - `sigma`  -- Surface tension coefficient [N/m].
-- `cAlpha` -- Interface compression coefficient (MULES).
-- `smooth` -- Number of Laplacian passes to smooth α before computing the
-              compression-flux normal `n̂f`. `0` (default) keeps the raw
-              gradient. `> 0` reduces per-cell sawtooth artefacts on thin
-              interfaces at low/zero σ.
-- `cycles` -- Number of MULES sub-cycles per outer time step. `1` (default)
-              disables sub-cycling. `> 1` splits the outer dt into N MULES
-              α-updates with `dt_sub = dt/N`, increasing the effective α-CFL
-              headroom for adaptive time-stepping by a factor of N.
+- `cAlpha` -- Interface compression coefficient (MULES), default is 1.0.
 """
-@kwdef struct VOF{T1,T2,T3,T4} <: AbstractMultiphaseModel
-    sigma::T1        = 0.0
-    cAlpha::T2       = 1.0
-    smooth::T3       = 0
-    cycles::T4       = 1
+@kwdef struct VOF{T1,T2} <: AbstractMultiphaseModel
+    sigma::T1  = 0.0
+    cAlpha::T2 = 1.0
 end
 Adapt.@adapt_structure VOF
 
 """
-    Mixture(; diameter=1.0e-6) <: AbstractMultiphaseModel
+    Mixture(; diameter=1.0e-3) <: AbstractMultiphaseModel
 
 Manninen drift-flux mixture-model settings.
 
@@ -295,10 +281,9 @@ Manninen drift-flux mixture-model settings.
 - `diameter` -- Dispersed-phase particle/bubble diameter [m].
 """
 @kwdef struct Mixture{T1} <: AbstractMultiphaseModel
-    diameter::T1 = 1.0e-6
+    diameter::T1 = 1.0e-3
 end
 Adapt.@adapt_structure Mixture
-
 
 """
     Multiphase <: AbstractMultiphase
@@ -306,6 +291,7 @@ Adapt.@adapt_structure Mixture
 Multiphase fluid model containing multiple phases and their interaction properties.
 
 ### Fields
+- 'model'              -- Multiphase model selecting the solver pathway (`VOF` or `Mixture`).
 - 'phases'             -- Tuple of PhaseState structures.
 - 'physics_properties' -- NamedTuple of physical models (drag, surface tension, etc.).
 - 'volume_fraction'    -- Index of the phase tracked by the volume fraction field.
@@ -334,7 +320,6 @@ Multiphase fluid model containing multiple phases and their interaction properti
 end
 Adapt.@adapt_structure Multiphase
 
-
 Fluid{Multiphase}(; phases::NTuple{2, Phase}, model=nothing, kwargs...) = begin
     @assert model isa AbstractMultiphaseModel "Expected `model = VOF(...)` or `model = Mixture(...)`, got: $(typeof(model))"
     coeffs = (; phases, model, kwargs...)
@@ -358,20 +343,7 @@ build_property(property, mesh) = property
 build_property(setup::Gravity, mesh) = build_gravityModel(setup, mesh)
 
 function build_multiphase(model::AbstractMultiphaseModel, phase_setups::Tuple{<:AbstractPhase, <:AbstractPhase}, physics_properties_setup::NamedTuple, mesh, volume_fraction::Int)
-    # Phase-1 / Phase-2 high-fidelity properties: if the user supplied a
-    # `fluid_properties = HelmholtzTable(...)` keyword:
-    #   - the phase setups are first rewritten to use the table snapshot
-    #     at `T_snapshot` (so initial values are physical);
-    #   - then phases are allocated with ScalarField backings (Phase-2
-    #     mode) so that the live per-cell update routine has somewhere to
-    #     write into each iteration.
-    phase_setups = maybe_snapshot_from_fluid_properties(phase_setups, physics_properties_setup)
-
-    if haskey(physics_properties_setup, :fluid_properties) && physics_properties_setup.fluid_properties isa HelmholtzTable
-        phases = map(setup -> build_phase_table_mode(setup, mesh), phase_setups)
-    else
-        phases = map(setup -> build_phase(setup, mesh), phase_setups)
-    end
+    phases = map(setup -> build_phase(setup, mesh), phase_setups)
 
     built_properties = map(prop_setup -> build_property(prop_setup, mesh), physics_properties_setup)
 
@@ -390,13 +362,54 @@ function build_multiphase(model::AbstractMultiphaseModel, phase_setups::Tuple{<:
     Multiphase(model=model, phases=phases, physics_properties=built_properties, volume_fraction=volume_fraction, alpha=alpha, alphaf=alphaf, rho=rho, rhof=rhof, nu=nu, nuf=nuf, p_rgh=p_rgh, p_rghf=p_rghf)
 end
 
-# Default: no fluid_properties kwarg, return phase setups unchanged.
-maybe_snapshot_from_fluid_properties(phase_setups::Tuple, physics_properties::NamedTuple) =
-    haskey(physics_properties, :fluid_properties) ?
-        _snapshot_from_fluid_properties(phase_setups, physics_properties.fluid_properties) :
-        phase_setups
+"""
+    SupersonicFlow <: AbstractCompressible
 
-# Generic catch-all so a user-supplied `fluid_properties = SomethingElse()`
-# is left alone. Specialised on `HelmholtzTable` in the FluidProperties
-# module (HelmholtzTable.jl is loaded later in the module include order).
-_snapshot_from_fluid_properties(phase_setups, _other) = phase_setups
+Fluid model for density-based (explicit) supersonic flow solver.
+Uses Rusanov (Local Lax-Friedrichs) flux with Forward Euler time integration.
+
+### Fields
+- `nu`    -- Kinematic viscosity (ConstantScalar).
+- `rho`   -- Density field (ScalarField, updated each iteration).
+- `nuf`   -- Face kinematic viscosity.
+- `rhof`  -- Face density field.
+- `cp`    -- Specific heat at constant pressure (ConstantScalar).
+- `gamma` -- Ratio of specific heats (ConstantScalar).
+- `Pr`    -- Prandtl number (ConstantScalar).
+- `R`     -- Specific gas constant cp*(1 - 1/gamma) (ConstantScalar).
+
+### Examples
+- `Fluid{SupersonicFlow}(nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7)` - Constructor with default values.
+"""
+struct SupersonicFlow{S1, S2, F1, F2, T} <: AbstractCompressible
+    nu::S1
+    rho::S2
+    nuf::F1
+    rhof::F2
+    cp::T
+    gamma::T
+    Pr::T
+    R::T
+end
+Adapt.@adapt_structure SupersonicFlow
+
+Fluid{SupersonicFlow}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7) = begin
+    coeffs = (nu=nu, cp=cp, gamma=gamma, Pr=Pr)
+    ARG = typeof(coeffs)
+    Fluid{SupersonicFlow,ARG}(coeffs)
+end
+
+(fluid::Fluid{SupersonicFlow, ARG})(mesh) where ARG = begin
+    coeffs = fluid.args
+    (; nu, cp, gamma, Pr) = coeffs
+    cp = ConstantScalar(cp)
+    gamma = ConstantScalar(gamma)
+    Pr = ConstantScalar(Pr)
+    R = ConstantScalar(cp.values*(1.0 - (1.0/gamma.values)))
+
+    nu = ConstantScalar(nu)
+    rho = ScalarField(mesh)
+    nuf = nu
+    rhof = FaceScalarField(mesh)
+    SupersonicFlow(nu, rho, nuf, rhof, cp, gamma, Pr, R)
+end

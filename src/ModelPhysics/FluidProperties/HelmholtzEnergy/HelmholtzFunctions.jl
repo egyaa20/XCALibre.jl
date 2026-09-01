@@ -115,8 +115,8 @@ end
 function c_p(δ::F, τ::F, constants, fluid) where F <: AbstractFloat
     (; R_univ) = constants
     cv_term = c_v(δ, τ, constants, fluid)
-    numerator = (one(F) + lambda_total_01(δ, τ, constants, fluid) - lambda_total_11(δ, τ, constants, fluid))^2
-    denominator = one(F) + F(2) * lambda_total_01(δ, τ, constants, fluid) + lambda_total_02(δ, τ, constants, fluid)
+    numerator = (one(F) + lambda_r_01(δ, τ, constants, fluid) - lambda_r_11(δ, τ, constants, fluid))^2
+    denominator = one(F) + F(2) * lambda_r_01(δ, τ, constants, fluid) + lambda_r_02(δ, τ, constants, fluid)
     return cv_term + (R_univ * (numerator / denominator))
 end
 
@@ -128,48 +128,6 @@ function k_T(T::F, rho::F, constants, fluid) where F <: AbstractFloat
     term1 = rho * R_univ * T
     term2 = one(F) + F(2) * lambda_r_01(δ, τ, constants, fluid) + lambda_r_02(δ, τ, constants, fluid)
     return one(F) / (term1 * term2)
-end
-
-"""
-Computes the compressibility ψ = (∂ρ/∂p)_T in **mass** units [kg/(m³·Pa)] for the
-implicit pressure-equation term `Time(ψ, p)`.
-
-Analytical: from the Helmholtz EOS the pressure derivative at fixed T is
-`(∂p/∂ρ_mol)_T = R T (1 + 2 λʳ₀₁ + λʳ₀₂)`, so the molar density derivative is its
-reciprocal; the molar mass `M` converts to mass density. Equivalent to `ρ·k_T`
-(this is `M/(ρ_mol·R T·term2)·ρ_mol = M/(R T·term2)`), but written from `dp/dρ`
-directly so it cannot pick up the molar/mass factor confusion. Always > 0.
-
-`rho_mol` is the molar density (mol/m³) at the state — the same root the density
-solver returns.
-"""
-function compute_psi(T::F, rho_mol::F, constants, fluid) where F <: AbstractFloat
-    (; T_c, rho_c, R_univ, M) = constants
-    τ = T_c / T
-    δ = rho_mol / rho_c
-    dp_drho_mol = R_univ * T *
-        (one(F) + F(2) * lambda_r_01(δ, τ, constants, fluid) + lambda_r_02(δ, τ, constants, fluid))
-    return M / dp_drho_mol            # [kg/(m³·Pa)]
-end
-
-"""
-Computes (∂ρ/∂T)_p in **mass** units [kg/(m³·K)] — the explicit thermal-expansion
-density rate for the pressure-equation source `(∂ρ/∂T)·dT/dt`.
-
-Analytical: `(∂ρ/∂T)_p = -ρ·β`, with `β` the isobaric expansion coefficient (1/K)
-from `beta_calc`. Returns a NEGATIVE value over the heating range (density falls as
-T rises at fixed p). Uses `beta_calc` directly (the intensive 1/K value), avoiding
-the molar/mass `1/M` factor that `params_computation` applies to its β output.
-
-`rho_mol` is the molar density (mol/m³) at the state.
-"""
-function compute_drho_dT_p(T::F, rho_mol::F, constants, fluid) where F <: AbstractFloat
-    (; T_c, rho_c, M) = constants
-    τ = T_c / T
-    δ = rho_mol / rho_c
-    β = beta_calc(T, δ, τ, constants, fluid)   # 1/K (intensive)
-    rho_mass = rho_mol * M
-    return -rho_mass * β               # [kg/(m³·K)]
 end
 
 """Computes the ideal-gas isochoric heat capacity (Cv0) in J/(mol*K) at a given temperature."""
@@ -284,35 +242,11 @@ function find_density_advanced(T::F, P_target::F, rho_guess::F, constants, fluid
         step = f / dp_drho
         relaxation_coeff = one(F)
         rho_new = rho - ( relaxation_coeff * step )
-
-        # Check for nonphysical results. dp/drho -> 0 at the critical point
-        # (by definition), and stays anomalously small over a wide band of
-        # rho around rho_c on the critical isotherm (both dp/drho AND
-        # d2p/drho2 vanish there), so a fixed-length step can overshoot to
-        # rho<=0 without the true root being unreachable -- it's an
-        # overshoot, not evidence Newton can't converge. Halve the step and
-        # retry a few times (standard damped-Newton practice) before giving
-        # up; this only engages on the overshoot path, so it can't change
-        # behaviour for any state that was already converging cleanly.
+        
+        # Check for nonphysical results
         if rho_new <= 0 || !isfinite(rho_new)
-            # Not a literal division-by-zero: dp/drho passes through zero
-            # continuously near rho_c, so `step` is finite but can be many
-            # orders of magnitude larger than rho (observed: step~2e8 against
-            # rho~1e4, a 4-5 decade gap) -- a handful of halvings isn't
-            # enough headroom. 60 gives ~10^18 of margin, so any step that's
-            # merely large (not literally Inf/NaN) is covered; halving Inf or
-            # NaN still can't produce a finite value at any depth, so those
-            # correctly still fall through to the error below.
-            recovered = false
-            for _ in 1:60
-                step /= F(2)
-                rho_new = rho - ( relaxation_coeff * step )
-                if rho_new > 0 && isfinite(rho_new)
-                    recovered = true
-                    break
-                end
-            end
-            recovered || error("[Density Solver] Nonphysical density value was obtained")
+
+            error("[Density Solver] Nonphysical density value was obtained")
         end
         rho = rho_new
     end
@@ -513,22 +447,16 @@ function params_computation(rho_mol::F, T::F, constants, fluid) where F <: Abstr
     
     beta_mol = beta_calc(T, δ, τ, constants, fluid)
 
-    # Molar → mass-specific conversion. With `M` in kg/mol (as confirmed
-    # by `rho = rho_mol * M` giving kg/m³), the correct factor for
-    # specific quantities is `1/M`, not `1/(M·1000)`. The previous
-    # `1e3` factor put cp/cv/h/u/s in kJ-based units silently — only
-    # caught when wiring the live mixture-T energy equation revealed
-    # ρ·cp was 1000× too small.
-    conversion_factor = one(F) / M
+    conversion_factor = one(F) / (M * F(1e3))
 
     rho = rho_mol * M
 
-    cv = cv_mol*conversion_factor                  # J/(kg·K)
-    cp = cp_mol*conversion_factor                  # J/(kg·K)
-    internal_energy = internal_energy_mol*conversion_factor  # J/kg
-    enthalpy = enthalpy_mol*conversion_factor      # J/kg
-    entropy = entropy_mol*conversion_factor        # J/(kg·K)
-    beta = beta_mol*conversion_factor              # NOT TESTED — same factor
+    cv = cv_mol*conversion_factor
+    cp = cp_mol*conversion_factor
+    internal_energy = internal_energy_mol*conversion_factor
+    enthalpy = enthalpy_mol*conversion_factor
+    entropy = entropy_mol*conversion_factor
+    beta = beta_mol*conversion_factor # NOT TESTED!!!!!
 
     return rho, cv, cp, kT, kT_ref, internal_energy, enthalpy, entropy, beta
 end
@@ -565,22 +493,15 @@ function EOS_wrapper(fluid::HelmholtzEnergyFluid, T::F, pressure::F, constants) 
     entropy_vals = [zero(F), zero(F)]
     beta_vals = [zero(F), zero(F)]
 
-    if pressure >= p_c
-        # SUPERCRITICAL PRESSURE — no liquid–vapour transition at any
-        # temperature, so the two-phase machinery (saturation T, gibbs
-        # equality, etc.) is undefined. Single density branch only.
-        # Initial guess: liquid-like below T_c, ideal-gas-like above.
-        rho_guess = T < T_c ?
-                    liquid_multiplier * rho_c :        # compressed-liquid-like
-                    pressure / (R_univ * T)            # supercritical-gas-like
-        rho_mol  = find_density_advanced(T, pressure, rho_guess, constants, fluid)
-        rho_list = [rho_mol, rho_mol]
-        T_sat    = zero(F)   # not defined at supercritical pressure
-
-    elseif T >= T_c # Subcritical pressure but supercritical / superheated vapour state
+    if T >= T_c # Account for supercritical fluid / superheated vapour state
         rho_guess = pressure / (R_univ * T) # Ideal gas guess
         rho_mol = find_density_advanced(T, pressure, rho_guess, constants, fluid)
         rho_list = [rho_mol, rho_mol] # if T > T_crit, we want to return two identical densities
+
+    elseif pressure >= p_c # Compressed liquid at supercritical pressure: no saturation, single root
+        rho_guess = liquid_multiplier * rho_c
+        rho_mol = find_density_advanced(T, pressure, rho_guess, constants, fluid)
+        rho_list = [rho_mol, rho_mol]
 
     else # Else it is liquid/vapour
         (P_sat, T_sat, rho_l_sat, rho_v_sat) = find_saturation_properties(T, pressure, constants, fluid)

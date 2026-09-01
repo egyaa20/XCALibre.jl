@@ -124,11 +124,11 @@ function LAPLACE(
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
-    
-    rho_prev = ConstantScalar(1.0) # dummy field
 
+    dt_cpu = zeros(_get_float(mesh), 1)
+    copyto!(dt_cpu, config.runtime.dt)
 
-    postprocess = convert_time_to_iterations(postprocess,model,dt[1],iterations)
+    postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     @info "Starting LAPLACE loops..."
     progress = Progress(iterations; dt=1.0, showspeed=true)
 
@@ -156,12 +156,12 @@ function LAPLACE(
 
         ProgressMeter.next!(
             progress, showvalues = [
-                (:time, iteration*runtime.dt[1]),
+                (:time, iteration*dt_cpu[1]),
                 (:T_residual, R_T[iteration])
                 ]
             )
 
-        runtime_postprocessing!(postprocess,iteration,iterations)
+        runtime_postprocessing!(postprocess,iteration,iterations,nothing,time,config)
         if iteration%write_interval + signbit(write_interval) == 0      
             save_output(model, outputWriter, iteration, time, config)
             save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
@@ -170,4 +170,13 @@ function LAPLACE(
     end # end for loop
     
     return (T=R_T)
+end
+
+function ModelPhysics.save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F,SO,M,Tu,E<:Conduction,D,BI}
+    
+    args = (
+        ("T", model.energy.T),
+    )
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end

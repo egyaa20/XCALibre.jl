@@ -79,13 +79,14 @@ begin
 end
 ```
 
-From the subtype tree above, we can see that XCALibre.jl offers 2 major abstract fluid types, `AbstractIncompressible` and `AbstractCompressible`. There are 3 concrete fluid types:
+From the subtype tree above, we can see that XCALibre.jl offers 2 major abstract fluid types, `AbstractIncompressible` and `AbstractCompressible`. There are 4 concrete fluid types:
 
-- `Incompressible` - for simulations were the fluid density does not change with pressure
-- `WeaklyCompressible` - for simulation were the fluid density is allowed to change (no shockwaves)
-- `Compressible` - for simulations were discontinuities may appear (not available for general use yet)
+- `Incompressible` - for simulations where the fluid density does not change with pressure
+- `WeaklyCompressible` - for simulations where the fluid density is allowed to change (no shockwaves)
+- `Compressible` - for simulations where discontinuities may appear (not available for general use yet)
+- `SupersonicFlow` - for density-based compressible simulations, including supersonic flows with shockwaves
 
-To specify a given fluid type, the `Fluid` wrapper type is used as a general constructor which is specialised depending depending on the fluid type from the list above provided by the user. The constructors require the following inputs:
+To specify a given fluid type, the `Fluid` wrapper type is used as a general constructor which is specialised depending on the fluid type from the list above provided by the user. The constructors require the following inputs:
 
 For incompressible fluid flow
 ```julia
@@ -96,12 +97,18 @@ For compressible fluids (weak formulation)
 ```julia
 Fluid{WeaklyCompressible}(; nu, cp, gamma, Pr)
 ```
+
+For density-based compressible flow (Godunov-type explicit solver)
+```julia
+Fluid{SupersonicFlow}(; nu=1e-5, cp=1005.0, gamma=1.4, Pr=0.7)
+```
+
 where the input variables represent the following:
 
 - `nu` - kinematic viscosity
 - `rho` - fluid density
 - `gamma` - specific heat ratio
-- `Pr` - Prandlt number
+- `Pr` - Prandtl number
 - `cp` - specific heat at constant pressure
 
 For example, an incompressible fluid can be specified as follows
@@ -112,6 +119,73 @@ Physics(
     ...
 )
 ```
+
+For a density-based compressible simulation (dispatches to the GODUNOV solver)
+```julia
+Physics(
+    time = Transient(),
+    fluid = Fluid{SupersonicFlow}(nu=1e-5, cp=1005.0, gamma=1.4, Pr=0.7),
+    ...
+)
+```
+
+### Viscosity models
+
+For the compressible fluid types (`WeaklyCompressible` and `Compressible`), the `nu` keyword argument accepted by the `Fluid` constructor can be given either as a plain number or as a `Viscosity` model. This allows viscosity to be treated as fixed, or modelled as a function of the local temperature field. The viscosity models currently available, `ConstantViscosity` and `SutherlandViscosity`, are subtypes of `AbstractViscosityModel`:
+
+- `ConstantViscosity` - kinematic viscosity remains fixed at the value provided by the user (this is also what happens implicitly when `nu` is given as a plain number)
+- `SutherlandViscosity` - kinematic viscosity is recalculated every iteration from the local cell temperature `T` using Sutherland's law
+
+Below are three equivalent-in-spirit ways of specifying `nu`, illustrating each option.
+
+`nu` given as a `Float64` (simplest option, equivalent to a constant viscosity model)
+```julia
+Physics(
+    time = Steady(),
+    fluid = Fluid{WeaklyCompressible}(nu=1e-5, cp=1005.0, gamma=1.4, Pr=0.7),
+    turbulence = RANS{Laminar}(),
+    energy = Energy{SensibleEnthalpy}(Tref=300),
+    ...
+)
+```
+
+`nu` given explicitly as a `ConstantViscosity` model (using the `Viscosity` wrapper type)
+```julia
+Physics(
+    time = Steady(),
+    fluid = Fluid{WeaklyCompressible}(
+        nu = Viscosity{ConstantViscosity}(nu=1e-5),
+        cp = 1005.0, gamma = 1.4, Pr = 0.7
+        ),
+    turbulence = RANS{Laminar}(),
+    energy = Energy{SensibleEnthalpy}(Tref=300),
+    ...
+)
+```
+
+`nu` given as a `SutherlandViscosity` model, where viscosity is updated every iteration as a function of temperature
+```julia
+Physics(
+    time = Steady(),
+    fluid = Fluid{WeaklyCompressible}(
+        nu = Viscosity{SutherlandViscosity}(mu_ref=1.8e-5, T_ref=288.15, S=110.4),
+        cp = 1005.0, gamma = 1.4, Pr = 0.7
+        ),
+    turbulence = RANS{Laminar}(),
+    energy = Energy{SensibleEnthalpy}(Tref=300),
+    ...
+)
+```
+
+where the `SutherlandViscosity` coefficients are:
+
+- `mu_ref` - reference dynamic viscosity
+- `T_ref` - reference temperature
+- `S` - Sutherland constant
+
+!!! note
+
+    `SutherlandViscosity` depends on the local temperature field, therefore an active energy model (e.g. `Energy{SensibleEnthalpy}`) must be used alongside it.
 
 ## Turbulence models
 ---

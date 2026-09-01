@@ -161,14 +161,14 @@ function write_results(
     else
         # name = @sprintf "time_%.8f" iteration
         name = @sprintf "time_%i" iteration
-        log_iteration_time(iteration, time)
     end
     filename=name*suffix*".vtu"
 
     # Define backend and variables
     backend = _get_backend(mesh)
     format = "ascii"
-    F32 = "Float32"
+    F32 = "Float64"   # values are printed as Float64 text; declaring Float32
+                      # makes VTK's ascii scan fail on sub-Float32 magnitudes
 
     open(filename,"w") do io
 

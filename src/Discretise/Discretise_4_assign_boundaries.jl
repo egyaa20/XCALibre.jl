@@ -21,14 +21,12 @@ function assign_patches(BCs, region)
     newBCs = []
     for (i, BC) ∈ enumerate(BCs)
         ID, IDs_range = patch_and_faces_IDs(BC, region)
-        value = adapt_value_for_bc(BC, region, IDs_range)
+        value = adapt_value(BC.value, region)
         push!(newBCs, typeof(BC).name.wrapper(ID, value, IDs_range))
     end
     # Tuple(newBCs)
     newBCs
 end
-
-adapt_value_for_bc(BC, region, IDs_range) = adapt_value(BC.value, region)
 
 function patch_and_faces_IDs(BC, mesh)
     # (; boundaries) = mesh # needs to be a copy

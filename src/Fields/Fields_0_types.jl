@@ -7,8 +7,6 @@ export StrainRate, Vorticity, Dev, Sqr, MagSqr
 export _mesh
 export initialise!
 
-export FaceTensorField # Not sure if this works well
-
 struct ScalarFloat{DTYPE}
     zero::DTYPE 
 end 
@@ -41,6 +39,12 @@ struct ConstantVector{V<:Number} <: AbstractVectorField
 end
 Adapt.@adapt_structure ConstantVector
 Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x, v.y, v.z)
+
+ConstantScalar(mesh::AbstractMesh) = ConstantScalar(zero(_get_float(mesh)))
+ConstantVector(mesh::AbstractMesh) = begin
+    z = zero(_get_float(mesh))
+    ConstantVector(z, z, z)
+end
 
 # Handle cases where `Nothing` is passed to the constructor (e.g. in Solid constructor)
 ConstantScalar(value::Nothing) = nothing
@@ -374,13 +378,16 @@ Note: in most cases the fields to be modified are stored within a physics model 
 initialise!(mymodel.momentum.U, [2.5, 0, 0])
 initialise!(mymodel.momentum.p, 1.25)
 ```
+
+
+`initialise!` also accepts a functions arguments and initialises a field by evaluating the function at each cell centre. The function should have the signature `f(x, y, z)` and it must return either a scalar or an SVector type (requirement to work on GPUs)
 """
 function initialise!(field, value) # dummy function for documentation
     throw("Arguments provided for field are not of type ScalarField nor VectorField")
     nothing
 end
 
-function initialise!(v::AbstractVectorField, vec::Vector{T}) where T
+function initialise!(v::AbstractVectorField, vec::AbstractVector)
     n = length(vec)
     v_type = eltype(v.x.values)
     if n == 3
@@ -393,85 +400,56 @@ function initialise!(v::AbstractVectorField, vec::Vector{T}) where T
     nothing
 end
 
-function initialise!(s::AbstractScalarField, value::V) where V
+function initialise!(s::AbstractScalarField, value::Number)
     s_type = eltype(s.values)
     if s_type <: Number
         s.values .= convert(s_type, value)
     else
-        trow("ScalarFields should be initialised with numbers. The value provided is of type $(typeof(value))")
+        throw("ScalarFields should be initialised with numbers. The value provided is of type $(typeof(value))")
     end
     nothing
 end
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-struct FaceTensorField{S1,S2,S3,S4,S5,S6,S7,S8,S9,M} <: AbstractTensorField
-    xx::S1
-    xy::S2
-    xz::S3 
-    yx::S4 
-    yy::S5 
-    yz::S6 
-    zx::S7 
-    zy::S8
-    zz::S9
-    mesh::M
-end
-Adapt.@adapt_structure FaceTensorField
-
-FaceTensorField(mesh::AbstractMesh) = begin
-    FaceTensorField(
-        FaceScalarField(mesh, store_mesh=false),
-        FaceScalarField(mesh, store_mesh=false),
-        FaceScalarField(mesh, store_mesh=false),
-        FaceScalarField(mesh, store_mesh=false),
-        FaceScalarField(mesh, store_mesh=false),
-        FaceScalarField(mesh, store_mesh=false),
-        FaceScalarField(mesh, store_mesh=false),
-        FaceScalarField(mesh, store_mesh=false),
-        FaceScalarField(mesh, store_mesh=false),
-        mesh
-    )
+function initialise!(v::FaceVectorField, value::AbstractVector)
+    @assert length(value) == 3 "Vectors should have 3 components"
+    initialise!(v.x, value[1])
+    initialise!(v.y, value[2])
+    initialise!(v.z, value[3])
+    nothing
 end
 
-Base.getindex(T::FaceTensorField, i::Integer) = begin
-    Tf = eltype(T.xx.values)
-    SMatrix{3,3,Tf,9}(
-        T.xx[i],
-        T.yx[i],
-        T.zx[i],
-        T.xy[i],
-        T.yy[i],
-        T.zy[i],
-        T.xz[i],
-        T.yz[i],
-        T.zz[i],
-        )
+function initialise!(s::ScalarField, func::Func) where Func<:Function
+    backend = KA.get_backend(s)
+    ndrange = length(s)
+    kernel! = _initialise_scalar!(_setup(backend, 64, ndrange)...)
+    kernel!(s, func)
+    KA.synchronize(backend)
+    nothing
 end
 
-Base.setindex!(T::FaceTensorField, t::SMatrix{3,3,F,9}, i::Integer) where F = begin
-    T.xx[i] = t[1,1]
-    T.yx[i] = t[2,1]
-    T.zx[i] = t[3,1]
-    T.xy[i] = t[1,2]
-    T.yy[i] = t[2,2]
-    T.zy[i] = t[3,2]
-    T.xz[i] = t[1,3]
-    T.yz[i] = t[2,3]
-    T.zz[i] = t[3,3]
+@kernel function _initialise_scalar!(s, func::Func) where Func
+    i = @index(Global)
+    @uniform cells = s.mesh.cells
+    @inbounds begin
+        c = cells[i].centre
+        s[i] = func(c[1], c[2], c[3])
+    end
 end
 
-Base.length(t::FaceTensorField) = length(t.xx)
-Base.eachindex(t::FaceTensorField) = eachindex(t.xx)
-KA.get_backend(t::FaceTensorField) = KA.get_backend(t.xx)
+function initialise!(v::VectorField, func::Func) where Func<:Function
+    backend = KA.get_backend(v.x)
+    ndrange = length(v.x)
+    kernel! = _initialise_vector!(_setup(backend, 64, ndrange)...)
+    kernel!(v, func)
+    KA.synchronize(backend)
+    nothing
+end
+
+@kernel function _initialise_vector!(v, func::Func) where Func
+    i = @index(Global)
+    @uniform cells = v.mesh.cells
+    @inbounds begin
+        c = cells[i].centre
+        v[i] = func(c[1], c[2], c[3]) # func must return an SVector
+    end
+end
