@@ -115,8 +115,8 @@ end
 function c_p(δ::F, τ::F, constants, fluid) where F <: AbstractFloat
     (; R_univ) = constants
     cv_term = c_v(δ, τ, constants, fluid)
-    numerator = (one(F) + lambda_total_01(δ, τ, constants, fluid) - lambda_total_11(δ, τ, constants, fluid))^2
-    denominator = one(F) + F(2) * lambda_total_01(δ, τ, constants, fluid) + lambda_total_02(δ, τ, constants, fluid)
+    numerator = (one(F) + lambda_r_01(δ, τ, constants, fluid) - lambda_r_11(δ, τ, constants, fluid))^2
+    denominator = one(F) + F(2) * lambda_r_01(δ, τ, constants, fluid) + lambda_r_02(δ, τ, constants, fluid)
     return cv_term + (R_univ * (numerator / denominator))
 end
 
@@ -497,6 +497,11 @@ function EOS_wrapper(fluid::HelmholtzEnergyFluid, T::F, pressure::F, constants) 
         rho_guess = pressure / (R_univ * T) # Ideal gas guess
         rho_mol = find_density_advanced(T, pressure, rho_guess, constants, fluid)
         rho_list = [rho_mol, rho_mol] # if T > T_crit, we want to return two identical densities
+
+    elseif pressure >= p_c # Compressed liquid at supercritical pressure: no saturation, single root
+        rho_guess = liquid_multiplier * rho_c
+        rho_mol = find_density_advanced(T, pressure, rho_guess, constants, fluid)
+        rho_list = [rho_mol, rho_mol]
 
     else # Else it is liquid/vapour
         (P_sat, T_sat, rho_l_sat, rho_v_sat) = find_saturation_properties(T, pressure, constants, fluid)
