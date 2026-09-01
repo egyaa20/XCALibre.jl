@@ -1,0 +1,98 @@
+# =============================================================================
+# SUPERCRITICAL N2 heat transfer — Tatsumoto 2010
+# P = 3.5 MPa (supercritical), T_in = 78 K, U_in = 3.7 m/s, vertical heated
+# quarter-pipe. Solver: Solvers_5_Multiphase.jl (dev_cryogenic) with
+# HelmholtzTable properties, Energy{HelmholtzEnthalpy}, HeatFlux wall BCs.
+#
+# Single run:   julia --project=. cases/tatsumoto/pipeline/submit.jl \
+#                     cases/tatsumoto/configs/supercritical.toml --local
+# HPC (SLURM):  julia --project=. cases/tatsumoto/pipeline/submit.jl \
+#                     cases/tatsumoto/configs/supercritical.toml
+# =============================================================================
+
+[case]
+name = "supercritical_pimple"         # names runs/<name>/ (checkpoints, vtk, post)
+
+[mesh]
+# Built on the cluster by SALOME (cases/tatsumoto/mesh/quarter_pipe.py) into a
+# content-addressed cache; change any value below and the next submit builds a
+# new mesh, leaving the old one cached.
+scale = 0.001                  # UNV length units (mm) -> metres
+
+[mesh.geometry]                # all lengths in mm
+radius     = 2.7               # tube ID 5.4 mm (paper) -> R = 2.7
+L_entrance = 200.0             # unheated development length (paper: 200 mm = 37d)
+L_heated   = 100.0             # heated section (paper: 100 mm)
+L_exit     = 100.0             # unheated outlet extension past the heated section
+core_ratio = 0.4               # O-grid core half-size as a fraction of R
+
+[mesh.resolution]
+n_quarter     = 8              # circumferential / core-square segments
+n_radial      = 55             # wall-normal segments (these carry the BL)
+n_ax_entrance = 80             # explicit per-zone axial counts
+n_ax_heated   = 120            #   heated cell = 100/120 = 0.833 mm, uniform
+n_ax_exit     = 40
+axial_ratio   = 3.0            # largest/smallest axial cell in entrance/exit,
+                               # fine end towards the heated section
+# total ~ 226,560 cells (cross-section 944 x 240 axial)
+
+[mesh.boundary_layer]
+first_cell = 0.0008            # first wall cell height [mm] = 0.8 um.
+                               # y+ (first cell CENTRE, 0.4 um) ~ 1.0 at the
+                               # pseudo-critical wall state for U_in=3.7 m/s
+                               # (delta_nu = 0.39 um at Tc' = 126.8 K, 3.5 MPa),
+                               # ~0.35 at the 78 K inlet state. Growth ratio
+                               # with n_radial=55 comes out ~1.10.
+
+[hardware]
+backend   = "CPU"              # "CPU" | "CUDA"
+workgroup = 128                # ignored (AutoTune) on CPU
+
+[flow]
+U_in           = 3.7           # inlet bulk velocity [m/s] — validation setpoint
+T_in           = 78.0          # inlet / bath temperature [K]
+turb_intensity = 0.05          # inlet turbulence intensity (fraction)
+D_hyd          = 5.4e-3        # hydraulic diameter [m] (tube ID)
+
+[thermo]
+pressure   = 3.5e6             # operating (absolute) pressure [Pa] = table p_ref
+T_table_lo = 75.0              # property-table T bounds [K]
+T_table_hi = 375.0
+n_points   = 6000              # uniform table: dT = 0.05 K, resolves the
+                               # cp peak at Tc' = 126.8 K
+
+[energy]
+Pr_t = 0.85                    # turbulent Prandtl number
+
+[heating]
+Q0  = 250.0                    # ramp prefactor [W/m^2]:  q(t) = Q0*exp(t/tau)
+tau = 2.0                      # ramp time constant [s] (paper value)
+
+[run]
+time_step  = 1.0e-4            # base dt [s] (adaptive grows from here)
+warmup_end = 5.0               # stage-2 flow-development stop time [s]
+heated_end = 13.0              # stage-3 heated stop time [s]
+discard_until = 0.0            # post.py ignores heated data before this time [s]
+post_stride   = 1              # post.py: plot every Nth snapshot
+
+write_interval_prep   = 25     # VTK cadence [iterations], warmup stage
+write_interval_heated = 25     # heated stage
+
+inner_loops = 2                # PISO pressure correctors
+n_outer_correctors = 3         # PIMPLE outer correctors
+outer_tol          = 1.0e-4    # outer-loop residual exit criterion
+prop_relax         = 0.5       # rho under-relaxation across outers
+
+[run.adaptive]
+maxCo      = 0.9
+maxAlphaCo = 0.85
+minShrink  = 0.1
+maxGrow    = 1.1
+
+# maxCo sweep on the PIMPLE solver; zip pairs maxCo/maxAlphaCo 1:1 so the
+# alpha-Courant limit never caps dt below the target CFL.
+[batch]
+mode = "zip"
+[batch.vary]
+"run.adaptive.maxCo"      = [25.0, 50.0, 100.0]
+"run.adaptive.maxAlphaCo" = [25.0, 50.0, 100.0]
