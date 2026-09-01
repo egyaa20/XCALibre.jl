@@ -1,0 +1,59 @@
+# =============================================================================
+# HPC / SLURM configuration for pipeline/submit.jl  (cluster: Ada, Nottingham)
+# Fill the CHANGE_ME fields once; everything else has working defaults.
+# =============================================================================
+
+[slurm]
+# Comma list -> SLURM runs the job on whichever becomes eligible first. devq
+# is listed last (lowest priority) since its 1 h cap makes it usable only for
+# the mesh job anyway; anything requesting more than 1 h is automatically
+# ineligible for devq regardless of list order, so this doesn't need enforcing
+# beyond the ordering.
+partition = "defq,shortq,devq"
+account   = ""                 # empty -> --account omitted
+time      = "11:30:00"         # walltime per job (HH:MM:SS); under shortq's
+                               # 12h cap so prep/heated can also queue there,
+                               # not just defq
+time_prep = ""                 # optional per-stage override; empty -> `time`
+time_heated = ""
+time_post = "00:20:00"         # post.py is a lightweight plot script, not a
+                               # solve -- the default 11:30:00 would just
+                               # make it wait for a slot sized for the solver
+                               # jobs instead of scheduling quickly
+cpus_per_task = 16
+mem       = "64G"
+gpu       = false              # true -> adds --gres=gpu:1 and keeps the case's
+                               # [hardware] backend; false -> backend forced to CPU
+
+[env]
+julia   = "julia"              # or absolute path (e.g. ~/.juliaup/bin/julia)
+threads = 0                    # JULIA_NUM_THREADS; 0 -> = cpus_per_task
+modules = []                   # e.g. ["gcc-uoneasy/12.3.0"] — `module load` lines
+project = ""                   # --project; empty -> repo root (auto-detected)
+
+[mesh]
+# SALOME mesh generation (used when the case has a [mesh.geometry] block).
+# There is no salome module on Ada; it runs from a singularity image built
+# once on the login node:
+#   module load singularity/3.8.5
+#   singularity build --sandbox salome_sandbox docker://simvia/salome:latest
+#   chmod -R a+rX salome_sandbox            # rootless build leaves KERNEL/bin unreadable
+#   singularity build salome-9.14.0.sif salome_sandbox
+container     = "/gpfs01/home/egyaa20/cfd-pipeline/containers/salome-9.14.0.sif"
+modules       = ["singularity/3.8.5"]
+time          = "02:00:00"
+cpus_per_task = 4
+mem           = "16G"
+
+[post]
+enable = true                  # true -> post.py submitted as a dependent job,
+                               # afterok on heated, publishing validation.png
+                               # to pipeline-status automatically (no SSH
+                               # needed to go find it on scratch)
+# Bare "python3" on Ada has no pyvista/matplotlib -- this venv is the one
+# set up alongside the pipeline for exactly this (see postprocess_vtk.py /
+# postprocess_pressure.py, which already use it the same way). No mesa/GL
+# module needed here: unlike those two, post.py only reads VTU field data
+# via pyvista (no pv.Plotter/off-screen rendering) and plots with
+# matplotlib's default Agg backend, so there's no X11/EGL dependency to hit.
+python = "$HOME/cfd-pipeline/venv-pyvista/bin/python3"

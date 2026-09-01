@@ -128,6 +128,7 @@ struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothi
     dt::V
     write_interval::I
     adaptive::A
+    t_end::Union{Nothing,F}
 end
 Adapt.@adapt_structure Runtime
 
@@ -166,13 +167,16 @@ This is a convenience function to set the top-level runtime information. The inp
 runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
 ```
 """
-Runtime(; iterations::I,
-          write_interval::I,
-          time_step::N,
-          adaptive=nothing) where {I<:Integer,N<:Number} = begin
+Runtime(; iterations::Integer=10_000_000,
+          write_interval::Integer,
+          time_step::Number,
+          adaptive=nothing,
+          t_end=nothing) = begin
 
     val = float(time_step)
-    Runtime(iterations, [val], write_interval, adaptive)
+    t_end_val = t_end === nothing ? nothing : oftype(val, t_end)
+    it, wi = promote(iterations, write_interval)
+    Runtime(it, [val], wi, adaptive, t_end_val)
 end
 
 # Set schemes function definition with default set variables

@@ -1,4 +1,4 @@
-export HeatFlux
+export HeatFlux, HeatFluxFunction
 
 """
     HeatFlux <: AbstractNeumann
@@ -54,5 +54,54 @@ end
 end
 
 @define_boundary HeatFlux Si begin
+    0.0, 0.0
+end
+
+"""
+    HeatFluxFunction(ID, func) <: AbstractNeumann
+
+Time/space-dependent variant of [`HeatFlux`](@ref): `func(coords, time, i)`
+returns the heat flux q [W/m²] (positive into the domain) for the boundary
+face at `coords` at simulation time `time`.
+
+# Example
+    HeatFluxFunction(:wall, (coords, t, i) -> 250.0 * exp(t / 2.0))
+"""
+struct HeatFluxFunction{I,V,R<:UnitRange} <: AbstractNeumann
+    ID::I
+    value::V
+    IDs_range::R
+end
+Adapt.@adapt_structure HeatFluxFunction
+
+@define_boundary HeatFluxFunction Laplacian{Linear} begin
+    (; area, centre) = face
+    q = bc.value(centre, time, i)
+    0.0, -term.sign[1]*q*area
+end
+
+@define_boundary HeatFluxFunction Divergence{Linear} begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux)
+    ap, 0.0
+end
+
+@define_boundary HeatFluxFunction Divergence{Upwind} begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux)
+    ap, 0.0
+end
+
+@define_boundary HeatFluxFunction Divergence{LUST} begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux)
+    ap, 0.0
+end
+
+@define_boundary HeatFluxFunction Divergence{BoundedUpwind} begin
+    0.0, 0.0
+end
+
+@define_boundary HeatFluxFunction Si begin
     0.0, 0.0
 end

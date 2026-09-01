@@ -29,3 +29,7 @@ AGENTS.md
 .claude
 .vscode
 dev/
+
+# Case run outputs (checkpoints, VTU series, SLURM logs)
+cases/**/runs/
+__pycache__/

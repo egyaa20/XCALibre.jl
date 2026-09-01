@@ -167,7 +167,8 @@ function write_results(
     # Define backend and variables
     backend = _get_backend(mesh)
     format = "ascii"
-    F32 = "Float32"
+    F32 = "Float64"   # values are printed as Float64 text; declaring Float32
+                      # makes VTK's ascii scan fail on sub-Float32 magnitudes
 
     open(filename,"w") do io
 

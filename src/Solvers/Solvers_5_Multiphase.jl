@@ -296,6 +296,11 @@ function MULTIPHASE(
 
     @time for iteration ∈ 1:iterations
 
+        if config.runtime.t_end !== nothing && time >= config.runtime.t_end
+            @info "Reached t_end = $(config.runtime.t_end) s after $(iteration-1) iterations — stopping."
+            break
+        end
+
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
 
@@ -449,6 +454,8 @@ function MULTIPHASE(
 
         if iteration % write_interval + signbit(write_interval) == 0
             save_output(model, outputWriter, iteration, time, config)
+            isfile("times.csv") || write("times.csv", "iteration,time\n")
+            open(io -> println(io, iteration, ",", time), "times.csv", "a")
             save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
         end
     end
@@ -612,6 +619,34 @@ function init_multiphase_energy(energy::HelmholtzEnthalpy, model, rhoPhi, rho, c
     @reset h_eqn.solver = _workspace(solvers.h.solver, _b(h_eqn))
 
     return (eqn=h_eqn, table=table, k_m=k_m, cp_m=cp_m, k_mf=k_mf, cp_mf=cp_mf)
+end
+
+function ModelPhysics.save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F<:Multiphase,SO,M,Tu<:KOmegaSST,E<:HelmholtzEnthalpy,D,BI}
+    args = (
+        ("U", model.momentum.U),
+        ("p", model.momentum.p),
+        ("rho", model.fluid.rho),
+        ("T", model.energy.T),
+        ("h", model.energy.h),
+        ("k", model.turbulence.k),
+        ("omega", model.turbulence.omega),
+        ("nut", model.turbulence.nut),
+        ("y", model.turbulence.y),
+    )
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
+end
+
+function ModelPhysics.save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
+    ) where {T,F<:Multiphase,SO,M,Tu<:Laminar,E<:HelmholtzEnthalpy,D,BI}
+    args = (
+        ("U", model.momentum.U),
+        ("p", model.momentum.p),
+        ("rho", model.fluid.rho),
+        ("T", model.energy.T),
+        ("h", model.energy.h),
+    )
+    write_results(iteration, time, model.domain, outputWriter, config.boundaries, args...)
 end
 
 solve_multiphase_energy!(::Nothing, model, rho_prev, mdotf, mueff, time, config) = nothing
