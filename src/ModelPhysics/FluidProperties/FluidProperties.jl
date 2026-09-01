@@ -33,3 +33,4 @@ include("surface_tension.jl")
 include("HighFidelity_Closure.jl")
 
 include("property_table.jl")
+include("helmholtz_enthalpy.jl")

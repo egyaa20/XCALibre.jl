@@ -1,5 +1,6 @@
 export HelmholtzTable, HelmholtzMu
 export update_phase_properties!, enthalpy_from_temperature!, temperature_from_enthalpy!
+export table_enthalpy, table_temperature
 
 struct HelmholtzMu <: AbstractViscosityModel end   # properties supplied by the rho-slot HelmholtzTable
 
@@ -90,6 +91,11 @@ end
     w = ξ - i
     @inbounds vals[i+1] * (1 - w) + vals[i+2] * w
 end
+
+table_enthalpy(table::HelmholtzTable, T) =
+    _table_lerp(table.h, float(T), table.T_min, table.dT, length(table.h))
+table_temperature(table::HelmholtzTable, h) =
+    _table_lerp(table.T_of_h, float(h), table.h_min, table.dh, length(table.T_of_h))
 
 update_phase_properties!(phase, T_field, config) =
     update_phase_properties!(phase.rho_model, phase, T_field, config)

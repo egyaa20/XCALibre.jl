@@ -96,9 +96,7 @@ function setup_multiphase_solvers(
 
     @info "Computing fluid properties..."
 
-    blend_properties!(rho, alpha, phases[main].rho[1], phases[secondary].rho[1])
-    blend_properties!(rhof, alphaf, phases[main].rho[1], phases[secondary].rho[1])
-    blend_properties!(nuf, alphaf, phases[main].mu[1] / phases[main].rho[1], phases[secondary].mu[1] / phases[secondary].rho[1])
+    init_multiphase_properties!(model.energy, model, phases, main, secondary, config)
     @. mueff.values = rhof.values * nueff.values
 
     gh = model.fluid.physics_properties.gravity.gh
@@ -154,8 +152,11 @@ function setup_multiphase_solvers(
     @info "Initialising turbulence model..."
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
+    @info "Initialising energy model..."
+    energyModel = init_multiphase_energy(model.energy, model, rhoPhi, rho, config)
+
     residuals = solver_variant(
-        model, turbulenceModel, ∇p, ∇p_rgh, U_eqn, p_eqn,
+        model, turbulenceModel, energyModel, ∇p, ∇p_rgh, U_eqn, p_eqn,
         mdotf, rhoPhi, gh, ghf, phi_g, phi_gf, extra_models, mules, config;
         output=output, pref=pref,
         ncorrectors=ncorrectors, inner_loops=inner_loops)
@@ -166,7 +167,7 @@ end
 
 
 function MULTIPHASE(
-    model, turbulenceModel, ∇p, ∇p_rgh, U_eqn, p_eqn,
+    model, turbulenceModel, energyModel, ∇p, ∇p_rgh, U_eqn, p_eqn,
     mdotf, rhoPhi, gh, ghf, phi_g, phi_gf,
     extra_models, mules, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=3
@@ -331,9 +332,20 @@ function MULTIPHASE(
                        alphaMaxLocal, alphaMinLocal, C_alpha, dt_cpu[1], time, config)
         ralpha = zero(TF)
 
-        # Mixture property update from the new alpha
-        update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mueff,
-                                   rho1_val, rho2_val, mu1_val, mu2_val, config)
+        refresh_phase_properties!(energyModel, model, phases, main, secondary,
+                                  rho1f, rho2f, mu1f, mu2f, config)
+
+        # Mixture property update from the new alpha (and new T when energy is active)
+        if energyModel === nothing
+            update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mueff,
+                                       rho1_val, rho2_val, mu1_val, mu2_val,
+                                       rho1_val, rho2_val, mu1_val, mu2_val, config)
+        else
+            update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mueff,
+                                       _phase_vals(phases[main].rho), _phase_vals(phases[secondary].rho),
+                                       _phase_vals(phases[main].mu), _phase_vals(phases[secondary].mu),
+                                       rho1f.values, rho2f.values, mu1f.values, mu2f.values, config)
+        end
 
         @. drhodt.values = (rho.values - rho_prev.values) / dt_cpu[1]
 
@@ -405,6 +417,8 @@ function MULTIPHASE(
         turbulence!(turbulenceModel, model, S, prev, time, config)
         update_nueff!(nueff, nuf, model.turbulence, config)
         @. mueff.values = rhof.values * nueff.values
+
+        solve_multiphase_energy!(energyModel, model, rho_prev, mdotf, mueff, time, config)
 
         courant      = max_courant_number!(cellsCourant, model, config)
         alphaCourant = max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, model, config, dt_cpu[1])
@@ -508,19 +522,125 @@ high_order_alpha_flux!(::Mixture, phiHf, mdotf, alphaf_HO, alphaf_upwind, phirf,
 
 # This needs to be turned into a fused kernel for performance
 function update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mueff,
-                                    rho1_val, rho2_val, mu1_val, mu2_val, config)
+                                    rho1_val, rho2_val, mu1_val, mu2_val,
+                                    rho1f_val, rho2f_val, mu1f_val, mu2f_val, config)
     (; rho, rhof, nu, nuf, alpha, alphaf) = model.fluid
 
     blend_properties!(rho,  alpha,  rho1_val, rho2_val)
-    blend_properties!(rhof, alphaf, rho1_val, rho2_val)
+    blend_properties!(rhof, alphaf, rho1f_val, rho2f_val)
     blend_mixture_nu!(nu,  alpha,  rho,  mu1_val, mu2_val)
-    blend_mixture_nu!(nuf, alphaf, rhof, mu1_val, mu2_val)
+    blend_mixture_nu!(nuf, alphaf, rhof, mu1f_val, mu2f_val)
 
     update_nueff!(nueff, nuf, model.turbulence, config)
     @. mueff.values  = rhof.values * nueff.values
 
-    blend_rhoPhi!(model.fluid.model, rhoPhi, alpha_fluxf, mdotf, rhof, rho1_val, rho2_val)
+    blend_rhoPhi!(model.fluid.model, rhoPhi, alpha_fluxf, mdotf, rhof, rho1f_val, rho2f_val)
     return nothing
+end
+
+_phase_vals(p) = p.values
+
+phase_to_face!(pf, p::ConstantScalar, config) = initialise!(pf, p.values)
+phase_to_face!(pf, p, config) = interpolate!(pf, p, config)
+
+function init_multiphase_properties!(::Nothing, model, phases, main, secondary, config)
+    (; alpha, alphaf, rho, rhof, nuf) = model.fluid
+    blend_properties!(rho, alpha, phases[main].rho[1], phases[secondary].rho[1])
+    blend_properties!(rhof, alphaf, phases[main].rho[1], phases[secondary].rho[1])
+    blend_properties!(nuf, alphaf, phases[main].mu[1] / phases[main].rho[1], phases[secondary].mu[1] / phases[secondary].rho[1])
+    return nothing
+end
+
+function init_multiphase_properties!(energy::HelmholtzEnthalpy, model, phases, main, secondary, config)
+    (; alpha, rho, rhof, nu, nuf) = model.fluid
+    update_phase_properties!(phases[main], energy.T, config)
+    update_phase_properties!(phases[secondary], energy.T, config)
+    blend_properties!(rho, alpha, _phase_vals(phases[main].rho), _phase_vals(phases[secondary].rho))
+    blend_mixture_nu!(nu, alpha, rho, _phase_vals(phases[main].mu), _phase_vals(phases[secondary].mu))
+    interpolate!(rhof, rho, config)
+    interpolate!(nuf, nu, config)
+    return nothing
+end
+
+refresh_phase_properties!(::Nothing, model, phases, main, secondary,
+                          rho1f, rho2f, mu1f, mu2f, config) = nothing
+
+function refresh_phase_properties!(energyModel, model, phases, main, secondary,
+                                   rho1f, rho2f, mu1f, mu2f, config)
+    T = model.energy.T
+    update_phase_properties!(phases[main], T, config)
+    update_phase_properties!(phases[secondary], T, config)
+    phase_to_face!(rho1f, phases[main].rho, config)
+    phase_to_face!(rho2f, phases[secondary].rho, config)
+    phase_to_face!(mu1f,  phases[main].mu, config)
+    phase_to_face!(mu2f,  phases[secondary].mu, config)
+    return nothing
+end
+
+function multiphase_property_table(model)
+    for phase in model.fluid.phases
+        phase.rho_model isa HelmholtzTable && return phase.rho_model
+    end
+    error("Energy{HelmholtzEnthalpy} requires a phase with rho=HelmholtzTable(...)")
+end
+
+init_multiphase_energy(::Nothing, model, rhoPhi, rho, config) = nothing
+
+function init_multiphase_energy(energy::HelmholtzEnthalpy, model, rhoPhi, rho, config)
+    (; solvers, schemes, boundaries) = config
+    mesh = model.domain
+    (; h, T) = energy
+    table = multiphase_property_table(model)
+    enthalpy_from_temperature!(h, T, table, config)
+
+    alpha_eff = FaceScalarField(mesh)
+    initialise!(alpha_eff, 1.0e-3)
+    k_m   = ScalarField(mesh)
+    cp_m  = ScalarField(mesh)
+    k_mf  = FaceScalarField(mesh)
+    cp_mf = FaceScalarField(mesh)
+
+    h_eqn = (
+        Time{schemes.h.time}(rho, h)
+        + Divergence{schemes.h.divergence}(rhoPhi, h)
+        - Laplacian{schemes.h.laplacian}(alpha_eff, h)
+        ==
+        Source(ConstantScalar(0.0))
+    ) → ScalarEquation(h, boundaries.h)
+
+    @reset h_eqn.preconditioner = set_preconditioner(solvers.h.preconditioner, h_eqn)
+    @reset h_eqn.solver = _workspace(solvers.h.solver, _b(h_eqn))
+
+    return (eqn=h_eqn, table=table, k_m=k_m, cp_m=cp_m, k_mf=k_mf, cp_mf=cp_mf)
+end
+
+solve_multiphase_energy!(::Nothing, model, rho_prev, mdotf, mueff, time, config) = nothing
+
+function solve_multiphase_energy!(em, model, rho_prev, mdotf, mueff, time, config)
+    (; eqn, table, k_m, cp_m, k_mf, cp_mf) = em
+    (; solvers, boundaries) = config
+    (; h, T, coeffs) = model.energy
+    (; alpha, rhof, nuf) = model.fluid
+    phases = model.fluid.phases
+    main = model.fluid.volume_fraction
+    secondary = 3 - main
+
+    rhoPhi = get_flux(eqn, 2)
+    @. rhoPhi.values = rhof.values * mdotf.values
+
+    alpha_eff = get_flux(eqn, 3)
+    blend_properties!(k_m,  alpha, _phase_vals(phases[main].k),  _phase_vals(phases[secondary].k))
+    blend_properties!(cp_m, alpha, _phase_vals(phases[main].cp), _phase_vals(phases[secondary].cp))
+    interpolate!(k_mf, k_m, config)
+    interpolate!(cp_mf, cp_m, config)
+    @. alpha_eff.values = k_mf.values / (cp_mf.values + eps()) +
+                          max(mueff.values - rhof.values * nuf.values, 0.0) / coeffs.Pr_t
+
+    res = solve_equation!(eqn, h, boundaries.h, solvers.h, config;
+                          rho_prev=rho_prev, time=time, irelax=solvers.h.relax)
+
+    temperature_from_enthalpy!(T, h, table, config)
+    return res
 end
 
 blend_rhoPhi!(::Mixture, rhoPhi, alpha_fluxf, mdotf, rhof, rho1_val, rho2_val) =

@@ -53,6 +53,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_propertyTable.jl")
     end
 
+    @testset "Multiphase Energy Unit Test" begin
+        include("unit_test_multiphase_energy.jl")
+    end
+
     @testset "Laplace Functionality Test" begin
 
         test_files = [
