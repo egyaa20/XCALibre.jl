@@ -195,18 +195,20 @@ sc_solvers = (
         H1 = sum(rho.values .* h.values .* vol_D)
         mass1 = sum(rho.values .* vol_D)
         Q_recovered = (H1 - H0) + h0*(mass0 - mass1)
-        @test isapprox(Q_recovered, Q_target; rtol=0.1)
+        @test isapprox(Q_recovered, Q_target; rtol=0.02)
 
         dy = 2.5e-3
-        row1 = findall(y -> abs(y - 0.5dy) < 0.1dy, yc_D)
-        row2 = findall(y -> abs(y - 1.5dy) < 0.1dy, yc_D)
         xs_D = [c.centre[1] for c in mesh_D.cells]
-        i1 = row1[sortperm(xs_D[row1])][20]
-        i2 = row2[sortperm(xs_D[row2])][20]
-        k1 = XCALibre.ModelPhysics._table_lerp(
-            table.k, T.values[i1], table.T_min, table.dT, length(table.k))
-        q_rec = k1 * (T.values[i1] - T.values[i2]) / dy
-        @test isapprox(q_rec, q_wall; rtol=0.25)
+        rows = [findall(y -> abs(y - (k - 0.5)*dy) < 0.1dy, yc_D) for k in 1:3]
+        mid = [r[sortperm(xs_D[r])][20] for r in rows]
+        Trow = T.values[mid]
+        ys = [0.5dy, 1.5dy, 2.5dy]
+        cfit = [1 ys[1] ys[1]^2; 1 ys[2] ys[2]^2; 1 ys[3] ys[3]^2] \ Trow
+        T_wall = cfit[1]
+        k_wall = XCALibre.ModelPhysics._table_lerp(
+            table.k, T_wall, table.T_min, table.dT, length(table.k))
+        q_rec = k_wall * (-cfit[2])
+        @test isapprox(q_rec, q_wall; rtol=0.05)
 
         model_g = build_sc_model(mesh_D_dev, table)
         BCs_g = assign(region = mesh_D_dev, (
@@ -233,7 +235,7 @@ sc_solvers = (
         H1_g = sum(model_g.fluid.rho.values .* model_g.energy.h.values .* vol_D)
         mass1_g = sum(model_g.fluid.rho.values .* vol_D)
         Q_recovered_g = (H1_g - H0) + h0*(mass0 - mass1_g)
-        @test isapprox(Q_recovered_g, Q_target; rtol=0.1)
+        @test isapprox(Q_recovered_g, Q_target; rtol=0.05)
         @test maximum(abs.(T_g.values .- T.values)) < 0.1
     end
 
@@ -291,7 +293,7 @@ sc_solvers = (
         mass1 = sum(rho.values .* vol_E)
         Q_recovered = (H1 - H0) + h0_E*(mass0 - mass1)
         @test mass1 < mass0
-        @test isapprox(Q_recovered, Q_target; rtol=0.1)
+        @test isapprox(Q_recovered, Q_target; rtol=0.05)
     end
 
     @testset "C: hydrostatic well-balance with table-driven density" begin
