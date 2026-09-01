@@ -146,6 +146,154 @@ sc_solvers = (
         end
     end
 
+    @testset "D: HeatFlux BC injects exactly the target wall power" begin
+        q_wall = 1.0
+        t_end = 1.0e4
+        mesh_D = UNV2D_mesh(joinpath(grids_dir, "quad40.unv"), scale=1.0e-4)
+        mesh_D_dev = adapt(backend, mesh_D)
+        vol_D = [c.volume for c in mesh_D.cells]
+        yc_D = [c.centre[2] for c in mesh_D.cells]
+        model = build_sc_model(mesh_D_dev, table)
+        BCs = assign(region = mesh_D_dev, (
+            U = [Wall(:inlet, noSlip), Wall(:outlet, noSlip),
+                 Extrapolated(:top), Wall(:bottom, noSlip)],
+            p_rgh = [Zerogradient(:inlet), Zerogradient(:outlet),
+                     Dirichlet(:top, 0.0), Zerogradient(:bottom)],
+            alpha = [Zerogradient(:inlet), Zerogradient(:outlet),
+                     Zerogradient(:top), Zerogradient(:bottom)],
+            h = [Zerogradient(:inlet), Zerogradient(:outlet),
+                 Zerogradient(:top), HeatFlux(:bottom, q_wall)],
+        ))
+        runtime = Runtime(iterations=100, time_step=t_end/100, write_interval=-1)
+        config = Configuration(solvers=sc_solvers, schemes=sc_schemes,
+                               runtime=runtime, hardware=hardware, boundaries=BCs)
+        initialise!(model.momentum.U, noSlip)
+        initialise!(model.fluid.p_rgh, 0.0)
+        initialise!(model.fluid.alpha, 1.0)
+        initialise!(model.energy.T, T0)
+
+        rho0 = XCALibre.ModelPhysics._table_lerp(
+            table.rho, T0, table.T_min, table.dT, length(table.rho))
+        h0 = table_enthalpy(table, T0)
+        H0 = rho0 * h0 * sum(vol_D)
+        mass0 = rho0 * sum(vol_D)
+
+        run!(model, config)
+
+        T = model.energy.T
+        rho = model.fluid.rho
+        h = model.energy.h
+        @test all(isfinite, T.values)
+        @test maximum(T.values) > T0 + 0.1
+        @test minimum(T.values) > T0 - 0.05
+
+        boundaries_cpu = XCALibre.Mesh.get_boundaries(mesh_D.boundaries)
+        bottom = boundaries_cpu[findfirst(b -> b.name == :bottom, boundaries_cpu)]
+        A_bottom = sum(mesh_D.faces[fID].area for fID in bottom.IDs_range)
+        Q_target = q_wall * A_bottom * t_end
+
+        H1 = sum(rho.values .* h.values .* vol_D)
+        mass1 = sum(rho.values .* vol_D)
+        Q_recovered = (H1 - H0) + h0*(mass0 - mass1)
+        @test isapprox(Q_recovered, Q_target; rtol=0.1)
+
+        dy = 2.5e-3
+        row1 = findall(y -> abs(y - 0.5dy) < 0.1dy, yc_D)
+        row2 = findall(y -> abs(y - 1.5dy) < 0.1dy, yc_D)
+        xs_D = [c.centre[1] for c in mesh_D.cells]
+        i1 = row1[sortperm(xs_D[row1])][20]
+        i2 = row2[sortperm(xs_D[row2])][20]
+        k1 = XCALibre.ModelPhysics._table_lerp(
+            table.k, T.values[i1], table.T_min, table.dT, length(table.k))
+        q_rec = k1 * (T.values[i1] - T.values[i2]) / dy
+        @test isapprox(q_rec, q_wall; rtol=0.25)
+
+        model_g = build_sc_model(mesh_D_dev, table)
+        BCs_g = assign(region = mesh_D_dev, (
+            U = [Wall(:inlet, noSlip), Wall(:outlet, noSlip),
+                 Extrapolated(:top), Wall(:bottom, noSlip)],
+            p_rgh = [Zerogradient(:inlet), Zerogradient(:outlet),
+                     Dirichlet(:top, 0.0), Zerogradient(:bottom)],
+            alpha = [Zerogradient(:inlet), Zerogradient(:outlet),
+                     Zerogradient(:top), Zerogradient(:bottom)],
+            h = [Zerogradient(:inlet), Zerogradient(:outlet),
+                 Zerogradient(:top), HeatFluxGradient(:bottom, q_wall, table)],
+        ))
+        config_g = Configuration(solvers=sc_solvers, schemes=sc_schemes,
+                                 runtime=runtime, hardware=hardware, boundaries=BCs_g)
+        initialise!(model_g.momentum.U, noSlip)
+        initialise!(model_g.fluid.p_rgh, 0.0)
+        initialise!(model_g.fluid.alpha, 1.0)
+        initialise!(model_g.energy.T, T0)
+
+        run!(model_g, config_g)
+
+        T_g = model_g.energy.T
+        @test all(isfinite, T_g.values)
+        H1_g = sum(model_g.fluid.rho.values .* model_g.energy.h.values .* vol_D)
+        mass1_g = sum(model_g.fluid.rho.values .* vol_D)
+        Q_recovered_g = (H1_g - H0) + h0*(mass0 - mass1_g)
+        @test isapprox(Q_recovered_g, Q_target; rtol=0.1)
+        @test maximum(abs.(T_g.values .- T.values)) < 0.1
+    end
+
+    @testset "E: trans-pseudo-critical heating (extreme property variation)" begin
+        T0_E = 120.0
+        q_wall = 40.0
+        t_end = 1.0e4
+        mesh_E = UNV2D_mesh(joinpath(grids_dir, "quad40.unv"), scale=1.0e-4)
+        mesh_E_dev = adapt(backend, mesh_E)
+        vol_E = [c.volume for c in mesh_E.cells]
+        model = build_sc_model(mesh_E_dev, table)
+        BCs = assign(region = mesh_E_dev, (
+            U = [Wall(:inlet, noSlip), Wall(:outlet, noSlip),
+                 Extrapolated(:top), Wall(:bottom, noSlip)],
+            p_rgh = [Zerogradient(:inlet), Zerogradient(:outlet),
+                     Dirichlet(:top, 0.0), Zerogradient(:bottom)],
+            alpha = [Zerogradient(:inlet), Zerogradient(:outlet),
+                     Zerogradient(:top), Zerogradient(:bottom)],
+            h = [Zerogradient(:inlet), Zerogradient(:outlet),
+                 Zerogradient(:top), HeatFlux(:bottom, q_wall)],
+        ))
+        runtime = Runtime(iterations=200, time_step=t_end/200, write_interval=-1)
+        config = Configuration(solvers=sc_solvers, schemes=sc_schemes,
+                               runtime=runtime, hardware=hardware, boundaries=BCs)
+        initialise!(model.momentum.U, noSlip)
+        initialise!(model.fluid.p_rgh, 0.0)
+        initialise!(model.fluid.alpha, 1.0)
+        initialise!(model.energy.T, T0_E)
+
+        rho0 = XCALibre.ModelPhysics._table_lerp(
+            table.rho, T0_E, table.T_min, table.dT, length(table.rho))
+        h0_E = table_enthalpy(table, T0_E)
+        H0 = rho0 * h0_E * sum(vol_E)
+        mass0 = rho0 * sum(vol_E)
+
+        run!(model, config)
+
+        T = model.energy.T
+        rho = model.fluid.rho
+        U = model.momentum.U
+        vel = sqrt.(U.x.values.^2 .+ U.y.values.^2 .+ U.z.values.^2)
+        @test all(isfinite, T.values)
+        @test all(isfinite, vel)
+        @test minimum(T.values) > T0_E - 0.05
+        @test maximum(T.values) > 131.0
+        @test maximum(T.values) < 168.0
+        @test minimum(rho.values) > 0.0
+
+        boundaries_cpu = XCALibre.Mesh.get_boundaries(mesh_E.boundaries)
+        bottom = boundaries_cpu[findfirst(b -> b.name == :bottom, boundaries_cpu)]
+        A_bottom = sum(mesh_E.faces[fID].area for fID in bottom.IDs_range)
+        Q_target = q_wall * A_bottom * t_end
+
+        H1 = sum(rho.values .* model.energy.h.values .* vol_E)
+        mass1 = sum(rho.values .* vol_E)
+        Q_recovered = (H1 - H0) + h0_E*(mass0 - mass1)
+        @test mass1 < mass0
+        @test isapprox(Q_recovered, Q_target; rtol=0.1)
+    end
+
     @testset "C: hydrostatic well-balance with table-driven density" begin
         model = build_sc_model(mesh_dev, table; gvec=[0.0, -9.81, 0.0])
         BCs = assign(region = mesh_dev, (

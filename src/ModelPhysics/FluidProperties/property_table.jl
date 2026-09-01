@@ -1,4 +1,4 @@
-export HelmholtzTable, HelmholtzMu
+export HelmholtzTable, HelmholtzMu, HeatFluxGradient
 export update_phase_properties!, enthalpy_from_temperature!, temperature_from_enthalpy!
 export table_enthalpy, table_temperature
 
@@ -145,4 +145,90 @@ end
 @kernel inbounds=true function _temperature_from_enthalpy!(T, h, table)
     i = @index(Global)
     T[i] = _table_lerp(table.T_of_h, h[i], table.h_min, table.dh, length(table.T_of_h))
+end
+
+"""
+    HeatFluxGradient(name::Symbol, q, table::HelmholtzTable)
+
+Fixed heat-flux wall for the enthalpy equation applied as a gradient condition:
+`dh/dn = q * cp(T_w) / lambda(T_w)`, with the wall temperature re-evaluated from
+the local boundary-cell enthalpy through `table` at every assembly. Never uses
+frozen reference-state properties, so the applied flux tracks the collapse of
+`lambda` across the pseudo-critical line. `q` in W/m², positive into the domain.
+See also [`HeatFlux`](@ref), which injects `q*A` exactly by construction.
+"""
+struct HeatFluxGradient{I,V,R<:UnitRange} <: AbstractNeumann
+    ID::I
+    value::V
+    IDs_range::R
+end
+Adapt.@adapt_structure HeatFluxGradient
+
+struct HeatFluxGradientValue{F<:AbstractFloat,T}
+    q::F
+    table::T
+end
+Adapt.@adapt_structure HeatFluxGradientValue
+
+HeatFluxGradient(name::Symbol, q::Number, table::HelmholtzTable) =
+    HeatFluxGradient(name, HeatFluxGradientValue(Float64(q), table), 0:0)
+
+Discretise.adapt_value(value::HeatFluxGradientValue, mesh) =
+    HeatFluxGradientValue(_get_float(mesh)(value.q), value.table)
+
+Discretise.@define_boundary HeatFluxGradient Laplacian{Linear} begin
+    (; q, table) = bc.value
+    J = term.flux[fID]
+    (; area) = face
+    h_c = get_values(term.phi, component)[cellID]
+    n = length(table.T_of_h)
+    Tw = _table_lerp(table.T_of_h, h_c, table.h_min, table.dh, n)
+    lam = _table_lerp(table.k, Tw, table.T_min, table.dT, n)
+    cpw = _table_lerp(table.cp, Tw, table.T_min, table.dT, n)
+    g = q * cpw / (lam + eps(typeof(lam)))
+    0.0, -term.sign[1]*J*g*area
+end
+
+Discretise.@define_boundary HeatFluxGradient Divergence{Linear} begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux)
+    ap, 0.0
+end
+
+Discretise.@define_boundary HeatFluxGradient Divergence{Upwind} begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux)
+    ap, 0.0
+end
+
+Discretise.@define_boundary HeatFluxGradient Divergence{LUST} begin
+    flux = term.flux[fID]
+    ap = term.sign*(flux)
+    ap, 0.0
+end
+
+Discretise.@define_boundary HeatFluxGradient Divergence{BoundedUpwind} begin
+    0.0, 0.0
+end
+
+Discretise.@define_boundary HeatFluxGradient Si begin
+    0.0, 0.0
+end
+
+@inline function Discretise.boundary_interpolation!(
+    BC::HeatFluxGradient, phif::FaceScalarField, phi, boundary_cellsID, time, fID)
+    @inbounds begin
+        cID = boundary_cellsID[fID]
+        phif[fID] = phi[cID]
+    end
+    nothing
+end
+
+@inline function Discretise.boundary_interpolation!(
+    BC::HeatFluxGradient, psif::FaceVectorField, psi, boundary_cellsID, time, fID)
+    @inbounds begin
+        cID = boundary_cellsID[fID]
+        psif[fID] = psi[cID]
+    end
+    nothing
 end
