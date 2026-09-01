@@ -216,6 +216,10 @@ function MULTIPHASE(
     ∇p_rghf_reconstructed = VectorField(mesh)
     pressure_force_face   = FaceScalarField(mesh)
 
+    rDf_vol   = FaceScalarField(mesh)   # volumetric rD_f (rDf itself is ρ-weighted)
+    rho_mdotf = FaceScalarField(mesh)   # ρf·mdotf predictor mass flux
+    drhodt    = ScalarField(mesh)       # explicit ∂ρ/∂t source
+
     rho1_val = phases[main].rho[1]
     rho2_val = phases[secondary].rho[1]
     mu1_val  = phases[main].mu[1]
@@ -331,6 +335,8 @@ function MULTIPHASE(
         update_mixture_properties!(model, alpha_fluxf, mdotf, rhoPhi, nueff, mueff,
                                    rho1_val, rho2_val, mu1_val, mu2_val, config)
 
+        @. drhodt.values = (rho.values - rho_prev.values) / dt_cpu[1]
+
         # Interface curvature for surface tension (VOF only)
         if typeof(mp_model) <: VOF
             update_curvature!(model, ∇alpha, ∇alphaf, nhatf_prep, kappa, kappaf,
@@ -351,7 +357,8 @@ function MULTIPHASE(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; rho_prev=rho_prev, time=time)
 
         inverse_diagonal!(rD, U_eqn, config)
-        interpolate!(rDf, rD, config)
+        interpolate!(rDf_vol, rD, config)
+        @. rDf.values = rhof.values * rDf_vol.values   # ρ-weighted Poisson coefficient
 
         remove_pressure_source!(U_eqn, ∇p_rgh, config)
 
@@ -364,17 +371,19 @@ function MULTIPHASE(
 
             flux!(mdotf, Uf, config)
 
-            phi_gf!(phi_gf, rho, ghf, rDf, model, config)
+            phi_gf!(phi_gf, rho, ghf, rDf_vol, model, config)
 
             if typeof(mp_model) <: VOF
-                surface_tension_flux!(rDf, sigma, kappaf, alpha, phi_gf, config)
+                surface_tension_flux!(rDf_vol, sigma, kappaf, alpha, phi_gf, config)
             end
 
             reconstruct!(phi_g, phi_gf, config)
 
             @. mdotf.values += phi_gf.values
 
-            div!(divHv, mdotf, config)
+            @. rho_mdotf.values = rhof.values * mdotf.values
+            div!(divHv, rho_mdotf, config)
+            @. divHv.values += drhodt.values
 
             @. prev = p_rgh.values
             rp = solve_equation!(p_eqn, p_rgh, boundaries.p_rgh, solvers.p_rgh,
@@ -383,9 +392,9 @@ function MULTIPHASE(
             grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config)
             limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
 
-            correct_mass_flux_mp!(mdotf, p_eqn, config)
+            correct_mass_flux_mp!(mdotf, p_eqn, rhof, rDf_vol, config)
 
-            pressure_grad!(p_rgh, ∇p_rghf_deconstructed, phi_gf, rDf, config)
+            pressure_grad!(p_rgh, ∇p_rghf_deconstructed, phi_gf, rDf_vol, config)
             reconstruct!(∇p_rghf_reconstructed, ∇p_rghf_deconstructed, config)
 
             correct_velocity_rgh!(U, Hv, ∇p_rghf_reconstructed, rD, config)
@@ -1276,8 +1285,7 @@ end
 end
 
 
-function correct_mass_flux_mp!(mdotf, p_eqn, config; time=nothing)
-    # sngrad = FaceScalarField(mesh)
+function correct_mass_flux_mp!(mdotf, p_eqn, rhof, rDf_vol, config; time=nothing)
     (; faces, cells, boundary_cellsID) = mdotf.mesh
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -1292,19 +1300,85 @@ function correct_mass_flux_mp!(mdotf, p_eqn, config; time=nothing)
     n_bfaces = length(boundary_cellsID)
     n_ifaces = n_faces - n_bfaces
 
-    ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
-    kernel! = _correct_mass_flux!(_setup(backend, workgroup, ndrange)...)
-    kernel!(mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
+    ndrange = n_ifaces
+    kernel! = _correct_mass_flux_rho!(_setup(backend, workgroup, ndrange)...)
+    kernel!(mdotf, p, rhof, nzval, colval, rowptr, faces, cells, n_bfaces)
     KernelAbstractions.synchronize(backend)
 
     BCs = config.boundaries.p_rgh # this line had to be changed from ".p"
     for BC ∈ BCs
-        correct_mass_periodic(
-            BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
+        correct_mass_periodic_rho(
+            BC, mdotf, p, rhof, nzval, colval, rowptr, cells, faces, backend, workgroup)
         KernelAbstractions.synchronize(backend)
     end
 
-    correct_boundary_mass_flux!(mdotf, p_eqn, BCs, time, config)
+    correct_boundary_mass_flux_vol!(mdotf, p_eqn, rDf_vol, BCs, time, config)
+end
+
+# aN is built from the ρ-weighted rDf; divide by ρf so mdotf stays volumetric
+@kernel function _correct_mass_flux_rho!(
+    mdotf, p, rhof, nzval, colval, rowptr, faces, cells, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+
+    @inbounds begin
+        face = faces[fID]
+        (; ownerCells) = face
+        cID1 = ownerCells[1]
+        cID2 = ownerCells[2]
+        p1 = p[cID1]
+        p2 = p[cID2]
+        zID = spindex(rowptr, colval, cID1, cID2)
+        aN = nzval[zID]
+        mdotf[fID] += (aN / rhof[fID]) * (p2 - p1) # positive: pressure eqn has negative sign
+    end
+end
+
+correct_mass_periodic_rho(arg...) = nothing
+
+function correct_mass_periodic_rho(
+    BC::PeriodicParent, mdotf, p, rhof, nzval, colval, rowptr, cells, faces, backend, workgroup)
+    (; IDs_range, value) = BC
+    (; face_map) = value
+    ndrange = length(IDs_range)
+    kernel! = _correct_mass_periodic_rho(_setup(backend, workgroup, ndrange)...)
+    kernel!(mdotf, p, rhof, nzval, colval, rowptr, cells, faces, IDs_range, face_map)
+end
+
+@kernel function _correct_mass_periodic_rho(
+    mdotf, p, rhof, nzval, colval, rowptr, cells, faces, IDs_range, face_map)
+    i = @index(Global)
+    fID = IDs_range[i]
+    pfID = face_map[i]
+
+    face = faces[fID]
+    pface = faces[pfID]
+    cID1 = face.ownerCells[1]
+    cID2 = pface.ownerCells[1]
+
+    p1 = p[cID1]
+    p2 = p[cID2]
+    zID = spindex(rowptr, colval, cID1, cID2)
+    aN = nzval[zID]
+    mdotf[fID] += (aN / rhof[fID]) * (p2 - p1)
+    mdotf[pfID] = -mdotf[fID]
+end
+
+# reuses the shared BC-dispatch kernel with the volumetric rD_f (pterm.flux is ρ-weighted)
+function correct_boundary_mass_flux_vol!(mdotf, p_eqn, rDf_vol, BCs, time, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    terms = p_eqn.model.terms
+    pterm = terms[laplacian_term_index(terms)]
+    p = pterm.phi
+    psign = pterm.sign
+
+    (; faces, boundary_cellsID) = mdotf.mesh
+    ndrange = length(boundary_cellsID)
+    kernel! = _correct_boundary_mass_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel!(BCs, mdotf, p, rDf_vol, psign, faces, boundary_cellsID, time)
+    KernelAbstractions.synchronize(backend)
 end
 
 
