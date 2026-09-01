@@ -66,7 +66,10 @@ mkpath(RESULTS_DIR)
 @info "Starting heated run -> t_end = $(HEATED_END) s  (Q0=$(Q0), tau=$(TAU))"
 residuals = cd(RESULTS_DIR) do
     @time run_solver!(model, config;
-        inner_loops = Int(CFG["run"]["inner_loops"]),
+        inner_loops        = Int(CFG["run"]["inner_loops"]),
+        n_outer_correctors = Int(get(CFG["run"], "n_outer_correctors", 3)),
+        outer_tol          = Float64(get(CFG["run"], "outer_tol", 1.0e-4)),
+        prop_relax         = Float64(get(CFG["run"], "prop_relax", 0.5)),
     )
 end
 

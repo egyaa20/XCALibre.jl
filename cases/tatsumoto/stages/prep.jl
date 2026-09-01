@@ -42,7 +42,10 @@ mkpath(PREP_RESULTS)
 @info "Starting warmup -> t_end = $(WARMUP_END) s ..."
 residuals = cd(PREP_RESULTS) do
     @time run_solver!(model, config;
-        inner_loops = Int(CFG["run"]["inner_loops"]),
+        inner_loops        = Int(CFG["run"]["inner_loops"]),
+        n_outer_correctors = Int(get(CFG["run"], "n_outer_correctors", 3)),
+        outer_tol          = Float64(get(CFG["run"], "outer_tol", 1.0e-4)),
+        prop_relax         = Float64(get(CFG["run"], "prop_relax", 0.5)),
     )
 end
 
