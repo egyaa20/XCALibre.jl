@@ -49,6 +49,7 @@ const MESH_PY  = joinpath(CAMPAIGN, "mesh", "quarter_pipe.py")
 # them. Anything else in [mesh.*] is a submitter concern (scale, grid, ...).
 const MESH_PARAM_KEYS = ("radius", "L_entrance", "L_heated", "L_exit", "core_ratio",
                          "n_quarter", "n_radial", "n_axial",
+                         "n_ax_entrance", "n_ax_heated", "n_ax_exit", "axial_ratio",
                          "first_cell", "bl_growth", "bl_flip")
 
 # Varied keys with these prefixes invalidate the shared warmup:
