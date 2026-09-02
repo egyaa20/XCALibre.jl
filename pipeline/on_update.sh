@@ -50,7 +50,7 @@ export JULIA_PKG_OFFLINE=true   # this snapshot's Manifest must already resolve
 HPC="cases/tatsumoto/configs/hpc.toml"
 
 CASES=(
-  "cases/tatsumoto/configs/supercritical_pimple.toml"
+  "cases/tatsumoto/configs/supercritical_pimple_co250.toml"
 )
 
 for CASE in "${CASES[@]}"; do
@@ -64,7 +64,7 @@ for CASE in "${CASES[@]}"; do
   # --reprep here permanently would mean every future push redoes warmup
   # from scratch even when nothing warmup-relevant changed, silently
   # burning hours on every single hook-triggered run.
-  args=(cases/tatsumoto/pipeline/submit.jl "$CASE" --hpc "$HPC")
+  args=(cases/tatsumoto/pipeline/submit.jl "$CASE" --hpc "$HPC" --stages heated,post)
   [[ -n "${CFD_JOB_REPORT:-}" ]] && args+=(--job-report "$CFD_JOB_REPORT")
   [[ "${CFD_DRY_RUN:-0}" == "1" ]] && args+=(--dry-run)
 
