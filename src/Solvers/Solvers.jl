@@ -37,7 +37,7 @@ include("Solvers_1_CSIMPLE.jl")
 include("Solvers_2_PISO.jl")
 include("Solvers_2_CPISO.jl")
 include("Solvers_4_Godunov.jl")
-include("Solvers_6_PIMPLE_MULTIPHASE.jl")   # PIMPLE variant; Solvers_5_Multiphase.jl disabled (identical API)
+include("Solvers_5_Multiphase.jl")
 include("Solvers_3_solver_dispatch.jl")
 include("Solvers_1_FilmModel.jl")
 

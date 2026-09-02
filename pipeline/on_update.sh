@@ -50,7 +50,7 @@ export JULIA_PKG_OFFLINE=true   # this snapshot's Manifest must already resolve
 HPC="cases/tatsumoto/configs/hpc.toml"
 
 CASES=(
-  "cases/tatsumoto/configs/supercritical_pimple.toml"
+  "cases/tatsumoto/configs/supercritical.toml"
 )
 
 for CASE in "${CASES[@]}"; do
