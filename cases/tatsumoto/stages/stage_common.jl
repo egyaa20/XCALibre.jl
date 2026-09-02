@@ -34,6 +34,8 @@ the baseline warmup carry `[run] warmup_from = "<other run name>"` (set by the
 submitter) and read that run's checkpoint instead of their own.
 """
 function warmup_checkpoint(cfg, run_dir)
+    ckpt = get(cfg["run"], "warmup_checkpoint", nothing)
+    ckpt !== nothing && return abspath(ckpt)
     wend = Float64(cfg["run"]["warmup_end"])
     src  = get(cfg["run"], "warmup_from", nothing)
     dir  = src === nothing ? run_dir : joinpath(CAMPAIGN_ROOT, "runs", src)
