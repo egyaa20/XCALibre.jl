@@ -722,14 +722,46 @@ function solve_multiphase_energy!(em, model, rho_prev, mdotf, mueff, time, confi
     blend_properties!(cp_m, alpha, _phase_vals(phases[main].cp), _phase_vals(phases[secondary].cp))
     interpolate!(k_mf, k_m, config)
     interpolate!(cp_mf, cp_m, config)
-    @. alpha_eff.values = k_mf.values / (cp_mf.values + eps()) +
-                          max(mueff.values - rhof.values * nuf.values, 0.0) / coeffs.Pr_t
+    alpha_eff_secant!(alpha_eff, k_mf, cp_mf, T, h, mueff, rhof, nuf,
+                      coeffs.Pr_t, model.domain, config)
 
     res = solve_equation!(eqn, h, boundaries.h, solvers.h, config;
                           rho_prev=rho_prev, time=time, irelax=irelax)
 
     temperature_from_enthalpy!(T, h, table, config)
     return res
+end
+
+# Face diffusivity for the h Laplacian using the SECANT cp: the diffusive flux
+# must equal k_f*dT/dn, so alpha_eff = k_f*(T2-T1)/(h2-h1) per face. Local cp
+# under-diffuses badly across the pseudo-critical cp peak.
+function alpha_eff_secant!(alpha_eff, k_mf, cp_mf, T, h, mueff, rhof, nuf, Pr_t, mesh, config)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+    faces = mesh.faces
+    ndrange = length(faces)
+    kernel! = _alpha_eff_secant!(_setup(backend, workgroup, ndrange)...)
+    kernel!(alpha_eff, k_mf, cp_mf, T, h, mueff, rhof, nuf, Pr_t, faces)
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel inbounds=true function _alpha_eff_secant!(ae, kf, cpf, T, h, mueff, rhof, nuf, Pr_t, faces)
+    i = @index(Global)
+    TF = eltype(ae.values)
+    face = faces[i]
+    (; ownerCells) = face
+    c1 = ownerCells[1]; c2 = ownerCells[2]
+    dT = T[c2] - T[c1]
+    dh = h[c2] - h[c1]
+    mol = kf[i] / (cpf[i] + eps(TF))
+    # Secant only when both differences are physically meaningful and of the
+    # same sign; the result is bounded to a factor of 20 either side of the
+    # local-cp value so a near-degenerate dh can never blow the diffusivity up.
+    if abs(dT) > TF(1.0e-4) && abs(dh) > TF(10.0) && dT*dh > zero(TF)
+        s = kf[i] * dT / dh
+        mol = clamp(s, mol/TF(20), mol*TF(20))
+    end
+    ae[i] = mol + max(mueff[i] - rhof[i]*nuf[i], zero(TF)) / TF(Pr_t)
 end
 
 blend_rhoPhi!(::Mixture, rhoPhi, alpha_fluxf, mdotf, rhof, rho1_val, rho2_val) =

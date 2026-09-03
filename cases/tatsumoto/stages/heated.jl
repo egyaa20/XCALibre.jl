@@ -53,6 +53,10 @@ model, config, htable, inits = build_case(CFG, mesh_dev, hardware;
 GC.gc()
 initialise_fields!(model, inits)   # sane values under any field the checkpoint lacks
 ckpt_time = load_checkpoint!(CHECKPOINT; checkpoint_fields(model)...)
+if Bool(get(CFG["run"], "reset_T_on_restore", false)) && !RESUME
+    initialise!(model.energy.T, Float64(CFG["flow"]["T_in"]))
+    @info "reset_T_on_restore: T reset to T_in (h re-derived at solver init)"
+end
 if RESUME
     HEAT_T0[] = ckpt_time
     @info "RESUME: ramp continues" ckpt_time q_now=Q0*exp(ckpt_time/TAU)

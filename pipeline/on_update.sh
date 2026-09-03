@@ -52,6 +52,7 @@ mkdir -p "$CFD_MESH_CACHE"
 HPC="cases/tatsumoto/configs/hpc.toml"
 
 CASES=(
+  "cases/tatsumoto/configs/supercritical_pimple_co100.toml"
   "cases/tatsumoto/configs/supercritical_pimple_co250.toml"
 )
 
