@@ -46,6 +46,8 @@ command -v sbatch >/dev/null 2>&1 || { echo "FATAL: sbatch not on PATH"; exit 1;
 
 export JULIA_DEPOT_PATH="${CFD_DEPOT:-$HOME/.julia}"
 export JULIA_PKG_OFFLINE=true   # this snapshot's Manifest must already resolve
+export CFD_MESH_CACHE="$HOME/cfd-pipeline/mesh-cache"   # mesh cache shared across snapshots
+mkdir -p "$CFD_MESH_CACHE"
 
 HPC="cases/tatsumoto/configs/hpc.toml"
 
