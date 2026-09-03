@@ -41,7 +41,9 @@ using SHA
 const CAMPAIGN = dirname(@__DIR__)                       # cases/tatsumoto
 const STAGES   = joinpath(CAMPAIGN, "stages")
 const RUNS     = joinpath(CAMPAIGN, "runs")
-const MESHES   = joinpath(RUNS, "_meshes")               # shared mesh cache
+const MESHES   = get(ENV, "CFD_MESH_CACHE",              # shared mesh cache;
+                     joinpath(RUNS, "_meshes"))          # env override makes it
+                                                         # survive hook snapshots
 const REPO     = dirname(dirname(CAMPAIGN))              # repository root
 const MESH_PY  = joinpath(CAMPAIGN, "mesh", "quarter_pipe.py")
 
