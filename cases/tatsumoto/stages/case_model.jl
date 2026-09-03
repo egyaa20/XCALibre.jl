@@ -47,6 +47,7 @@ function build_case(CFG, mesh_dev, hardware; wall_heat_bc, write_interval, t_end
         T_min    = Float64(thermo["T_table_lo"]),
         T_max    = Float64(thermo["T_table_hi"]),
         n_points = Int(thermo["n_points"]),
+        h_ref_T  = T_IN,
     )
     H_IN = table_enthalpy(htable, T_IN)
 

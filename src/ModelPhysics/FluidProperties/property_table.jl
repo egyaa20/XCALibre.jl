@@ -40,7 +40,7 @@ function _branch_index(T, T_sat, Tc, p_ref, pc)
     return T >= T_sat ? 2 : 1  # vapour : liquid
 end
 
-function HelmholtzTable(; fluid, p_ref, T_min, T_max, n_points::Int=500)
+function HelmholtzTable(; fluid, p_ref, T_min, T_max, n_points::Int=500, h_ref_T=nothing)
     @assert T_max > T_min "T_max must exceed T_min"
     @assert n_points >= 2 "n_points must be at least 2"
     F = Float64
@@ -67,6 +67,15 @@ function HelmholtzTable(; fluid, p_ref, T_min, T_max, n_points::Int=500)
     all(isfinite, rho) && all(>(zero(F)), rho) || error("HelmholtzTable: non-physical density in T range")
     all(>(zero(F)), cp) || error("HelmholtzTable: non-positive cp in T range")
     issorted(h) || error("HelmholtzTable: h(T) not monotonically increasing — cannot build T(h) inverse")
+
+    # Reference-shift so h = 0 at the bulk/operating temperature. The conservative
+    # form d(rho h)/dt + div(rho U h) carries a spurious source h*[drho/dt +
+    # div(rho U)] proportional to |h|, since the bracket vanishes only to discrete
+    # tolerance. Anchoring at the operating point (not the table floor) is what
+    # makes it small where most of the field lives.
+    if h_ref_T !== nothing
+        h .-= _table_lerp(h, F(h_ref_T), F(T_min), dT, n_points)
+    end
 
     h_min = h[1]; h_max = h[end]
     dh = (h_max - h_min) / (n_points - 1)

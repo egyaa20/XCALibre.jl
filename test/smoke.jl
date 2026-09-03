@@ -11,7 +11,7 @@ using Test
 include(joinpath(@__DIR__, "..", "cases", "tatsumoto", "stages", "stage_common.jl"))
 
 @testset "smoke" begin
-    table = HelmholtzTable(fluid=N2(), p_ref=3.5e6, T_min=90.0, T_max=170.0, n_points=300)
+    table = HelmholtzTable(fluid=N2(), p_ref=3.5e6, T_min=90.0, T_max=170.0, n_points=300, h_ref_T=150.0)
     @test issorted(table.h)
     @test table.rho[1] > 500.0 && table.rho[end] < 150.0
     T0 = 150.0

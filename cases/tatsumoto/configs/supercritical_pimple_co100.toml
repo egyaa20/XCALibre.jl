@@ -11,7 +11,7 @@
 # =============================================================================
 
 [case]
-name = "supercritical_pimple_co250"         # names runs/<name>/ (checkpoints, vtk, post)
+name = "supercritical_pimple_co100"         # names runs/<name>/ (checkpoints, vtk, post)
 
 [mesh]
 # Built on the cluster by SALOME (cases/tatsumoto/mesh/quarter_pipe.py) into a
@@ -86,8 +86,8 @@ outer_tol          = 1.0e-4    # outer-loop residual exit criterion
 prop_relax         = 0.5       # rho under-relaxation across outers
 
 [run.adaptive]
-maxCo      = 250.0
-maxAlphaCo = 250.0
+maxCo      = 100.0
+maxAlphaCo = 100.0
 minShrink  = 0.1
 maxGrow    = 1.1
 
