@@ -1,0 +1,17 @@
+on_update.sh: submitting cases/tatsumoto/configs/supercritical_pimple.toml for commit 76b51144
+==============================================================================
+Campaign: supercritical_pimple   variants: 3
+==============================================================================
+[supercritical_pimple__maxAlphaCo-25p0__maxCo-25p0]  mesh   7530021  (quarter_pipe-bb2b6ddc12a9.unv)
+[supercritical_pimple__maxAlphaCo-25p0__maxCo-25p0]  prep   7530022  (afterok:7530021)
+[supercritical_pimple__maxAlphaCo-25p0__maxCo-25p0]  heated 7530023  (afterok:7530022)
+[supercritical_pimple__maxAlphaCo-25p0__maxCo-25p0]  post   7530024  (afterok:7530023)
+[supercritical_pimple__maxAlphaCo-50p0__maxCo-50p0]  mesh   shared with an earlier variant (7530021)
+[supercritical_pimple__maxAlphaCo-50p0__maxCo-50p0]  prep   7530025  (afterok:7530021)
+[supercritical_pimple__maxAlphaCo-50p0__maxCo-50p0]  heated 7530026  (afterok:7530025)
+[supercritical_pimple__maxAlphaCo-50p0__maxCo-50p0]  post   7530027  (afterok:7530026)
+[supercritical_pimple__maxAlphaCo-100p0__maxCo-100p0]  mesh   shared with an earlier variant (7530021)
+[supercritical_pimple__maxAlphaCo-100p0__maxCo-100p0]  prep   7530028  (afterok:7530021)
+[supercritical_pimple__maxAlphaCo-100p0__maxCo-100p0]  heated 7530029  (afterok:7530028)
+[supercritical_pimple__maxAlphaCo-100p0__maxCo-100p0]  post   7530030  (afterok:7530029)
+==============================================================================
