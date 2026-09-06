@@ -35,9 +35,12 @@ isfile(CHECKPOINT) || error("Checkpoint not found: $(CHECKPOINT)\n" *
     (RESUME ? "Run heated.jl (without 'resume') first." : "Run prep.jl first."))
 
 # Heating clock offset: 0 for a fresh run; the checkpoint time on resume so
-# the exponential ramp continues instead of restarting.
-const HEAT_T0 = Ref(0.0)
-heated_flux(coords, time, i) = Q0 * exp((HEAT_T0[] + time) / TAU)
+# the exponential ramp continues instead of restarting. Read up front (before
+# building the BC) and captured as a plain immutable Float64 -- a mutable Ref
+# captured in this closure would be a CPU heap pointer dereferenced from
+# inside a GPU kernel, causing an illegal memory access at runtime.
+const HEAT_T0 = RESUME ? Float64(JLD2.load(CHECKPOINT, "time")) : 0.0
+heated_flux(coords, time, i) = Q0 * exp((HEAT_T0 + time) / TAU)
 
 if uppercase(CFG["hardware"]["backend"]) in ("CUDA", "GPU")
     using CUDA
@@ -61,7 +64,6 @@ if Bool(get(CFG["run"], "reset_T_on_restore", false)) && !RESUME
     @info "reset_T_on_restore: T reset to T_in (h re-derived at solver init)"
 end
 if RESUME
-    HEAT_T0[] = ckpt_time
     @info "RESUME: ramp continues" ckpt_time q_now=Q0*exp(ckpt_time/TAU)
 else
     @info "Restored warmup checkpoint (t = $(ckpt_time) s) -> heating from t = 0"
@@ -80,6 +82,6 @@ residuals = cd(RESULTS_DIR) do
     )
 end
 
-t_final = RESUME ? HEAT_T0[] + HEATED_END : HEATED_END
+t_final = RESUME ? HEAT_T0 + HEATED_END : HEATED_END
 save_checkpoint(FINAL_CKPT; time = t_final, checkpoint_fields(model)...)
 @info "Heated run complete" results=RESULTS_DIR checkpoint=FINAL_CKPT t_final

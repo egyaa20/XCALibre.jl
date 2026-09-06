@@ -239,10 +239,14 @@ function MULTIPHASE(
     U_solver_final = (@set solvers.U.relax = one(TF)).U   # unrelaxed final outer
     p_relax = solvers.p_rgh.relax
 
-    rho1_val = phases[main].rho[1]
-    rho2_val = phases[secondary].rho[1]
-    mu1_val  = phases[main].mu[1]
-    mu2_val  = phases[secondary].mu[1]
+    # Only meaningful (and used) in the constant-property path below; a table-driven
+    # phase's rho/mu are per-cell ScalarFields, and indexing them directly is illegal
+    # on GPU (and physically meaningless here — HelmholtzEnthalpy overwrites rho1f/
+    # mu1f from the table every iteration before they are read).
+    rho1_val = phases[main].rho isa ConstantScalar ? phases[main].rho[1] : zero(TF)
+    rho2_val = phases[secondary].rho isa ConstantScalar ? phases[secondary].rho[1] : zero(TF)
+    mu1_val  = phases[main].mu isa ConstantScalar ? phases[main].mu[1] : zero(TF)
+    mu2_val  = phases[secondary].mu isa ConstantScalar ? phases[secondary].mu[1] : zero(TF)
 
     rho1f = FaceScalarField(mesh); initialise!(rho1f, rho1_val)
     rho2f = FaceScalarField(mesh); initialise!(rho2f, rho2_val)
