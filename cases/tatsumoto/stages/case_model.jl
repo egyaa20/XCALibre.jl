@@ -5,8 +5,10 @@
 # =============================================================================
 
 function build_backend(hw_cfg)
-    if uppercase(hw_cfg["backend"]) == "CUDA"
-        error("CUDA backend not wired for this case yet — set [hardware] backend = \"CPU\"")
+    if uppercase(hw_cfg["backend"]) in ("CUDA", "GPU")
+        backend = CUDABackend()
+        workgroup = Int(get(hw_cfg, "workgroup", 32))
+        return backend, Hardware(backend = backend, workgroup = workgroup)
     end
     backend = CPU()
     activate_multithread(backend)
@@ -50,6 +52,7 @@ function build_case(CFG, mesh_dev, hardware; wall_heat_bc, write_interval, t_end
         h_ref_T  = T_IN,
     )
     H_IN = table_enthalpy(htable, T_IN)
+    htable = adapt(hardware.backend, htable)   # move table arrays onto the device, same as mesh_dev
 
     model = Physics(
         time = Transient(),

@@ -314,7 +314,7 @@ function MULTIPHASE(
 
     @time for iteration ∈ 1:iterations
 
-        if config.runtime.t_end !== nothing && time >= config.runtime.t_end
+        if time >= config.runtime.t_end
             @info "Reached t_end = $(config.runtime.t_end) s after $(iteration-1) iterations — stopping."
             break
         end

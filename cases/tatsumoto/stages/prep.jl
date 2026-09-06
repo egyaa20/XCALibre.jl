@@ -21,6 +21,9 @@ const CASE_FILE, CFG, RUN_DIR = load_case(ARGS; default="supercritical.toml")
 Q0 = Float64(CFG["heating"]["Q0"])
 WARMUP_END = Float64(CFG["run"]["warmup_end"])
 
+if uppercase(CFG["hardware"]["backend"]) in ("CUDA", "GPU")
+    using CUDA
+end
 backend, hardware = build_backend(CFG["hardware"])
 mesh_file = resolve_mesh(CFG)
 mesh      = UNV3D_mesh(mesh_file, scale = Float64(CFG["mesh"]["scale"]))

@@ -128,7 +128,7 @@ struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothi
     dt::V
     write_interval::I
     adaptive::A
-    t_end::Union{Nothing,F}
+    t_end::F   # Inf means unbounded; a Union{Nothing,F} field is not isbits and breaks GPU kernels
 end
 Adapt.@adapt_structure Runtime
 
@@ -174,7 +174,7 @@ Runtime(; iterations::Integer=10_000_000,
           t_end=nothing) = begin
 
     val = float(time_step)
-    t_end_val = t_end === nothing ? nothing : oftype(val, t_end)
+    t_end_val = t_end === nothing ? oftype(val, Inf) : oftype(val, t_end)
     it, wi = promote(iterations, write_interval)
     Runtime(it, [val], wi, adaptive, t_end_val)
 end

@@ -39,6 +39,9 @@ isfile(CHECKPOINT) || error("Checkpoint not found: $(CHECKPOINT)\n" *
 const HEAT_T0 = Ref(0.0)
 heated_flux(coords, time, i) = Q0 * exp((HEAT_T0[] + time) / TAU)
 
+if uppercase(CFG["hardware"]["backend"]) in ("CUDA", "GPU")
+    using CUDA
+end
 backend, hardware = build_backend(CFG["hardware"])
 mesh_file = resolve_mesh(CFG)
 mesh      = UNV3D_mesh(mesh_file, scale = Float64(CFG["mesh"]["scale"]))
