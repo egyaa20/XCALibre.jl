@@ -1,0 +1,9 @@
+on_update.sh: submitting cases/tatsumoto/configs/supercritical.toml for commit 68fb82a9
+==============================================================================
+Campaign: supercritical   variants: 1
+==============================================================================
+[supercritical]  mesh   7530017  (quarter_pipe-bb2b6ddc12a9.unv)
+[supercritical]  prep   7530018  (afterok:7530017)
+[supercritical]  heated 7530019  (afterok:7530018)
+[supercritical]  post   7530020  (afterok:7530019)
+==============================================================================
