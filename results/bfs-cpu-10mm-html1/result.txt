@@ -1,0 +1,5 @@
+exit_code=0
+commit=c8345047
+end=2026-08-16T12:34:36Z
+elapsed=21s
+nodes=1 ntasks=1 cpus_per_task=8
