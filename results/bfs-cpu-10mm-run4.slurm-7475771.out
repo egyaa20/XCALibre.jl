@@ -1,0 +1,38 @@
+run=bfs-cpu-10mm-run4 commit=8ccbae9f host=comp008.int.ada.nottingham.ac.uk start=2026-08-15T17:46:12Z
+[ Info: Extracting configuration and input fields...
+[ Info: Pre-allocating fields...
+[ Info: Defining models...
+[ Info: Initialising preconditioners...
+[ Info: Pre-allocating solvers...
+[ Info: Initialising turbulence model...
+[ Info: Allocating working memory...
+[ Info: Starting SIMPLE loops...
+Progress:   0%|                           |  ETA: 1:54:39 ( 1.38  s/it)[K
+   iter: 2[K
+     Ux: 6.476784658861805e-5[K
+     Uy: 0.00011157947700314894[K
+     Uz: 0.0[K
+      p: 2.216561518219098e-5[K[A[A[A[A[A
+
+
+
+
+[K[A[K[A[K[A[K[A[K[AProgress: 100%|███████████████████████████| Time: 0:00:05 ( 8.43 ms/it)[K
+[ Info: Simulation converged in 623 iterations!
+Loading mesh...
+Reading nodes (dataset 2411), from line 19
+Reading elements (dataset 2412), from line 3864
+Reading boundary information (dataset 2467), from line 8457
+Boundary name: inlet
+Boundary name: outlet
+Boundary name: wall
+Boundary name: top
+File read successfully
+Generating mesh...
+Building connectivity...
+Done! Execution time: 0.760923
+Mesh ready!
+ 11.596511 seconds (25.42 M allocations: 2.005 GiB, 2.82% gc time, 90.23% compilation time)
+WARN postprocess modules not loaded
+2026-08-15 18:46:38.141 (   2.535s) [    1530992B3300]vtkXOpenGLRenderWindow.:1460  WARN| bad X server connection. DISPLAY=
+exit=0
