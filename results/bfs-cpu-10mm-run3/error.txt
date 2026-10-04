@@ -1,0 +1,19 @@
+run=bfs-cpu-10mm-run3 FAILED exit_code=1 commit=7f1d3b97
+--- tail of slurm log ---
+run=bfs-cpu-10mm-run3 commit=7f1d3b97 host=comp008.int.ada.nottingham.ac.uk start=2026-08-15T17:42:11Z
+ERROR: LoadError: ArgumentError: Package CUDA not found in current path.
+- Run `import Pkg; Pkg.add("CUDA")` to install the CUDA package.
+Stacktrace:
+ [1] macro expansion
+   @ ./loading.jl:1772 [inlined]
+ [2] macro expansion
+   @ ./lock.jl:267 [inlined]
+ [3] __require(into::Module, mod::Symbol)
+   @ Base ./loading.jl:1753
+ [4] #invoke_in_world#3
+   @ ./essentials.jl:926 [inlined]
+ [5] invoke_in_world
+   @ ./essentials.jl:923 [inlined]
+ [6] require(into::Module, mod::Symbol)
+   @ Base ./loading.jl:1746
+in expression starting at /gpfs01/home/egyaa20/xcalibre-runs/bfs-cpu-10mm-run3-20260815-184209/src/examples/2D_BFS.jl:2
