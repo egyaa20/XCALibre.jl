@@ -1,0 +1,14 @@
+on_update.sh: submitting cases/tatsumoto/configs/supercritical_pimple_co100.toml for commit af0a4b07
+==============================================================================
+Campaign: supercritical_pimple_co100   variants: 1
+==============================================================================
+[supercritical_pimple_co100]  heated 7534224
+[supercritical_pimple_co100]  post   7534225  (afterok:7534224)
+==============================================================================
+on_update.sh: submitting cases/tatsumoto/configs/supercritical_pimple_co250.toml for commit af0a4b07
+==============================================================================
+Campaign: supercritical_pimple_co250   variants: 1
+==============================================================================
+[supercritical_pimple_co250]  heated 7534226
+[supercritical_pimple_co250]  post   7534227  (afterok:7534226)
+==============================================================================

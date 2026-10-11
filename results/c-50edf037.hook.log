@@ -1,0 +1,21 @@
+on_update.sh: submitting cases/tatsumoto/configs/supercritical.toml for commit 50edf037
+ERROR: LoadError: unknown mesh parameter [mesh.resolution] n_ax_heated — valid: radius, L_entrance, L_heated, L_exit, core_ratio, n_quarter, n_radial, n_axial, first_cell, bl_growth, bl_flip
+Stacktrace:
+ [1] error(s::String)
+   @ Base ./error.jl:35
+ [2] mesh_params(mesh_cfg::Dict{String, Any})
+   @ Main ~/xcalibre-runs/c-50edf037-20260902-132552/src/cases/tatsumoto/pipeline/submit.jl:111
+ [3] mesh_cache_paths(mesh_cfg::Dict{String, Any})
+   @ Main ~/xcalibre-runs/c-50edf037-20260902-132552/src/cases/tatsumoto/pipeline/submit.jl:142
+ [4] stage_mesh_params(mesh_cfg::Dict{String, Any})
+   @ Main ~/xcalibre-runs/c-50edf037-20260902-132552/src/cases/tatsumoto/pipeline/submit.jl:151
+ [5] materialise(cfg::Dict{String, Any}, name::String, overrides::Dict{String, Any}, hpc::Dict{String, Any}; warmup_from::Nothing)
+   @ Main ~/xcalibre-runs/c-50edf037-20260902-132552/src/cases/tatsumoto/pipeline/submit.jl:250
+ [6] main(argv::Vector{String})
+   @ Main ~/xcalibre-runs/c-50edf037-20260902-132552/src/cases/tatsumoto/pipeline/submit.jl:420
+ [7] top-level scope
+   @ ~/xcalibre-runs/c-50edf037-20260902-132552/src/cases/tatsumoto/pipeline/submit.jl:502
+in expression starting at /gpfs01/home/egyaa20/xcalibre-runs/c-50edf037-20260902-132552/src/cases/tatsumoto/pipeline/submit.jl:502
+==============================================================================
+Campaign: supercritical   variants: 1
+==============================================================================

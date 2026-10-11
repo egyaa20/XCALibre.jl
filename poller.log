@@ -1,0 +1,200 @@
+2026-09-24T14:36:06Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID DF80:2FD198:EE9E3:102EE8:6AB53681        
+remote: Time 2026-09-24T14:41:05Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-09-24T14:41:05Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID B7C4:37A10D:7E4F2:89755:6AB54328        
+remote: Time 2026-09-24T15:35:04Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-09-24T15:35:04Z WARN status push failed
+fatal: unable to access 'https://github.com/egyaa20/XCALibre.jl/': Empty reply from server
+2026-09-26T09:12:04Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID 80DA:2C108A:E196B5:10235A8:6ABBBA15        
+remote: Time 2026-09-29T13:16:06Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-09-29T13:16:06Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID C9F4:2D75AB:15B50:17788:6ABBD095        
+remote: Time 2026-09-29T14:52:06Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-09-29T14:52:06Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID DEAC:2CC317:29473:2C8FA:6ABBD149        
+remote: Time 2026-09-29T14:55:06Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-09-29T14:55:06Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID C122:39439B:136222:165F4E:6ABD7099        
+remote: Time 2026-09-30T20:27:22Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-09-30T20:27:22Z WARN status push failed
+2026-10-05T09:08:01Z WARN cannot reach origin
+remote: Internal Server Error
+remote: Request ID 826E:C4F2A:7F3C8B:92BADB:6AC4398C        
+remote: Time 2026-10-05T23:58:05Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-05T23:58:05Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID E882:333118:B03E82:C83705:6AC4F099        
+remote: Time 2026-10-06T12:59:07Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-06T12:59:07Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID BDEE:264D6B:4A13AF:50611D:6AC66019        
+remote: Time 2026-10-07T15:07:06Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T15:07:06Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID 95B6:2B52DC:4B1FC6:5175FB:6AC66055        
+remote: Time 2026-10-07T15:08:06Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T15:08:06Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID 9550:1D1F10:4AE827:5148B6:6AC66091        
+remote: Time 2026-10-07T15:09:07Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T15:09:07Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID BEAC:12D476:4B60A6:51C7E3:6AC660CD        
+remote: Time 2026-10-07T15:10:07Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T15:10:07Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID 9992:2CFB4F:4C5FC2:52CF1A:6AC66109        
+remote: Time 2026-10-07T15:11:05Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T15:11:06Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID B6FA:36E03C:4C274C:529CFD:6AC66145        
+remote: Time 2026-10-07T15:12:06Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T15:12:06Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID DB0A:129C0:4D0D82:538C2E:6AC66180        
+remote: Time 2026-10-07T15:13:05Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T15:13:05Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID BAE4:FD330:4D05BB:538F61:6AC661BE        
+remote: Time 2026-10-07T15:14:08Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T15:14:08Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID 891C:1D1F10:4D3CD4:53D1D9:6AC661F9        
+remote: Time 2026-10-07T15:15:07Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T15:15:07Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID C226:8CE89:4EB21F:554C54:6AC66235        
+remote: Time 2026-10-07T15:16:06Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T15:16:06Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID C8FC:169A94:54C6AC:5BE8E6:6AC665B9        
+remote: Time 2026-10-07T15:31:06Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T15:31:06Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID C246:FD330:717839:7B5881:6AC678F1        
+remote: Time 2026-10-07T16:53:06Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T16:53:06Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID C69A:129C0:72532B:7C3948:6AC6792D        
+remote: Time 2026-10-07T16:54:06Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T16:54:06Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID 8258:264D6B:714419:7B36D6:6AC67969        
+remote: Time 2026-10-07T16:55:06Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T16:55:06Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID AEB6:2C967E:71CBC8:7BC450:6AC679A5        
+remote: Time 2026-10-07T16:56:08Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T16:56:08Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID EBA2:1D1F10:728D7C:7C9195:6AC679E1        
+remote: Time 2026-10-07T16:57:07Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T16:57:07Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID 85CA:2B2DD:739B8C:7DAF19:6AC67A1E        
+remote: Time 2026-10-07T16:58:08Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T16:58:08Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID 8F32:21823F:74069F:7E25AC:6AC67A59        
+remote: Time 2026-10-07T16:59:06Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T16:59:06Z WARN status push failed
+remote: Internal Server Error
+remote: Request ID 9120:25092E:7310AC:7D2875:6AC67A95        
+remote: Time 2026-10-07T17:00:06Z
+To https://github.com/egyaa20/XCALibre.jl
+ ! [remote rejected]     pipeline-status -> pipeline-status (Internal Server Error)
+error: failed to push some refs to 'https://github.com/egyaa20/XCALibre.jl'
+2026-10-07T17:00:06Z WARN status push failed
+2026-10-08T16:21:01Z WARN cannot reach origin
+fatal: unable to access 'https://github.com/egyaa20/XCALibre.jl/': Empty reply from server
+2026-10-09T11:02:04Z WARN status push failed
+error: RPC failed; HTTP 408 curl 22 The requested URL returned error: 408
+send-pack: unexpected disconnect while reading sideband packet
+fatal: the remote end hung up unexpectedly
+2026-10-09T12:50:30Z WARN status push failed
