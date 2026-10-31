@@ -1,0 +1,26 @@
+on_update.sh: submitting cases/tatsumoto/configs/supercritical.toml for commit 6b621385
+==============================================================================
+Campaign: supercritical   variants: 3
+==============================================================================
+[supercritical__maxCo-90]  mesh   7502389  (quarter_pipe-677f096433cf.unv)
+[supercritical__maxCo-90]  prep   7502390  (afterok:7502389)
+[supercritical__maxCo-90]  heated 7502391  (afterok:7502390)
+[supercritical__maxCo-90]  post   7502392  (afterok:7502391)
+[supercritical__maxCo-150]  mesh   shared with an earlier variant (7502389)
+[supercritical__maxCo-150]  prep   7502393  (afterok:7502389)
+[supercritical__maxCo-150]  heated 7502394  (afterok:7502393)
+[supercritical__maxCo-150]  post   7502395  (afterok:7502394)
+[supercritical__maxCo-250]  mesh   shared with an earlier variant (7502389)
+[supercritical__maxCo-250]  prep   7502396  (afterok:7502389)
+[supercritical__maxCo-250]  heated 7502397  (afterok:7502396)
+[supercritical__maxCo-250]  post   7502398  (afterok:7502397)
+==============================================================================
+on_update.sh: submitting cases/tatsumoto/configs/supercritical_ext80.toml for commit 6b621385
+==============================================================================
+Campaign: supercritical_ext80   variants: 1
+==============================================================================
+[supercritical_ext80]  mesh   7502399  (quarter_pipe-5d921226fa6c.unv)
+[supercritical_ext80]  prep   7502400  (afterok:7502399)
+[supercritical_ext80]  heated 7502401  (afterok:7502400)
+[supercritical_ext80]  post   7502402  (afterok:7502401)
+==============================================================================
