@@ -1,0 +1,2 @@
+{"name":"c-44518474","state":"hook-rc-1","jobid":"","commit":"44518474","rundir":"/gpfs01/home/egyaa20/xcalibre-runs/c-44518474-20260902-132053",
+ "updated":"2026-09-02T12:21:08Z","detail":"queue: fix executable bit on pipeline scripts (unblocks the hook) [run] Co-Authored-By: Claude Fable 5 <noreply@anthropi"}
