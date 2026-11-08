@@ -1,0 +1,2 @@
+{"name":"c-6b621385","state":"hook-rc-0","jobid":"","commit":"6b621385","rundir":"/gpfs01/home/egyaa20/xcalibre-runs/c-6b621385-20260823-151013",
+ "updated":"2026-08-23T14:10:17Z","detail":"tatsumoto: sync post-automation fix onto queue (no trigger) Lands d196548d (auto-submit post.py as a SLURM job, fix hook"}
